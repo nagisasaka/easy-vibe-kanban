@@ -51,7 +51,7 @@ const HOST_CONTROL_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 const HOST_CANCEL_COMMAND_TIMEOUT: Duration = Duration::from_secs(25);
 const HOST_LAUNCH_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const HOST_CANCEL_RESULT_TIMEOUT: Duration = Duration::from_secs(20);
-const PROCESS_OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_secs(3);
+const PROCESS_OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const HOST_TERMINAL_ACK_GRACE_PERIOD: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -888,8 +888,8 @@ async fn monitor_process(
         Ok(Some(post_exit_cause)) => cause = post_exit_cause,
         Ok(None) => {}
         Err(_) => {
-            cause = ExitCause::AuditFailure(
-                "provider output streams did not close before the audit drain deadline".to_string(),
+            tracing::warn!(
+                "provider output streams did not close before the audit drain deadline; preserving provider terminal status"
             );
         }
     }
