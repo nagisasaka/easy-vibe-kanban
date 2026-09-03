@@ -653,6 +653,7 @@ pub enum TypedProviderEvent {
     Lifecycle(AgentRunStatus),
     SessionObserved(String),
     Message {
+        provider_message_id: Option<String>,
         role: AgentRuntimeMessageRole,
         content: String,
         final_output: bool,
@@ -799,11 +800,18 @@ fn classify_payload(
             });
         }
         return Ok(TypedProviderEvent::Message {
+            provider_message_id: None,
             role: AgentRuntimeMessageRole::Assistant,
             content: text,
             final_output: false,
         });
     };
+
+    if provider == DirectProvider::Codex
+        && let Some(classified) = classify_codex_payload(payload, event.sequence)
+    {
+        return classified;
+    }
 
     let object = payload.as_object();
     let event_type = object
@@ -831,6 +839,7 @@ fn classify_payload(
         }
         "assistant" | "message" | "text" | "content" | "delta" | "assistant_message"
         | "text_delta" => Ok(TypedProviderEvent::Message {
+            provider_message_id: None,
             role: AgentRuntimeMessageRole::Assistant,
             content: text().unwrap_or_default(),
             final_output: value(&["final", "is_final", "done"])
@@ -838,6 +847,7 @@ fn classify_payload(
                 .unwrap_or(false),
         }),
         "user" | "user_message" => Ok(TypedProviderEvent::Message {
+            provider_message_id: None,
             role: AgentRuntimeMessageRole::User,
             content: text().unwrap_or_default(),
             final_output: false,
@@ -971,6 +981,293 @@ fn classify_payload(
     }
 }
 
+/// Decode the event shapes emitted by both Codex app-server and
+/// `codex exec --json`. The generic mapper only looks at top-level fields, but
+/// Codex puts item identity and content under `params`/`item`.
+fn classify_codex_payload(
+    payload: &Value,
+    sequence: u64,
+) -> Option<Result<TypedProviderEvent, NativeAuditError>> {
+    let event_type = payload
+        .get("method")
+        .or_else(|| payload.get("type"))
+        .and_then(Value::as_str)?
+        .to_ascii_lowercase();
+
+    let params = payload.get("params").unwrap_or(payload);
+    match event_type.as_str() {
+        "thread/started" | "thread.started" => {
+            let session_id = params
+                .pointer("/thread/id")
+                .or_else(|| params.get("threadId"))
+                .or_else(|| params.get("thread_id"))
+                .and_then(Value::as_str);
+            Some(
+                session_id
+                    .map(|id| TypedProviderEvent::SessionObserved(id.to_string()))
+                    .ok_or(NativeAuditError::MalformedFrame(sequence)),
+            )
+        }
+        "item/agentmessage/delta" | "item.agent_message.delta" => {
+            let message_id = params
+                .get("itemId")
+                .or_else(|| params.get("item_id"))
+                .and_then(Value::as_str);
+            let delta = params.get("delta").and_then(Value::as_str);
+            Some(match (message_id, delta) {
+                (Some(message_id), Some(delta)) => Ok(TypedProviderEvent::Message {
+                    provider_message_id: Some(message_id.to_string()),
+                    role: AgentRuntimeMessageRole::Assistant,
+                    content: delta.to_string(),
+                    final_output: false,
+                }),
+                _ => Err(NativeAuditError::MalformedFrame(sequence)),
+            })
+        }
+        // Summary deltas remain in the lossless native audit. The completed
+        // reasoning item is authoritative, and mapping both would duplicate
+        // text because canonical Thinking does not carry a provider item ID.
+        "item/reasoning/summarytextdelta" | "item.reasoning.summary_text_delta" => None,
+        "thread/tokenusage/updated" | "thread.token_usage.updated" => {
+            let usage = params
+                .pointer("/tokenUsage/total")
+                .or_else(|| params.pointer("/token_usage/total"))?;
+            Some(Ok(TypedProviderEvent::TokenUsage {
+                input_tokens: codex_u64(usage, &["inputTokens", "input_tokens"]),
+                output_tokens: codex_u64(usage, &["outputTokens", "output_tokens"]),
+                cached_input_tokens: codex_optional_u64(
+                    usage,
+                    &["cachedInputTokens", "cached_input_tokens"],
+                ),
+            }))
+        }
+        "item/started" | "item.started" => {
+            let item = params.get("item")?;
+            classify_codex_item(item, false, sequence)
+        }
+        "item/completed" | "item.completed" => {
+            let item = params.get("item")?;
+            classify_codex_item(item, true, sequence)
+        }
+        _ => None,
+    }
+}
+
+fn classify_codex_item(
+    item: &Value,
+    completed: bool,
+    sequence: u64,
+) -> Option<Result<TypedProviderEvent, NativeAuditError>> {
+    let item_type = item.get("type").and_then(Value::as_str)?;
+    let normalized_type = item_type.replace('_', "").to_ascii_lowercase();
+
+    match normalized_type.as_str() {
+        // User input and hook prompts are already represented elsewhere in the
+        // canonical conversation and must not be echoed as assistant output.
+        "usermessage" | "hookprompt" => None,
+        "agentmessage" => {
+            if !completed {
+                return None;
+            }
+            let message_id = item.get("id").and_then(Value::as_str);
+            let text = item
+                .get("text")
+                .or_else(|| item.get("message"))
+                .or_else(|| item.get("content"))
+                .and_then(Value::as_str);
+            let final_output = item
+                .get("phase")
+                .and_then(Value::as_str)
+                .is_none_or(|phase| phase != "commentary");
+            Some(match (message_id, text) {
+                (Some(message_id), Some(text)) => Ok(TypedProviderEvent::Message {
+                    provider_message_id: Some(message_id.to_string()),
+                    role: AgentRuntimeMessageRole::Assistant,
+                    content: text.to_string(),
+                    final_output,
+                }),
+                _ => Err(NativeAuditError::MalformedFrame(sequence)),
+            })
+        }
+        "reasoning" => {
+            if !completed {
+                return None;
+            }
+            let summary = item
+                .get("summary")
+                .and_then(Value::as_array)
+                .map(|parts| {
+                    parts
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .filter(|part| !part.is_empty())
+                        .collect::<Vec<_>>()
+                        .join("\n\n")
+                })
+                .unwrap_or_default();
+            if summary.is_empty() {
+                None
+            } else {
+                Some(Ok(TypedProviderEvent::Thinking(summary)))
+            }
+        }
+        "plan" => {
+            if !completed {
+                return None;
+            }
+            Some(
+                item.get("text")
+                    .and_then(Value::as_str)
+                    .map(|text| TypedProviderEvent::Thinking(text.to_string()))
+                    .ok_or(NativeAuditError::MalformedFrame(sequence)),
+            )
+        }
+        _ => Some(codex_tool_event(
+            item,
+            item_type,
+            normalized_type.as_str(),
+            completed,
+            sequence,
+        )),
+    }
+}
+
+fn codex_tool_event(
+    item: &Value,
+    item_type: &str,
+    normalized_type: &str,
+    completed: bool,
+    sequence: u64,
+) -> Result<TypedProviderEvent, NativeAuditError> {
+    let id = item
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or(NativeAuditError::MalformedFrame(sequence))?;
+    let name = match normalized_type {
+        "commandexecution" => "Shell".to_string(),
+        "filechange" => "File changes".to_string(),
+        "mcptoolcall" => {
+            let server = item.get("server").and_then(Value::as_str);
+            let tool = item.get("tool").and_then(Value::as_str);
+            match (server, tool) {
+                (Some(server), Some(tool)) => format!("{server}/{tool}"),
+                (_, Some(tool)) => tool.to_string(),
+                _ => "MCP tool".to_string(),
+            }
+        }
+        "dynamictoolcall" => item
+            .get("tool")
+            .and_then(Value::as_str)
+            .unwrap_or("Dynamic tool")
+            .to_string(),
+        "collabagenttoolcall" => "Collaboration".to_string(),
+        "subagentactivity" => "Sub-agent activity".to_string(),
+        "websearch" => "Web search".to_string(),
+        "imageview" => "View image".to_string(),
+        "sleep" => "Wait".to_string(),
+        "imagegeneration" => "Generate image".to_string(),
+        "enteredreviewmode" => "Enter review mode".to_string(),
+        "exitedreviewmode" => "Exit review mode".to_string(),
+        "contextcompaction" => "Context compaction".to_string(),
+        _ => format!("Codex {item_type}"),
+    };
+
+    let status = codex_tool_status(item.get("status"), completed);
+    let arguments = codex_tool_arguments(item, normalized_type);
+    let result = completed.then(|| codex_tool_result(item, normalized_type));
+
+    Ok(TypedProviderEvent::ToolCall {
+        id: Some(id.to_string()),
+        name,
+        status,
+        arguments,
+        result,
+    })
+}
+
+fn codex_tool_status(status: Option<&Value>, completed: bool) -> AgentRuntimeToolStatus {
+    let status = status
+        .and_then(Value::as_str)
+        .unwrap_or(if completed { "completed" } else { "running" })
+        .replace(['_', '-'], "")
+        .to_ascii_lowercase();
+    match status.as_str() {
+        "completed" | "success" | "succeeded" => AgentRuntimeToolStatus::Succeeded,
+        "failed" | "error" => AgentRuntimeToolStatus::Failed,
+        "declined" | "denied" | "cancelled" | "canceled" => AgentRuntimeToolStatus::Denied,
+        "timedout" => AgentRuntimeToolStatus::TimedOut,
+        "waitingapproval" | "pendingapproval" => AgentRuntimeToolStatus::WaitingApproval,
+        "approved" => AgentRuntimeToolStatus::Approved,
+        "created" | "pending" => AgentRuntimeToolStatus::Created,
+        _ => AgentRuntimeToolStatus::Running,
+    }
+}
+
+fn codex_tool_arguments(item: &Value, normalized_type: &str) -> Option<Value> {
+    let fields: &[&str] = match normalized_type {
+        "commandexecution" => &["command", "cwd", "source", "commandActions"],
+        "filechange" => &["changes"],
+        "mcptoolcall" => &["server", "tool", "arguments", "appContext", "pluginId"],
+        "dynamictoolcall" => &["namespace", "tool", "arguments"],
+        "collabagenttoolcall" => &[
+            "tool",
+            "senderThreadId",
+            "receiverThreadIds",
+            "prompt",
+            "model",
+            "reasoningEffort",
+        ],
+        "subagentactivity" => &["kind", "agentThreadId", "agentPath"],
+        "websearch" => &["query", "action"],
+        "imageview" => &["path"],
+        "sleep" => &["durationMs"],
+        "imagegeneration" => &["prompt", "quality", "size"],
+        "enteredreviewmode" | "exitedreviewmode" => &["review"],
+        "contextcompaction" => &[],
+        _ => return Some(item.clone()),
+    };
+    Some(codex_object_fields(item, fields))
+}
+
+fn codex_tool_result(item: &Value, normalized_type: &str) -> Value {
+    let fields: &[&str] = match normalized_type {
+        "commandexecution" => &["aggregatedOutput", "exitCode", "durationMs"],
+        "filechange" => &["status"],
+        "mcptoolcall" => &["result", "error", "durationMs"],
+        "dynamictoolcall" => &["contentItems", "success", "durationMs"],
+        "collabagenttoolcall" => &["status", "receiverThreadIds", "agentsStates"],
+        "subagentactivity" => &["kind"],
+        "websearch" => &["results"],
+        "imageview" | "sleep" | "enteredreviewmode" | "exitedreviewmode" | "contextcompaction" => {
+            &[]
+        }
+        "imagegeneration" => &["result", "output", "path"],
+        _ => return item.clone(),
+    };
+    codex_object_fields(item, fields)
+}
+
+fn codex_object_fields(value: &Value, fields: &[&str]) -> Value {
+    let mut selected = serde_json::Map::new();
+    for field in fields {
+        if let Some(value) = value.get(*field) {
+            selected.insert((*field).to_string(), value.clone());
+        }
+    }
+    Value::Object(selected)
+}
+
+fn codex_u64(value: &Value, fields: &[&str]) -> u64 {
+    codex_optional_u64(value, fields).unwrap_or(0)
+}
+
+fn codex_optional_u64(value: &Value, fields: &[&str]) -> Option<u64> {
+    fields
+        .iter()
+        .find_map(|field| value.get(*field))
+        .and_then(Value::as_u64)
+}
+
 fn map_typed_event(
     provider: DirectProvider,
     event: &DecodedProviderEvent,
@@ -991,12 +1288,18 @@ fn map_typed_event(
             },
         },
         TypedProviderEvent::Message {
+            provider_message_id,
             role,
             content,
             final_output,
         } => AgentEventPayload::Message {
             message: crate::runtime::CanonicalMessage {
-                message_id: event_id(manifest.run_attempt_id, event.raw.sequence),
+                message_id: provider_message_id
+                    .as_deref()
+                    .map(|message_id| {
+                        canonical_provider_message_id(manifest.run_attempt_id, message_id)
+                    })
+                    .unwrap_or_else(|| event_id(manifest.run_attempt_id, event.raw.sequence)),
                 role: *role,
                 content: content.clone(),
             },
@@ -1095,6 +1398,18 @@ fn event_id(run_attempt_id: Uuid, sequence: u64) -> Uuid {
     Uuid::from_bytes(bytes)
 }
 
+fn canonical_provider_message_id(run_attempt_id: Uuid, provider_message_id: &str) -> Uuid {
+    let mut hasher = Sha256::new();
+    hasher.update(run_attempt_id.as_bytes());
+    hasher.update(b"provider-message:");
+    hasher.update(provider_message_id.as_bytes());
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&hasher.finalize()[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x50;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Uuid::from_bytes(bytes)
+}
+
 /// Serialize one NDJSON request without appending a second frame or accepting
 /// an embedded SDK.  Callers write the returned bytes directly to `omp` stdin.
 pub fn encode_stdio_rpc(request: &Value) -> Result<Vec<u8>, serde_json::Error> {
@@ -1106,6 +1421,7 @@ pub fn encode_stdio_rpc(request: &Value) -> Result<Vec<u8>, serde_json::Error> {
 #[cfg(test)]
 mod tests {
     use chrono::DateTime;
+    use serde_json::json;
 
     use super::*;
     use crate::{
@@ -1116,8 +1432,12 @@ mod tests {
     };
 
     fn frame(provider: DirectProvider, payload: Value) -> NativeAuditFrame {
+        frame_at(provider, 1, payload)
+    }
+
+    fn frame_at(provider: DirectProvider, sequence: u64, payload: Value) -> NativeAuditFrame {
         NativeAuditFrame::from_bytes(
-            1,
+            sequence,
             DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
             crate::runtime::NativeAuditDirection::Output,
             NativeAuditChannel::Stdout,
@@ -1329,6 +1649,286 @@ mod tests {
                 ))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn maps_codex_app_server_stream_to_one_final_assistant_message() {
+        let provider = DirectProvider::Codex;
+        let manifest = fixture_manifest(provider);
+        let delta = provider
+            .decode_native_frame(&frame_at(
+                provider,
+                1,
+                serde_json::json!({
+                    "method": "item/agentMessage/delta",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "itemId": "message-1",
+                        "delta": "Done"
+                    },
+                    "emittedAtMs": 1_787_827_905_271_i64
+                }),
+            ))
+            .unwrap();
+        let completed = provider
+            .decode_native_frame(&frame_at(
+                provider,
+                2,
+                serde_json::json!({
+                    "method": "item/completed",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "item": {
+                            "type": "agentMessage",
+                            "id": "message-1",
+                            "text": "Done",
+                            "phase": "final_answer",
+                            "delivery": null
+                        }
+                    },
+                    "emittedAtMs": 1_787_827_905_271_i64
+                }),
+            ))
+            .unwrap();
+
+        let delta = provider.map_provider_event(&delta, &manifest).unwrap();
+        let completed = provider.map_provider_event(&completed, &manifest).unwrap();
+        let (
+            AgentEventPayload::Message {
+                message: delta_message,
+                final_output: delta_final,
+            },
+            AgentEventPayload::Message {
+                message: completed_message,
+                final_output: completed_final,
+            },
+        ) = (&delta[0].payload, &completed[0].payload)
+        else {
+            panic!("Codex agent message events must map to canonical messages");
+        };
+
+        assert_eq!(delta_message.message_id, completed_message.message_id);
+        assert_eq!(delta_message.content, "Done");
+        assert_eq!(completed_message.content, "Done");
+        assert!(!delta_final);
+        assert!(*completed_final);
+    }
+
+    #[test]
+    fn maps_codex_published_reasoning_summary_without_private_content() {
+        let event = DirectProvider::Codex
+            .decode_native_frame(&frame(
+                DirectProvider::Codex,
+                serde_json::json!({
+                    "method": "item/completed",
+                    "params": {
+                        "item": {
+                            "type": "reasoning",
+                            "id": "reasoning-1",
+                            "summary": ["Inspecting the project", "Checking the tests"],
+                            "content": ["provider-private reasoning must not be projected"]
+                        }
+                    }
+                }),
+            ))
+            .unwrap();
+
+        assert!(matches!(
+            event.typed,
+            TypedProviderEvent::Thinking(ref content)
+                if content == "Inspecting the project\n\nChecking the tests"
+                    && !content.contains("provider-private")
+        ));
+    }
+
+    #[test]
+    fn maps_codex_command_lifecycle_with_output() {
+        let provider = DirectProvider::Codex;
+        let started = provider
+            .decode_native_frame(&frame_at(
+                provider,
+                1,
+                serde_json::json!({
+                    "method": "item/started",
+                    "params": {
+                        "item": {
+                            "type": "commandExecution",
+                            "id": "command-1",
+                            "command": "pwd",
+                            "cwd": "/workspace",
+                            "status": "inProgress",
+                            "commandActions": []
+                        }
+                    }
+                }),
+            ))
+            .unwrap();
+        let completed = provider
+            .decode_native_frame(&frame_at(
+                provider,
+                2,
+                serde_json::json!({
+                    "method": "item/completed",
+                    "params": {
+                        "item": {
+                            "type": "commandExecution",
+                            "id": "command-1",
+                            "command": "pwd",
+                            "cwd": "/workspace",
+                            "status": "completed",
+                            "commandActions": [],
+                            "aggregatedOutput": "/workspace\n",
+                            "exitCode": 0,
+                            "durationMs": 12
+                        }
+                    }
+                }),
+            ))
+            .unwrap();
+
+        assert!(matches!(
+            started.typed,
+            TypedProviderEvent::ToolCall {
+                id: Some(ref id),
+                ref name,
+                status: AgentRuntimeToolStatus::Running,
+                ref arguments,
+                result: None,
+            } if id == "command-1"
+                && name == "Shell"
+                && arguments.as_ref().and_then(|value| value.get("command")) == Some(&json!("pwd"))
+        ));
+        assert!(matches!(
+            completed.typed,
+            TypedProviderEvent::ToolCall {
+                id: Some(ref id),
+                status: AgentRuntimeToolStatus::Succeeded,
+                ref result,
+                ..
+            } if id == "command-1"
+                && result.as_ref().and_then(|value| value.get("aggregatedOutput"))
+                    == Some(&json!("/workspace\n"))
+                && result.as_ref().and_then(|value| value.get("exitCode")) == Some(&json!(0))
+        ));
+    }
+
+    #[test]
+    fn maps_codex_web_search_results_and_total_token_usage() {
+        let provider = DirectProvider::Codex;
+        let search = provider
+            .decode_native_frame(&frame_at(
+                provider,
+                1,
+                serde_json::json!({
+                    "method": "item/completed",
+                    "params": {
+                        "item": {
+                            "type": "webSearch",
+                            "id": "search-1",
+                            "query": "Codex app-server",
+                            "action": {"type": "search"},
+                            "results": [{"title": "Docs", "url": "https://example.com"}]
+                        }
+                    }
+                }),
+            ))
+            .unwrap();
+        let usage = provider
+            .decode_native_frame(&frame_at(
+                provider,
+                2,
+                serde_json::json!({
+                    "method": "thread/tokenUsage/updated",
+                    "params": {
+                        "tokenUsage": {
+                            "total": {
+                                "totalTokens": 42,
+                                "inputTokens": 30,
+                                "cachedInputTokens": 10,
+                                "outputTokens": 12,
+                                "reasoningOutputTokens": 4
+                            },
+                            "last": {
+                                "totalTokens": 42,
+                                "inputTokens": 30,
+                                "cachedInputTokens": 10,
+                                "outputTokens": 12,
+                                "reasoningOutputTokens": 4
+                            }
+                        }
+                    }
+                }),
+            ))
+            .unwrap();
+
+        assert!(matches!(
+            search.typed,
+            TypedProviderEvent::ToolCall {
+                id: Some(ref id),
+                ref name,
+                status: AgentRuntimeToolStatus::Succeeded,
+                ref arguments,
+                ref result,
+            } if id == "search-1"
+                && name == "Web search"
+                && arguments.as_ref().and_then(|value| value.get("query"))
+                    == Some(&json!("Codex app-server"))
+                && result.as_ref().and_then(|value| value.get("results"))
+                    .and_then(Value::as_array).is_some_and(|results| results.len() == 1)
+        ));
+        assert!(matches!(
+            usage.typed,
+            TypedProviderEvent::TokenUsage {
+                input_tokens: 30,
+                output_tokens: 12,
+                cached_input_tokens: Some(10),
+            }
+        ));
+    }
+
+    #[test]
+    fn maps_official_codex_jsonl_final_message_and_thread_id() {
+        let provider = DirectProvider::Codex;
+        let thread = provider
+            .decode_native_frame(&frame_at(
+                provider,
+                1,
+                serde_json::json!({
+                    "type": "thread.started",
+                    "thread_id": "thread-jsonl"
+                }),
+            ))
+            .unwrap();
+        assert!(matches!(
+            thread.typed,
+            TypedProviderEvent::SessionObserved(ref id) if id == "thread-jsonl"
+        ));
+
+        let message = provider
+            .decode_native_frame(&frame_at(
+                provider,
+                2,
+                serde_json::json!({
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item-3",
+                        "type": "agent_message",
+                        "text": "Repository summarized."
+                    }
+                }),
+            ))
+            .unwrap();
+        assert!(matches!(
+            message.typed,
+            TypedProviderEvent::Message {
+                provider_message_id: Some(ref id),
+                role: AgentRuntimeMessageRole::Assistant,
+                ref content,
+                final_output: true,
+            } if id == "item-3" && content == "Repository summarized."
+        ));
     }
 
     #[test]
