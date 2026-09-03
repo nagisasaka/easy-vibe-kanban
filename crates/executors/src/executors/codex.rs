@@ -878,12 +878,18 @@ impl Codex {
             );
         }
 
-        if let Some(summary) = &self.model_reasoning_summary {
-            overrides.insert(
-                "model_reasoning_summary".to_string(),
-                Value::String(summary.as_ref().to_string()),
-            );
-        }
+        // The canonical conversation can only display reasoning that Codex
+        // deliberately publishes as a summary. Ask for the provider's safe
+        // automatic summary unless the profile explicitly selects another
+        // mode (including `none`).
+        let summary = self
+            .model_reasoning_summary
+            .as_ref()
+            .unwrap_or(&ReasoningSummary::Auto);
+        overrides.insert(
+            "model_reasoning_summary".to_string(),
+            Value::String(summary.as_ref().to_string()),
+        );
 
         if let Some(format) = &self.model_reasoning_summary_format
             && format != &ReasoningSummaryFormat::None
@@ -1279,8 +1285,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        AskForApproval, Codex, ReasoningEffort, build_chat_input, fallback_models,
-        model_list_response_to_model_infos, resolve_model, resume_params_from,
+        AskForApproval, Codex, ReasoningEffort, ReasoningSummary, build_chat_input,
+        fallback_models, model_list_response_to_model_infos, resolve_model, resume_params_from,
     };
     use crate::{
         actions::SelectedSkill,
@@ -1396,12 +1402,33 @@ mod tests {
     }
 
     #[test]
-    fn missing_reasoning_override_omits_model_reasoning_effort() {
+    fn missing_reasoning_override_enables_safe_automatic_summaries() {
         let executor = test_executor();
 
-        let overrides = executor.build_config_overrides();
+        let overrides = executor
+            .build_config_overrides()
+            .expect("automatic summary should produce a config override");
 
-        assert_eq!(overrides, None);
+        assert_eq!(overrides.get("model_reasoning_effort"), None);
+        assert_eq!(
+            overrides.get("model_reasoning_summary"),
+            Some(&json!("auto"))
+        );
+    }
+
+    #[test]
+    fn explicit_none_disables_reasoning_summaries() {
+        let mut executor = test_executor();
+        executor.model_reasoning_summary = Some(ReasoningSummary::None);
+
+        let overrides = executor
+            .build_config_overrides()
+            .expect("explicit summary setting should produce a config override");
+
+        assert_eq!(
+            overrides.get("model_reasoning_summary"),
+            Some(&json!("none"))
+        );
     }
 
     #[test]
