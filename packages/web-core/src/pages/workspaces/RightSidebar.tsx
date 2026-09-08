@@ -6,6 +6,7 @@ import { PreviewControlsContainer } from './PreviewControlsContainer';
 import { GitPanelContainer } from './GitPanelContainer';
 import { TerminalPanelContainer } from '@/shared/components/TerminalPanelContainer';
 import { WorkspaceNotesContainer } from './WorkspaceNotesContainer';
+import { WorkspaceWikiPanel } from '@/features/wiki/ui/WorkspaceWikiPanel';
 import { useDiffs } from '@/shared/stores/useWorkspaceDiffStore';
 import { ArrowsOutSimpleIcon } from '@phosphor-icons/react';
 import { useLogsPanel } from '@/shared/hooks/useLogsPanel';
@@ -85,6 +86,7 @@ export const RightSidebar = memo(function RightSidebar({
     PERSIST_KEYS.notesSection,
     false
   );
+  const [wikiExpanded] = usePersistedExpanded(PERSIST_KEYS.wikiSection, false);
 
   const hasUpperContent =
     rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.CHANGES ||
@@ -126,6 +128,20 @@ export const RightSidebar = memo(function RightSidebar({
         expanded: terminalExpanded,
         content: <TerminalPanelContainer />,
         actions: [{ icon: ArrowsOutSimpleIcon, onClick: expandTerminal }],
+      },
+      {
+        title: 'LLM Wiki',
+        persistKey: PERSIST_KEYS.wikiSection,
+        visible: Boolean(selectedWorkspace),
+        expanded: wikiExpanded,
+        content: selectedWorkspace ? (
+          <WorkspaceWikiPanel
+            key={selectedWorkspace.id}
+            workspace={selectedWorkspace}
+            repos={repos}
+          />
+        ) : null,
+        actions: [],
       },
       {
         title: t('common:sections.notes'),
@@ -224,6 +240,7 @@ export const RightSidebar = memo(function RightSidebar({
     gitExpanded,
     terminalExpanded,
     notesExpanded,
+    wikiExpanded,
     changesExpanded,
     filesExpanded,
     processesExpanded,

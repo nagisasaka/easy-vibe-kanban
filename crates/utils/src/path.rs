@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use crate::assets::asset_dir;
+
 /// Directory name for storing attachments in worktrees
 pub const VIBE_ATTACHMENTS_DIR: &str = ".vibe-attachments";
 
@@ -124,6 +126,16 @@ pub fn get_vibe_kanban_temp_dir() -> std::path::PathBuf {
         // Windows and other platforms: use temp dir with vibe-kanban subdirectory
         std::env::temp_dir().join(dir_name)
     }
+}
+
+/// User-editable card pipeline definitions seeded by the application.
+pub fn pipelines_dir() -> PathBuf {
+    asset_dir().join("pipelines")
+}
+
+/// Application-managed Codex skills bundled with LLM Wiki.
+pub fn llm_wiki_skills_dir() -> PathBuf {
+    asset_dir().join("skills").join("llm-wiki")
 }
 
 /// Expand leading ~ to user's home directory.

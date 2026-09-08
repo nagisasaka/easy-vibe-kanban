@@ -109,6 +109,8 @@ import {
   AgentGarageEntry,
   ResumableAgentSession,
   NativeSessionDiscoveryState,
+  Pipeline,
+  WorkspaceWikiSnapshot,
 } from 'shared/types';
 import type { Project as RemoteProject } from 'shared/remote-types';
 import type { WorkspaceWithSession } from '@/shared/types/attempt';
@@ -650,6 +652,37 @@ export const workspacesApi = {
       query.set('repo_id', params.repoId);
       query.set('path', params.path);
       return `/api/workspaces/${workspaceId}/files/raw?${query.toString()}`;
+    },
+  },
+
+  wiki: {
+    snapshot: async (
+      workspaceId: string,
+      repoId: string
+    ): Promise<WorkspaceWikiSnapshot> => {
+      const query = new URLSearchParams({ repo_id: repoId });
+      const response = await makeRequest(
+        `/api/workspaces/${workspaceId}/wiki/?${query.toString()}`
+      );
+      return handleApiResponse<WorkspaceWikiSnapshot>(response);
+    },
+
+    updateConfig: async (
+      workspaceId: string,
+      repoId: string,
+      outputLanguage: string
+    ): Promise<WorkspaceWikiSnapshot> => {
+      const response = await makeRequest(
+        `/api/workspaces/${workspaceId}/wiki/config`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            repo_id: repoId,
+            output_language: outputLanguage,
+          }),
+        }
+      );
+      return handleApiResponse<WorkspaceWikiSnapshot>(response);
     },
   },
 
@@ -1845,6 +1878,13 @@ export const releasesApi = {
     const response = await makeRequest('/api/releases');
     const result = await handleApiResponse<ReleasesResponse>(response);
     return result.releases;
+  },
+};
+
+export const pipelinesApi = {
+  list: async (): Promise<Pipeline[]> => {
+    const response = await makeRequest('/api/pipelines');
+    return handleApiResponse<Pipeline[]>(response);
   },
 };
 

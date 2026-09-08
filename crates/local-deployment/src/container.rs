@@ -201,6 +201,12 @@ impl LocalContainerService {
                 repo_name
             )),
             WorkspaceError::PartialCreation(msg) => ContainerError::Other(anyhow!(msg)),
+            WorkspaceError::ActiveAgentRuns { count } => {
+                ContainerError::Other(anyhow!("Workspace has {count} active agent run(s)"))
+            }
+            WorkspaceError::OrchestrationLinkedAgentRuns { count } => ContainerError::Other(
+                anyhow!("Workspace has {count} agent run(s) referenced by orchestration"),
+            ),
         }
     }
 

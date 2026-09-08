@@ -133,6 +133,14 @@ impl From<WorkspaceManagerError> for ApiError {
                 ApiError::BadRequest("Workspace has no repositories configured".to_string())
             }
             WorkspaceManagerError::PartialCreation(msg) => ApiError::Conflict(msg),
+            WorkspaceManagerError::ActiveAgentRuns { count } => ApiError::Conflict(format!(
+                "Workspace has {count} active agent run(s). Cancel them before deleting it."
+            )),
+            WorkspaceManagerError::OrchestrationLinkedAgentRuns { count } => {
+                ApiError::Conflict(format!(
+                    "Workspace has {count} agent run(s) referenced by orchestration and cannot be deleted."
+                ))
+            }
         }
     }
 }
@@ -611,6 +619,31 @@ impl From<RelayApiError> for ApiError {
     fn from(err: RelayApiError) -> Self {
         tracing::warn!(%err, "Relay transport failed");
         ApiError::BadGateway(err.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{http::StatusCode, response::IntoResponse};
+    use workspace_manager::WorkspaceError as WorkspaceManagerError;
+
+    use super::ApiError;
+
+    #[test]
+    fn active_agent_runs_map_to_conflict() {
+        let response =
+            ApiError::from(WorkspaceManagerError::ActiveAgentRuns { count: 2 }).into_response();
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn orchestration_links_map_to_conflict() {
+        let response =
+            ApiError::from(WorkspaceManagerError::OrchestrationLinkedAgentRuns { count: 1 })
+                .into_response();
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
     }
 }
 

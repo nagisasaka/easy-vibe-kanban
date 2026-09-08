@@ -11,6 +11,7 @@ pub mod links;
 pub mod pr;
 pub mod repos;
 pub mod streams;
+pub mod wiki;
 pub mod workspace_summary;
 
 use axum::{
@@ -37,6 +38,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .nest("/repos", repos::router())
         .nest("/pull-requests", pr::router())
         .nest("/files", files::router())
+        .nest("/wiki", wiki::router())
         .layer(from_fn_with_state(
             deployment.clone(),
             load_workspace_middleware,

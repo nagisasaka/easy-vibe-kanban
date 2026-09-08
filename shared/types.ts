@@ -349,6 +349,10 @@ export type PullRequestInfo = { number: bigint, url: string, status: MergeStatus
 
 export type ApprovalInfo = { approval_id: string, tool_name: string, execution_process_id: string, is_question: boolean, created_at: string, timeout_at: string, };
 
+export type Pipeline = { id: string, name: string, description: string | null, stages: Array<PipelineStep>, };
+
+export type PipelineStep = { id: string, label: string, prompt_fragment: string, default_enabled: boolean, heavy: boolean, };
+
 export type ApprovalStatus = { "status": "pending" } | { "status": "approved" } | { "status": "denied", reason?: string, } | { "status": "timed_out" };
 
 export type QuestionAnswer = { question: string, answer: Array<string>, };
@@ -552,6 +556,22 @@ export type WorkspaceFileDirectoryResponse = { workspace_id: string, repo_id: st
 export type WorkspaceFileContentKind = "text" | "image" | "binary" | "unsupported";
 
 export type WorkspaceFileContent = { workspace_id: string, repo_id: string, repo_name: string, path: string, name: string, kind: WorkspaceFileContentKind, mime_type: string | null, language: string | null, content: string | null, raw_url: string | null, size_bytes: bigint, truncated: boolean, };
+
+export type WikiConfig = { version: number, output_language: string, };
+
+export type WikiPageMetadata = { schema_version: number, title: string, language: string, summary: string, tags: Array<string>, sources: Array<string>, repos: Array<string>, created: string, updated: string, };
+
+export type WikiPage = { path: string, metadata: WikiPageMetadata | null, content: string, };
+
+export type WikiSnapshot = { exists: boolean, config: WikiConfig | null, index: WikiPage | null, pages: Array<WikiPage>, };
+
+export type WorkspaceWikiSnapshot = { workspace_id: string, repo_id: string, repo_name: string, repo_display_name: string, source: WikiSnapshotSource, wiki: WikiSnapshot, source_links: Array<WikiSourceLink>, };
+
+export type WikiSourceLink = { source: string, project_id: string, issue_id: string, };
+
+export type WikiSnapshotSource = "current_workspace";
+
+export type UpdateWikiConfigRequest = { repo_id: string, output_language: string, };
 
 export type WorkspaceRepoInput = { repo_id: string, target_branch: string, };
 

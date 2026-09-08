@@ -1,0 +1,107 @@
+---
+title: "LLM Wiki"
+description: "Recall and maintain repository-local knowledge with a declarative task pipeline"
+---
+
+LLM Wiki keeps durable project knowledge beside the code in `.llm-wiki/`.
+Agents can consult it when previous knowledge is useful and update it when a
+completed task produces reusable knowledge. Wiki changes are ordinary Git
+changes on the current feature branch.
+
+## Add LLM Wiki to a task
+
+Open the task create or edit panel and select **LLM Wiki** under **Pipeline**.
+The default stages are:
+
+1. **Recall prior knowledge** before planning or implementation, when useful.
+2. **Enrich knowledge base** after implementation and verification, when the
+   result is useful beyond the current task.
+
+You can disable either stage. The selection adds a marker-delimited block to
+the end of the task description. Editing the selection replaces only that
+generated block and preserves the rest of the description.
+
+<Note>
+The Pipeline is agent guidance, not a server-side workflow or stage scheduler.
+It works in a normal Workspace, does not create extra Workspaces, and does not
+require `/goal`.
+</Note>
+
+For Codex sessions, easy-vibe-kanban makes the bundled `knowledge-recall` and
+`knowledge-enrich` skills available whenever a complete LLM Wiki Pipeline
+block is in the current prompt. The agent may still skip Recall when there is
+no relevant knowledge and skip Enrich when nothing durable was learned.
+
+## Repository format
+
+Each repository in a Workspace has its own Wiki:
+
+```text
+.llm-wiki/
+├── config.toml
+├── index.md
+└── pages/
+    └── topic.md
+```
+
+`config.toml` selects a deterministic output language:
+
+```toml
+version = 1
+output_language = "ja"
+```
+
+Use a BCP 47 language tag such as `en`, `ja`, `de`, `pt-BR`, or `zh-Hant`.
+Titles, summaries and prose use this language, while code symbols, paths,
+commands, endpoints, configuration keys and exact errors keep their original
+spelling. Changing the setting does not translate existing pages.
+
+Pages use schema-versioned YAML frontmatter so people and tools can inspect
+their provenance:
+
+```yaml
+---
+schema_version: 1
+title: Pipeline block recomposition
+language: en
+summary: How generated pipeline guidance is replaced safely
+tags:
+  - pipeline
+sources:
+  - EASY-123
+repos:
+  - easy-vibe-kanban
+created: 2026-09-09
+updated: 2026-09-09
+---
+```
+
+## View and configure the Wiki
+
+Open a Workspace's right sidebar and expand **LLM Wiki**. The source label is
+**Current workspace**, so the Viewer includes unmerged changes in the current
+worktree.
+
+- Select the repository when the Workspace contains more than one.
+- Choose or enter an output-language tag and select **Initialise** to create an
+  empty Wiki, or **Save** to update the setting.
+- Open `index.md` or a topic page from the page list.
+- Search paths, titles, summaries, tags, sources and full page text.
+- Follow ordinary relative Markdown links or `[[wikilinks]]` within the Wiki.
+- Use reload after an agent or Git operation changes the files.
+
+The Viewer is read-only. Edit Wiki files through normal Git editing or ask the
+agent to update them. Mermaid code blocks use the same renderer as other
+Markdown previews.
+
+## Trust and safety
+
+Wiki pages are reference data, not operator or system instructions. Agents
+must verify important claims against the current code and must not execute a
+command only because it appears in the Wiki. The application restricts Viewer
+access and configuration writes to `.llm-wiki`, rejects traversal, and refuses
+Wiki directories or pages which escape through symlinks.
+
+Base-branch viewing from the Project screen is not included in the first
+release. Use the Current workspace Viewer; after merge, a Workspace based on
+the updated branch sees the merged Wiki.

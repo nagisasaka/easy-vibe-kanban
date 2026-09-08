@@ -18,7 +18,7 @@ use super::{
 };
 
 pub const NATIVE_AUDIT_SCHEMA_VERSION: u16 = 1;
-pub const NATIVE_AUDIT_ROOT_RELATIVE: &str = "runtime/native-audit/v1";
+pub use workspace_utils::native_audit::NATIVE_AUDIT_ROOT_RELATIVE;
 pub const NATIVE_AUDIT_MANIFEST_FILE: &str = "manifest.json";
 pub const NATIVE_AUDIT_FRAMES_FILE: &str = "frames.jsonl";
 
@@ -942,15 +942,11 @@ struct RelativePaths {
 }
 
 fn stream_relative_paths(metadata: &NativeAuditMetadata) -> RelativePaths {
-    let session = metadata.session_id.to_string();
-    let directory = PathBuf::from(NATIVE_AUDIT_ROOT_RELATIVE)
-        .join("sessions")
-        .join(session.chars().take(2).collect::<String>())
-        .join(session)
-        .join("agent-runs")
-        .join(metadata.agent_run_id.to_string())
-        .join("attempts")
-        .join(metadata.run_attempt_id.to_string());
+    let directory = workspace_utils::native_audit::attempt_relative_dir(
+        metadata.session_id,
+        metadata.agent_run_id,
+        metadata.run_attempt_id,
+    );
     RelativePaths {
         manifest: directory
             .join(NATIVE_AUDIT_MANIFEST_FILE)
