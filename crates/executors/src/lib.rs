@@ -6,6 +6,7 @@ pub mod command;
 pub mod env;
 pub mod executor_discovery;
 pub mod executors;
+pub mod knowledge_skills;
 pub mod logs;
 pub mod mcp_config;
 pub mod model_selector;

@@ -51,6 +51,7 @@
           "workspaces/repositories",
           "workspaces/sessions",
           "workspaces/chat-interface",
+          "workspaces/llm-wiki",
           "workspaces/slash-commands",
           "workspaces/interface",
           "workspaces/command-bar",

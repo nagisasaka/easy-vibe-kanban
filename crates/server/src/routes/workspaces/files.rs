@@ -118,9 +118,9 @@ struct NormalizedWorkspacePath {
     display_path: String,
 }
 
-struct ResolvedWorkspaceRepo {
-    repo: Repo,
-    canonical_repo_root: PathBuf,
+pub(super) struct ResolvedWorkspaceRepo {
+    pub(super) repo: Repo,
+    pub(super) canonical_repo_root: PathBuf,
 }
 
 pub fn router() -> Router<DeploymentImpl> {
@@ -292,7 +292,7 @@ pub async fn serve_workspace_file_raw(
         .map_err(|e| ApiError::File(FileError::ResponseBuildError(e.to_string())))
 }
 
-async fn resolve_workspace_repo_root(
+pub(super) async fn resolve_workspace_repo_root(
     deployment: &DeploymentImpl,
     workspace: &Workspace,
     repo_id: Uuid,

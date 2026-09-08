@@ -8,7 +8,11 @@ use crate::{assets::asset_dir, log_msg::LogMsg};
 pub const EXECUTION_LOGS_DIRNAME: &str = "sessions";
 
 pub fn process_logs_session_dir(session_id: Uuid) -> PathBuf {
-    resolve_process_logs_session_dir(&asset_dir(), session_id)
+    process_logs_session_dir_in_root(&asset_dir(), session_id)
+}
+
+pub fn process_logs_session_dir_in_root(root: &Path, session_id: Uuid) -> PathBuf {
+    resolve_process_logs_session_dir(root, session_id)
 }
 
 pub fn process_log_file_path(session_id: Uuid, process_id: Uuid) -> PathBuf {

@@ -133,7 +133,7 @@ export default defineConfig({
     port: parseInt(process.env.FRONTEND_PORT || '3000'),
     proxy: {
       '/api': {
-        target: `http://localhost:${process.env.BACKEND_PORT || '3001'}`,
+        target: `http://127.0.0.1:${process.env.BACKEND_PORT || '3001'}`,
         // Keep the browser-facing Host header so the backend origin guard sees
         // the proxied request as same-origin with the Vite dev server.
         changeOrigin: false,

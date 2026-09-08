@@ -1,0 +1,330 @@
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent,
+} from 'react';
+import type {
+  RepoWithTargetBranch,
+  WikiPage,
+  Workspace,
+  WorkspaceWikiSnapshot,
+} from 'shared/types';
+import { ArrowClockwiseIcon, BookOpenIcon } from '@phosphor-icons/react';
+import { workspacesApi } from '@/shared/lib/api';
+import { MarkdownPreview } from '@/shared/components/MarkdownPreview';
+import { getResolvedTheme, useTheme } from '@/shared/hooks/useTheme';
+import {
+  allWikiPages,
+  expandWikiLinks,
+  pageTitle,
+  resolveWikiHref,
+  searchWikiPages,
+  wikiRepositoryOptions,
+} from '../model/wikiNavigation';
+
+interface WorkspaceWikiPanelProps {
+  workspace: Workspace;
+  repos: RepoWithTargetBranch[];
+}
+
+const LANGUAGE_OPTIONS = [
+  ['en', 'English'],
+  ['ja', '日本語'],
+  ['de', 'Deutsch'],
+  ['es', 'Español'],
+  ['fr', 'Français'],
+  ['ko', '한국어'],
+  ['pt-BR', 'Português (Brasil)'],
+  ['zh-Hans', '简体中文'],
+  ['zh-Hant', '繁體中文'],
+] as const;
+
+export function WorkspaceWikiPanel({
+  workspace,
+  repos,
+}: WorkspaceWikiPanelProps) {
+  const { theme } = useTheme();
+  const resolvedTheme = getResolvedTheme(theme);
+  const repositoryOptions = useMemo(
+    () => wikiRepositoryOptions(workspace, repos),
+    [repos, workspace]
+  );
+  const [repoId, setRepoId] = useState(repositoryOptions[0]?.id ?? '');
+  const [snapshot, setSnapshot] = useState<WorkspaceWikiSnapshot | null>(null);
+  const [selectedPath, setSelectedPath] = useState('index.md');
+  const [query, setQuery] = useState('');
+  const [language, setLanguage] = useState('en');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!repositoryOptions.some((repo) => repo.id === repoId)) {
+      setRepoId(repositoryOptions[0]?.id ?? '');
+    }
+  }, [repoId, repositoryOptions]);
+
+  const load = useCallback(async () => {
+    if (!repoId) {
+      setSnapshot(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const next = await workspacesApi.wiki.snapshot(workspace.id, repoId);
+      setSnapshot(next);
+      setLanguage(next.wiki.config?.output_language ?? 'en');
+      const paths = new Set(allWikiPages(next.wiki).map((page) => page.path));
+      setSelectedPath((current) =>
+        paths.has(current)
+          ? current
+          : (next.wiki.index?.path ?? next.wiki.pages[0]?.path ?? 'index.md')
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : 'Unable to load Wiki'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [repoId, workspace.id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const pages = useMemo(
+    () => (snapshot ? searchWikiPages(snapshot.wiki, query) : []),
+    [query, snapshot]
+  );
+  const allPages = useMemo(
+    () => (snapshot ? allWikiPages(snapshot.wiki) : []),
+    [snapshot]
+  );
+  const availablePaths = useMemo(
+    () => new Set(allPages.map((page) => page.path)),
+    [allPages]
+  );
+  const selectedPage =
+    allPages.find((page) => page.path === selectedPath) ?? null;
+
+  const saveLanguage = async () => {
+    if (!repoId) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const next = await workspacesApi.wiki.updateConfig(
+        workspace.id,
+        repoId,
+        language.trim()
+      );
+      setSnapshot(next);
+      setSelectedPath(
+        next.wiki.index?.path ?? next.wiki.pages[0]?.path ?? 'index.md'
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : 'Unable to update Wiki'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleMarkdownClick = (event: MouseEvent<HTMLDivElement>) => {
+    const anchor = (event.target as HTMLElement).closest('a');
+    const href = anchor?.getAttribute('href');
+    if (!href || !selectedPage) return;
+    const target = resolveWikiHref(selectedPage.path, href, availablePaths);
+    if (!target) return;
+    event.preventDefault();
+    setSelectedPath(target);
+  };
+
+  return (
+    <div className="flex min-h-0 w-full flex-col bg-secondary text-sm">
+      <div className="space-y-half border-b p-base">
+        <div className="flex items-center justify-between gap-half">
+          <span className="rounded bg-panel px-half py-[2px] text-xs text-low">
+            Current workspace
+          </span>
+          <button
+            type="button"
+            title="Reload Wiki files"
+            aria-label="Reload Wiki files"
+            disabled={loading}
+            onClick={() => void load()}
+            className="rounded p-half text-low hover:bg-panel hover:text-high disabled:opacity-50"
+          >
+            <ArrowClockwiseIcon className="size-icon-sm" />
+          </button>
+        </div>
+        <select
+          aria-label="Wiki repository"
+          value={repoId}
+          onChange={(event) => {
+            setRepoId(event.target.value);
+            setSelectedPath('index.md');
+            setQuery('');
+          }}
+          className="w-full rounded border bg-primary px-half py-half text-high"
+        >
+          {repositoryOptions.map((repo) => (
+            <option key={repo.id} value={repo.id}>
+              {repo.name}
+            </option>
+          ))}
+        </select>
+        <div className="flex gap-half">
+          <input
+            list="llm-wiki-language-options"
+            aria-label="Wiki output language"
+            value={language}
+            onChange={(event) => setLanguage(event.target.value)}
+            placeholder="BCP 47 language tag"
+            className="min-w-0 flex-1 rounded border bg-primary px-half py-half text-high"
+          />
+          <datalist id="llm-wiki-language-options">
+            {LANGUAGE_OPTIONS.map(([code, label]) => (
+              <option key={code} value={code} label={label} />
+            ))}
+          </datalist>
+          <button
+            type="button"
+            disabled={saving || !repoId || !language.trim()}
+            onClick={() => void saveLanguage()}
+            className="rounded bg-brand px-base py-half text-white disabled:opacity-50"
+          >
+            {snapshot?.wiki.exists ? 'Save' : 'Initialise'}
+          </button>
+        </div>
+        <p className="text-xs text-low">
+          Titles and prose use this language. Existing pages are not translated.
+        </p>
+        {snapshot?.wiki.exists && (
+          <input
+            type="search"
+            aria-label="Search Wiki"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search Wiki"
+            className="w-full rounded border bg-primary px-half py-half text-high"
+          />
+        )}
+        {error && <p className="text-xs text-error">{error}</p>}
+      </div>
+
+      {!repoId ? (
+        <EmptyState text="This workspace has no repositories." />
+      ) : loading && !snapshot ? (
+        <EmptyState text="Loading Wiki…" />
+      ) : snapshot && !snapshot.wiki.exists ? (
+        <EmptyState text="No .llm-wiki exists in this repository. Choose an output language and initialise it." />
+      ) : (
+        <div className="grid min-h-[320px] flex-1 grid-cols-[minmax(110px,0.34fr)_minmax(0,1fr)] overflow-hidden">
+          <nav
+            className="overflow-y-auto border-r p-half"
+            aria-label="Wiki pages"
+          >
+            {pages.map((page) => (
+              <button
+                type="button"
+                key={page.path}
+                title={page.path}
+                onClick={() => setSelectedPath(page.path)}
+                className={`mb-[2px] w-full rounded px-half py-half text-left text-xs ${
+                  selectedPath === page.path
+                    ? 'bg-panel text-high'
+                    : 'text-normal hover:bg-panel/70'
+                }`}
+              >
+                <span className="block truncate">{pageTitle(page)}</span>
+              </button>
+            ))}
+            {pages.length === 0 && (
+              <p className="p-half text-xs text-low">No matching pages.</p>
+            )}
+          </nav>
+          <article className="min-w-0 overflow-y-auto p-base">
+            {selectedPage ? (
+              <>
+                {selectedPage.metadata && (
+                  <PageMetadata
+                    page={selectedPage}
+                    sourceLinks={snapshot?.source_links ?? []}
+                  />
+                )}
+                <div onClick={handleMarkdownClick}>
+                  <MarkdownPreview
+                    content={expandWikiLinks(selectedPage.content)}
+                    theme={resolvedTheme}
+                  />
+                </div>
+              </>
+            ) : (
+              <EmptyState text="Select a Wiki page." />
+            )}
+          </article>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="flex min-h-[200px] flex-1 flex-col items-center justify-center gap-half p-base text-center text-low">
+      <BookOpenIcon className="size-icon-lg" />
+      <p className="max-w-xs text-xs">{text}</p>
+    </div>
+  );
+}
+
+function PageMetadata({
+  page,
+  sourceLinks,
+}: {
+  page: WikiPage;
+  sourceLinks: WorkspaceWikiSnapshot['source_links'];
+}) {
+  const metadata = page.metadata;
+  if (!metadata) return null;
+  const links = new Map(sourceLinks.map((link) => [link.source, link]));
+  return (
+    <div className="mb-base space-y-[2px] rounded border bg-panel/50 p-half text-xs text-low">
+      <p className="font-medium text-high">{metadata.title}</p>
+      <p>{metadata.summary}</p>
+      <p>Language: {metadata.language}</p>
+      {metadata.tags.length > 0 && <p>Tags: {metadata.tags.join(', ')}</p>}
+      {metadata.sources.length > 0 && (
+        <p>
+          Sources:{' '}
+          {metadata.sources.map((source, index) => {
+            const link = links.get(source);
+            return (
+              <span key={source}>
+                {index > 0 && ', '}
+                {link ? (
+                  <a
+                    className="text-brand hover:underline"
+                    href={`/projects/${link.project_id}/issues/${link.issue_id}`}
+                  >
+                    {source}
+                  </a>
+                ) : (
+                  source
+                )}
+              </span>
+            );
+          })}
+        </p>
+      )}
+      <p>
+        Updated: {metadata.updated} · {page.path}
+      </p>
+    </div>
+  );
+}

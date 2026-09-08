@@ -1139,6 +1139,8 @@ fn build_chat_input(
     combined_prompt: String,
     selected_skills: Vec<SelectedSkill>,
 ) -> Vec<UserInput> {
+    let selected_skills =
+        crate::knowledge_skills::augment_for_wikillm(&combined_prompt, selected_skills);
     let mut input = selected_skills
         .into_iter()
         .map(|skill| UserInput::Skill {
@@ -1642,5 +1644,21 @@ mod tests {
             }
             other => panic!("expected text input second, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn build_chat_input_makes_wiki_skills_available_for_pipeline_turns() {
+        let prompt = "task\n<!-- vk:pipeline:start -->\n## Pipeline: LLM Wiki\n1. recall\n<!-- vk:pipeline:end -->";
+        let input = build_chat_input(prompt.to_string(), vec![]);
+        assert_eq!(input.len(), 3);
+        assert!(matches!(
+            &input[0],
+            UserInput::Skill { name, .. } if name == "knowledge-recall"
+        ));
+        assert!(matches!(
+            &input[1],
+            UserInput::Skill { name, .. } if name == "knowledge-enrich"
+        ));
+        assert!(matches!(&input[2], UserInput::Text { text, .. } if text == prompt));
     }
 }
