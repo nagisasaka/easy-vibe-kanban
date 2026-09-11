@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use sqlx::{
     ConnectOptions, Error, Pool, Sqlite, SqlitePool,
@@ -8,6 +8,11 @@ use sqlx::{
 use utils::assets::asset_dir;
 
 pub mod models;
+
+/// Long enough to absorb ordinary short writer overlap without making a UI
+/// command appear hung. Semantic compaction and batch transactions remain the
+/// primary contention controls; this is only a bounded final defense.
+const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 async fn run_migrations(pool: &Pool<Sqlite>) -> Result<(), Error> {
     use std::collections::HashSet;
@@ -257,7 +262,8 @@ impl DBService {
         );
         let options = SqliteConnectOptions::from_str(&database_url)?
             .create_if_missing(true)
-            .journal_mode(SqliteJournalMode::Delete);
+            .journal_mode(SqliteJournalMode::Delete)
+            .busy_timeout(SQLITE_BUSY_TIMEOUT);
         let pool = SqlitePool::connect_with(options).await?;
         run_migrations(&pool).await?;
         Ok(DBService { pool })
@@ -271,6 +277,7 @@ impl DBService {
         let options = SqliteConnectOptions::from_str(&database_url)?
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Delete)
+            .busy_timeout(SQLITE_BUSY_TIMEOUT)
             .disable_statement_logging();
         SqlitePoolOptions::new()
             .max_connections(64)
@@ -308,7 +315,8 @@ impl DBService {
         );
         let options = SqliteConnectOptions::from_str(&database_url)?
             .create_if_missing(true)
-            .journal_mode(SqliteJournalMode::Delete);
+            .journal_mode(SqliteJournalMode::Delete)
+            .busy_timeout(SQLITE_BUSY_TIMEOUT);
 
         let pool = if let Some(hook) = after_connect {
             SqlitePoolOptions::new()

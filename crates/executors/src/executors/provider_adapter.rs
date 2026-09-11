@@ -23,12 +23,12 @@ use crate::{
     executors::{CodingAgent, ExecutorError, SpawnedChild},
     profile::{ExecutorConfig, ExecutorConfigs},
     runtime::{
-        AGENT_EVENT_PAYLOAD_VERSION, AGENT_EVENT_SCHEMA_VERSION, AgentEvent, AgentEventEnvelope,
-        AgentEventPayload, AgentRunStatus, AgentRuntimeError, AgentRuntimeErrorKind,
-        AgentRuntimeMessageRole, AgentRuntimeToolStatus, AgentTransportKind, CapabilitySnapshot,
-        CapabilitySnapshotEntry, CapabilitySource, CapabilityState, NativeAuditError,
-        NativeAuditFrame, NativeAuditManifest, NativeAuditReplayMapper, NativeAuditVersionSet,
-        ProviderEvent, ProviderSessionReference,
+        AGENT_EVENT_PAYLOAD_VERSION, AGENT_EVENT_SCHEMA_VERSION, AGENT_LIVE_EVENT_SCHEMA_VERSION,
+        AgentEvent, AgentEventEnvelope, AgentEventPayload, AgentLiveEvent, AgentLiveEventPayload,
+        AgentRunStatus, AgentRuntimeError, AgentRuntimeErrorKind, AgentRuntimeMessageRole,
+        AgentRuntimeToolStatus, AgentTransportKind, CapabilitySnapshot, CapabilitySnapshotEntry,
+        CapabilitySource, CapabilityState, NativeAuditError, NativeAuditFrame, NativeAuditManifest,
+        NativeAuditReplayMapper, NativeAuditVersionSet, ProviderEvent, ProviderSessionReference,
     },
 };
 
@@ -321,7 +321,7 @@ impl DirectProvider {
                 runtime: None,
                 protocol: Some("acp-0.8"),
                 adapter: "gemini-adapter-v1",
-                mapper: "gemini-mapper-v1",
+                mapper: "gemini-mapper-v2",
             },
             Self::Codex => DirectAdapterVersions {
                 executable: "codex",
@@ -330,21 +330,21 @@ impl DirectProvider {
                 runtime: None,
                 protocol: Some("rust-v0.144.1"),
                 adapter: "codex-adapter-v1",
-                mapper: "codex-mapper-v1",
+                mapper: "codex-mapper-v2",
             },
             Self::ClaudeCode => DirectAdapterVersions {
                 executable: "claude",
                 runtime: None,
                 protocol: Some("stream-json-v1"),
                 adapter: "claude-code-adapter-v1",
-                mapper: "claude-code-mapper-v1",
+                mapper: "claude-code-mapper-v2",
             },
             Self::OhMyPi => DirectAdapterVersions {
                 executable: "omp",
                 runtime: None,
                 protocol: Some("stdio-rpc-ndjson-v1"),
                 adapter: "oh-my-pi-adapter-v1",
-                mapper: "oh-my-pi-mapper-v1",
+                mapper: "oh-my-pi-mapper-v2",
             },
         }
     }
@@ -513,7 +513,19 @@ impl DirectProvider {
     }
 
     pub fn mapper(self) -> DirectProviderMapper {
-        DirectProviderMapper { provider: self }
+        DirectProviderMapper {
+            provider: self,
+            semantics: MapperSemantics::V2,
+        }
+    }
+
+    /// Retains deterministic replay for Native Audit bundles written before
+    /// semantic compaction was introduced. New runtime streams always use v2.
+    pub fn legacy_mapper(self) -> DirectProviderMapper {
+        DirectProviderMapper {
+            provider: self,
+            semantics: MapperSemantics::V1,
+        }
     }
 }
 
@@ -658,6 +670,19 @@ pub enum TypedProviderEvent {
         content: String,
         final_output: bool,
     },
+    MessageDelta {
+        provider_message_id: String,
+        role: AgentRuntimeMessageRole,
+        delta: String,
+    },
+    ThinkingDelta {
+        provider_item_id: String,
+        delta: String,
+    },
+    ToolOutputDelta {
+        provider_item_id: String,
+        delta: String,
+    },
     Thinking(String),
     ToolCall {
         id: Option<String>,
@@ -694,6 +719,36 @@ pub enum TypedProviderEvent {
         event_type: String,
         payload: Value,
     },
+    AuditOnly {
+        event_type: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderEventClass {
+    DurableSemantic,
+    LiveOnly,
+    SnapshotOnly,
+    AuditOnly,
+}
+
+impl TypedProviderEvent {
+    pub fn class(&self) -> ProviderEventClass {
+        match self {
+            Self::MessageDelta { .. }
+            | Self::ThinkingDelta { .. }
+            | Self::ToolOutputDelta { .. } => ProviderEventClass::LiveOnly,
+            Self::TokenUsage { .. } => ProviderEventClass::SnapshotOnly,
+            Self::AuditOnly { .. } | Self::Unknown { .. } => ProviderEventClass::AuditOnly,
+            _ => ProviderEventClass::DurableSemantic,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProviderEventProjection {
+    pub durable_events: Vec<AgentEvent>,
+    pub live_events: Vec<AgentLiveEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -702,7 +757,28 @@ pub struct DecodedProviderEvent {
     pub typed: TypedProviderEvent,
 }
 
+#[derive(Debug)]
+pub enum ProviderFrameClassification {
+    Event {
+        class: ProviderEventClass,
+        event: Box<DecodedProviderEvent>,
+    },
+    UnsupportedRequired {
+        error: NativeAuditError,
+    },
+}
+
 impl DirectProvider {
+    pub fn classify_native_frame(self, frame: &NativeAuditFrame) -> ProviderFrameClassification {
+        match self.decode_native_frame(frame) {
+            Ok(event) => ProviderFrameClassification::Event {
+                class: event.typed.class(),
+                event: Box::new(event),
+            },
+            Err(error) => ProviderFrameClassification::UnsupportedRequired { error },
+        }
+    }
+
     pub fn decode_native_frame(
         self,
         frame: &NativeAuditFrame,
@@ -718,7 +794,15 @@ impl DirectProvider {
         event: &DecodedProviderEvent,
         manifest: &NativeAuditManifest,
     ) -> Result<Vec<AgentEvent>, NativeAuditError> {
-        map_typed_event(self, event, manifest)
+        Ok(project_typed_event(self, event, manifest)?.durable_events)
+    }
+
+    pub fn project_provider_event(
+        self,
+        event: &DecodedProviderEvent,
+        manifest: &NativeAuditManifest,
+    ) -> Result<ProviderEventProjection, NativeAuditError> {
+        project_typed_event(self, event, manifest)
     }
 }
 
@@ -727,11 +811,22 @@ impl DirectProvider {
 #[derive(Debug, Clone, Copy)]
 pub struct DirectProviderMapper {
     pub provider: DirectProvider,
+    semantics: MapperSemantics,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MapperSemantics {
+    V1,
+    V2,
 }
 
 impl NativeAuditReplayMapper for DirectProviderMapper {
     fn versions(&self) -> NativeAuditVersionSet {
-        self.provider.version_set()
+        let mut versions = self.provider.version_set();
+        if self.semantics == MapperSemantics::V1 {
+            versions.mapper_version = versions.mapper_version.replace("-v2", "-v1");
+        }
+        versions
     }
 
     fn decode(&self, frame: &NativeAuditFrame) -> Result<ProviderEvent, NativeAuditError> {
@@ -744,14 +839,16 @@ impl NativeAuditReplayMapper for DirectProviderMapper {
         manifest: &NativeAuditManifest,
     ) -> Result<Vec<AgentEvent>, NativeAuditError> {
         let typed = classify_payload(self.provider, event)?;
-        map_typed_event(
-            self.provider,
-            &DecodedProviderEvent {
-                raw: event.clone(),
-                typed,
-            },
-            manifest,
-        )
+        let decoded = DecodedProviderEvent {
+            raw: event.clone(),
+            typed,
+        };
+        match self.semantics {
+            MapperSemantics::V1 => map_typed_event_v1(self.provider, &decoded, manifest),
+            MapperSemantics::V2 => {
+                Ok(project_typed_event(self.provider, &decoded, manifest)?.durable_events)
+            }
+        }
     }
 }
 
@@ -1015,11 +1112,10 @@ fn classify_codex_payload(
                 .and_then(Value::as_str);
             let delta = params.get("delta").and_then(Value::as_str);
             Some(match (message_id, delta) {
-                (Some(message_id), Some(delta)) => Ok(TypedProviderEvent::Message {
-                    provider_message_id: Some(message_id.to_string()),
+                (Some(message_id), Some(delta)) => Ok(TypedProviderEvent::MessageDelta {
+                    provider_message_id: message_id.to_string(),
                     role: AgentRuntimeMessageRole::Assistant,
-                    content: delta.to_string(),
-                    final_output: false,
+                    delta: delta.to_string(),
                 }),
                 _ => Err(NativeAuditError::MalformedFrame(sequence)),
             })
@@ -1027,7 +1123,34 @@ fn classify_codex_payload(
         // Summary deltas remain in the lossless native audit. The completed
         // reasoning item is authoritative, and mapping both would duplicate
         // text because canonical Thinking does not carry a provider item ID.
-        "item/reasoning/summarytextdelta" | "item.reasoning.summary_text_delta" => None,
+        "item/reasoning/summarytextdelta" | "item.reasoning.summary_text_delta" => {
+            let item_id = params
+                .get("itemId")
+                .or_else(|| params.get("item_id"))
+                .and_then(Value::as_str);
+            let delta = params.get("delta").and_then(Value::as_str);
+            Some(match (item_id, delta) {
+                (Some(item_id), Some(delta)) => Ok(TypedProviderEvent::ThinkingDelta {
+                    provider_item_id: item_id.to_string(),
+                    delta: delta.to_string(),
+                }),
+                _ => Err(NativeAuditError::MalformedFrame(sequence)),
+            })
+        }
+        "item/commandexecution/outputdelta" | "item.command_execution.output_delta" => {
+            let item_id = params
+                .get("itemId")
+                .or_else(|| params.get("item_id"))
+                .and_then(Value::as_str);
+            let delta = params.get("delta").and_then(Value::as_str);
+            Some(match (item_id, delta) {
+                (Some(item_id), Some(delta)) => Ok(TypedProviderEvent::ToolOutputDelta {
+                    provider_item_id: item_id.to_string(),
+                    delta: delta.to_string(),
+                }),
+                _ => Err(NativeAuditError::MalformedFrame(sequence)),
+            })
+        }
         "thread/tokenusage/updated" | "thread.token_usage.updated" => {
             let usage = params
                 .pointer("/tokenUsage/total")
@@ -1064,10 +1187,14 @@ fn classify_codex_item(
     match normalized_type.as_str() {
         // User input and hook prompts are already represented elsewhere in the
         // canonical conversation and must not be echoed as assistant output.
-        "usermessage" | "hookprompt" => None,
+        "usermessage" | "hookprompt" => Some(Ok(TypedProviderEvent::AuditOnly {
+            event_type: format!("item/{item_type}"),
+        })),
         "agentmessage" => {
             if !completed {
-                return None;
+                return Some(Ok(TypedProviderEvent::AuditOnly {
+                    event_type: "item/started/agentMessage".to_string(),
+                }));
             }
             let message_id = item.get("id").and_then(Value::as_str);
             let text = item
@@ -1091,7 +1218,9 @@ fn classify_codex_item(
         }
         "reasoning" => {
             if !completed {
-                return None;
+                return Some(Ok(TypedProviderEvent::AuditOnly {
+                    event_type: "item/started/reasoning".to_string(),
+                }));
             }
             let summary = item
                 .get("summary")
@@ -1106,14 +1235,18 @@ fn classify_codex_item(
                 })
                 .unwrap_or_default();
             if summary.is_empty() {
-                None
+                Some(Ok(TypedProviderEvent::AuditOnly {
+                    event_type: "item/completed/reasoning-empty".to_string(),
+                }))
             } else {
                 Some(Ok(TypedProviderEvent::Thinking(summary)))
             }
         }
         "plan" => {
             if !completed {
-                return None;
+                return Some(Ok(TypedProviderEvent::AuditOnly {
+                    event_type: "item/started/plan".to_string(),
+                }));
             }
             Some(
                 item.get("text")
@@ -1268,11 +1401,146 @@ fn codex_optional_u64(value: &Value, fields: &[&str]) -> Option<u64> {
         .and_then(Value::as_u64)
 }
 
-fn map_typed_event(
+fn map_typed_event_v1(
     provider: DirectProvider,
     event: &DecodedProviderEvent,
     manifest: &NativeAuditManifest,
 ) -> Result<Vec<AgentEvent>, NativeAuditError> {
+    let payload = match &event.typed {
+        TypedProviderEvent::MessageDelta {
+            provider_message_id,
+            role,
+            delta,
+        } => AgentEventPayload::Message {
+            message: crate::runtime::CanonicalMessage {
+                message_id: canonical_provider_message_id(
+                    manifest.run_attempt_id,
+                    provider_message_id,
+                ),
+                role: *role,
+                content: delta.clone(),
+            },
+            final_output: false,
+        },
+        TypedProviderEvent::TokenUsage {
+            input_tokens,
+            output_tokens,
+            cached_input_tokens,
+        } => AgentEventPayload::TokenUsage {
+            input_tokens: *input_tokens,
+            output_tokens: *output_tokens,
+            cached_input_tokens: *cached_input_tokens,
+        },
+        TypedProviderEvent::ThinkingDelta { .. }
+        | TypedProviderEvent::ToolOutputDelta { .. }
+        | TypedProviderEvent::AuditOnly { .. }
+        | TypedProviderEvent::Unknown { .. } => {
+            let raw_payload: Value = serde_json::from_slice(&event.raw.payload)
+                .map_err(|_| NativeAuditError::MalformedFrame(event.raw.sequence))?;
+            let provider_event = raw_payload
+                .get("method")
+                .or_else(|| raw_payload.get("type"))
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+                .to_ascii_lowercase();
+            AgentEventPayload::ProviderExtension {
+                provider_namespace: provider.id().to_string(),
+                provider_event,
+                payload: raw_payload,
+            }
+        }
+        _ => return Ok(project_typed_event(provider, event, manifest)?.durable_events),
+    };
+    Ok(vec![AgentEventEnvelope {
+        schema_version: AGENT_EVENT_SCHEMA_VERSION,
+        payload_version: AGENT_EVENT_PAYLOAD_VERSION,
+        event_id: event_id(manifest.run_attempt_id, event.raw.sequence),
+        session_id: manifest.session_id,
+        agent_run_id: manifest.agent_run_id,
+        turn_id: manifest.turn_id,
+        run_attempt_id: manifest.run_attempt_id,
+        run_attempt_number: manifest.run_attempt_number,
+        sequence: event.raw.sequence,
+        correlation_id: event.raw.correlation_id,
+        orchestration_run_id: None,
+        orchestration_node_execution_id: None,
+        timestamp: event.raw.timestamp,
+        native_refs: vec![event.raw.native_ref.clone()],
+        payload,
+    }])
+}
+
+fn project_typed_event(
+    provider: DirectProvider,
+    event: &DecodedProviderEvent,
+    manifest: &NativeAuditManifest,
+) -> Result<ProviderEventProjection, NativeAuditError> {
+    let live_payload = match &event.typed {
+        TypedProviderEvent::MessageDelta {
+            provider_message_id,
+            role,
+            delta,
+        } => Some(AgentLiveEventPayload::MessageDelta {
+            message_id: canonical_provider_message_id(manifest.run_attempt_id, provider_message_id),
+            provider_item_id: provider_message_id.clone(),
+            role: *role,
+            delta: delta.clone(),
+        }),
+        TypedProviderEvent::ThinkingDelta {
+            provider_item_id,
+            delta,
+        } => Some(AgentLiveEventPayload::ThinkingDelta {
+            provider_item_id: provider_item_id.clone(),
+            delta: delta.clone(),
+        }),
+        TypedProviderEvent::ToolOutputDelta {
+            provider_item_id,
+            delta,
+        } => Some(AgentLiveEventPayload::ToolOutputDelta {
+            provider_item_id: provider_item_id.clone(),
+            delta: delta.clone(),
+        }),
+        TypedProviderEvent::TokenUsage {
+            input_tokens,
+            output_tokens,
+            cached_input_tokens,
+        } => Some(AgentLiveEventPayload::TokenUsageSnapshot {
+            input_tokens: *input_tokens,
+            output_tokens: *output_tokens,
+            cached_input_tokens: *cached_input_tokens,
+        }),
+        _ => None,
+    };
+    if let Some(payload) = live_payload {
+        return Ok(ProviderEventProjection {
+            durable_events: Vec::new(),
+            live_events: vec![AgentLiveEvent {
+                schema_version: AGENT_LIVE_EVENT_SCHEMA_VERSION,
+                event_id: event_id(manifest.run_attempt_id, event.raw.sequence),
+                session_id: manifest.session_id,
+                agent_run_id: manifest.agent_run_id,
+                turn_id: manifest.turn_id,
+                run_attempt_id: manifest.run_attempt_id,
+                run_attempt_number: manifest.run_attempt_number,
+                native_sequence: event.raw.sequence,
+                timestamp: event.raw.timestamp,
+                payload,
+            }],
+        });
+    }
+
+    // Known audit-only notifications and unknown optional notifications remain
+    // available losslessly in Native Audit, but have no durable consumer.
+    if matches!(
+        &event.typed,
+        TypedProviderEvent::AuditOnly { .. } | TypedProviderEvent::Unknown { .. }
+    ) {
+        return Ok(ProviderEventProjection {
+            durable_events: Vec::new(),
+            live_events: Vec::new(),
+        });
+    }
+
     let payload = match &event.typed {
         TypedProviderEvent::Lifecycle(status) => {
             AgentEventPayload::LifecycleChanged { status: *status }
@@ -1347,44 +1615,36 @@ fn map_typed_event(
             input_id: id.clone(),
             answered: *answered,
         },
-        TypedProviderEvent::TokenUsage {
-            input_tokens,
-            output_tokens,
-            cached_input_tokens,
-        } => AgentEventPayload::TokenUsage {
-            input_tokens: *input_tokens,
-            output_tokens: *output_tokens,
-            cached_input_tokens: *cached_input_tokens,
-        },
         TypedProviderEvent::Error(error) => AgentEventPayload::Error {
             error: error.clone(),
         },
-        TypedProviderEvent::Unknown {
-            event_type,
-            payload,
-        } => AgentEventPayload::ProviderExtension {
-            provider_namespace: provider.id().to_string(),
-            provider_event: event_type.clone(),
-            payload: payload.clone(),
-        },
+        TypedProviderEvent::MessageDelta { .. }
+        | TypedProviderEvent::ThinkingDelta { .. }
+        | TypedProviderEvent::ToolOutputDelta { .. }
+        | TypedProviderEvent::TokenUsage { .. }
+        | TypedProviderEvent::AuditOnly { .. }
+        | TypedProviderEvent::Unknown { .. } => unreachable!("handled above"),
     };
-    Ok(vec![AgentEventEnvelope {
-        schema_version: AGENT_EVENT_SCHEMA_VERSION,
-        payload_version: AGENT_EVENT_PAYLOAD_VERSION,
-        event_id: event_id(manifest.run_attempt_id, event.raw.sequence),
-        session_id: manifest.session_id,
-        agent_run_id: manifest.agent_run_id,
-        turn_id: manifest.turn_id,
-        run_attempt_id: manifest.run_attempt_id,
-        run_attempt_number: manifest.run_attempt_number,
-        sequence: event.raw.sequence,
-        correlation_id: event.raw.correlation_id,
-        orchestration_run_id: None,
-        orchestration_node_execution_id: None,
-        timestamp: event.raw.timestamp,
-        native_refs: vec![event.raw.native_ref.clone()],
-        payload,
-    }])
+    Ok(ProviderEventProjection {
+        durable_events: vec![AgentEventEnvelope {
+            schema_version: AGENT_EVENT_SCHEMA_VERSION,
+            payload_version: AGENT_EVENT_PAYLOAD_VERSION,
+            event_id: event_id(manifest.run_attempt_id, event.raw.sequence),
+            session_id: manifest.session_id,
+            agent_run_id: manifest.agent_run_id,
+            turn_id: manifest.turn_id,
+            run_attempt_id: manifest.run_attempt_id,
+            run_attempt_number: manifest.run_attempt_number,
+            sequence: event.raw.sequence,
+            correlation_id: event.raw.correlation_id,
+            orchestration_run_id: None,
+            orchestration_node_execution_id: None,
+            timestamp: event.raw.timestamp,
+            native_refs: vec![event.raw.native_ref.clone()],
+            payload,
+        }],
+        live_events: Vec::new(),
+    })
 }
 
 fn event_id(run_attempt_id: Uuid, sequence: u64) -> Uuid {
@@ -1641,6 +1901,7 @@ mod tests {
             ))
             .unwrap();
         assert!(matches!(unknown.typed, TypedProviderEvent::Unknown { .. }));
+        assert_eq!(unknown.typed.class(), ProviderEventClass::AuditOnly);
         assert!(
             DirectProvider::Gemini
                 .decode_native_frame(&frame(
@@ -1649,6 +1910,16 @@ mod tests {
                 ))
                 .is_err()
         );
+        assert!(matches!(
+            DirectProvider::Codex.classify_native_frame(&frame(
+                DirectProvider::Codex,
+                serde_json::json!({
+                    "method": "item/agentMessage/delta",
+                    "params": {"itemId": "message-without-delta"}
+                }),
+            )),
+            ProviderFrameClassification::UnsupportedRequired { .. }
+        ));
     }
 
     #[test]
@@ -1693,27 +1964,204 @@ mod tests {
             ))
             .unwrap();
 
-        let delta = provider.map_provider_event(&delta, &manifest).unwrap();
-        let completed = provider.map_provider_event(&completed, &manifest).unwrap();
-        let (
-            AgentEventPayload::Message {
-                message: delta_message,
-                final_output: delta_final,
-            },
-            AgentEventPayload::Message {
-                message: completed_message,
-                final_output: completed_final,
-            },
-        ) = (&delta[0].payload, &completed[0].payload)
+        let delta = provider.project_provider_event(&delta, &manifest).unwrap();
+        let completed = provider
+            .project_provider_event(&completed, &manifest)
+            .unwrap();
+        assert!(delta.durable_events.is_empty());
+        let AgentLiveEventPayload::MessageDelta {
+            message_id: delta_message_id,
+            delta: delta_content,
+            ..
+        } = &delta.live_events[0].payload
         else {
-            panic!("Codex agent message events must map to canonical messages");
+            panic!("Codex agent message delta must be live-only");
+        };
+        let AgentEventPayload::Message {
+            message: completed_message,
+            final_output: completed_final,
+        } = &completed.durable_events[0].payload
+        else {
+            panic!("completed Codex agent message must be durable");
         };
 
-        assert_eq!(delta_message.message_id, completed_message.message_id);
-        assert_eq!(delta_message.content, "Done");
+        assert_eq!(*delta_message_id, completed_message.message_id);
+        assert_eq!(delta_content, "Done");
         assert_eq!(completed_message.content, "Done");
-        assert!(!delta_final);
         assert!(*completed_final);
+    }
+
+    #[test]
+    fn thousand_codex_deltas_produce_live_updates_but_no_canonical_events() {
+        let provider = DirectProvider::Codex;
+        let manifest = fixture_manifest(provider);
+        let mut durable_count = 0;
+        let mut live_count = 0;
+        for sequence in 1..=1_000 {
+            let decoded = provider
+                .decode_native_frame(&frame_at(
+                    provider,
+                    sequence,
+                    serde_json::json!({
+                        "method": "item/agentMessage/delta",
+                        "params": {"itemId": "message-1", "delta": "x"}
+                    }),
+                ))
+                .unwrap();
+            let projection = provider
+                .project_provider_event(&decoded, &manifest)
+                .unwrap();
+            durable_count += projection.durable_events.len();
+            live_count += projection.live_events.len();
+        }
+        assert_eq!(durable_count, 0);
+        assert_eq!(live_count, 1_000);
+    }
+
+    #[test]
+    fn codex_reasoning_and_command_output_deltas_are_live_only() {
+        let provider = DirectProvider::Codex;
+        let manifest = fixture_manifest(provider);
+        for (payload, expected_item_id) in [
+            (
+                serde_json::json!({
+                    "method": "item/reasoning/summaryTextDelta",
+                    "params": {"itemId": "reasoning-1", "delta": "summary"}
+                }),
+                "reasoning-1",
+            ),
+            (
+                serde_json::json!({
+                    "method": "item/commandExecution/outputDelta",
+                    "params": {"itemId": "command-1", "delta": "stdout"}
+                }),
+                "command-1",
+            ),
+        ] {
+            let decoded = provider
+                .decode_native_frame(&frame(provider, payload))
+                .unwrap();
+            assert_eq!(decoded.typed.class(), ProviderEventClass::LiveOnly);
+            let projection = provider
+                .project_provider_event(&decoded, &manifest)
+                .unwrap();
+            assert!(projection.durable_events.is_empty());
+            assert!(matches!(
+                projection.live_events.as_slice(),
+                [AgentLiveEvent {
+                    payload: AgentLiveEventPayload::ThinkingDelta { provider_item_id, .. }
+                        | AgentLiveEventPayload::ToolOutputDelta { provider_item_id, .. },
+                    ..
+                }] if provider_item_id == expected_item_id
+            ));
+        }
+    }
+
+    #[test]
+    fn native_audit_keeps_thousand_deltas_while_v2_replay_compacts_history() {
+        let provider = DirectProvider::Codex;
+        let root = tempfile::tempdir().unwrap();
+        let ids = [
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        ];
+        let versions = provider.versions();
+        let mut writer = crate::runtime::NativeAuditWriter::create_in(
+            root.path(),
+            crate::runtime::NativeAuditMetadata {
+                session_id: ids[0],
+                agent_run_id: ids[1],
+                turn_id: ids[2],
+                run_attempt_id: ids[3],
+                run_attempt_number: 1,
+                provider_id: provider.id().to_string(),
+                runtime_profile_id: "default".to_string(),
+                workspace_path: root.path().display().to_string(),
+                runtime_version: versions.runtime.map(str::to_owned),
+                protocol_version: versions.protocol.map(str::to_owned),
+                adapter_version: versions.adapter.to_string(),
+                mapper_version: versions.mapper.to_string(),
+                created_at: Utc::now(),
+            },
+        )
+        .unwrap();
+        for _ in 0..1_000 {
+            let payload = serde_json::json!({
+                "method": "item/agentMessage/delta",
+                "params": {"itemId": "message-1", "delta": "x"}
+            });
+            writer
+                .append_native_output(
+                    NativeAuditChannel::Stdout,
+                    "application/json",
+                    ids[0],
+                    serde_json::to_string(&payload).unwrap().as_bytes(),
+                )
+                .unwrap();
+        }
+        let completed = serde_json::json!({
+            "method": "item/completed",
+            "params": {
+                "item": {
+                    "type": "agentMessage",
+                    "id": "message-1",
+                    "text": "complete"
+                }
+            }
+        });
+        writer
+            .append_native_output(
+                NativeAuditChannel::Stdout,
+                "application/json",
+                ids[0],
+                serde_json::to_string(&completed).unwrap().as_bytes(),
+            )
+            .unwrap();
+        let manifest = writer.close().unwrap();
+        assert_eq!(manifest.last_sequence, Some(1_001));
+        assert!(manifest.final_checksum.is_some());
+
+        let directory = root
+            .path()
+            .join(&manifest.manifest_relative_path)
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let bundle = crate::runtime::AuditBundle::read(&directory).unwrap();
+        let replay = bundle.replay(&provider.mapper()).unwrap();
+        assert_eq!(replay.provider_events.len(), 1_001);
+        assert_eq!(replay.agent_events.len(), 1);
+        assert!(matches!(
+            &replay.agent_events[0].payload,
+            AgentEventPayload::Message {
+                message,
+                final_output: true,
+            } if message.content == "complete"
+        ));
+    }
+
+    #[test]
+    fn intentional_and_unknown_notifications_do_not_fall_back_to_extensions() {
+        let provider = DirectProvider::Codex;
+        let manifest = fixture_manifest(provider);
+        for payload in [
+            serde_json::json!({
+                "method": "item/started",
+                "params": {"item": {"type": "agentMessage", "id": "message-1"}}
+            }),
+            serde_json::json!({"method": "future/optionalNotification", "params": {}}),
+        ] {
+            let decoded = provider
+                .decode_native_frame(&frame(provider, payload))
+                .unwrap();
+            let projection = provider
+                .project_provider_event(&decoded, &manifest)
+                .unwrap();
+            assert!(projection.durable_events.is_empty());
+            assert!(projection.live_events.is_empty());
+        }
     }
 
     #[test]
@@ -1885,6 +2333,22 @@ mod tests {
                 output_tokens: 12,
                 cached_input_tokens: Some(10),
             }
+        ));
+        assert_eq!(usage.typed.class(), ProviderEventClass::SnapshotOnly);
+        let projected = provider
+            .project_provider_event(&usage, &fixture_manifest(provider))
+            .unwrap();
+        assert!(projected.durable_events.is_empty());
+        assert!(matches!(
+            projected.live_events.as_slice(),
+            [AgentLiveEvent {
+                payload: AgentLiveEventPayload::TokenUsageSnapshot {
+                    input_tokens: 30,
+                    output_tokens: 12,
+                    cached_input_tokens: Some(10),
+                },
+                ..
+            }]
         ));
     }
 
@@ -2115,7 +2579,7 @@ mod tests {
                 panic!("failed to read {} fixture: {error}", provider.id())
             });
             let replay = bundle
-                .replay_fixture(&provider.mapper())
+                .replay_fixture(&provider.legacy_mapper())
                 .unwrap_or_else(|error| {
                     panic!("failed to replay {} fixture: {error}", provider.id())
                 });
@@ -2125,6 +2589,20 @@ mod tests {
             assert_eq!(replay.agent_events.len(), 3);
             assert_eq!(replay.state.status, AgentRunStatus::Succeeded);
             assert_eq!(replay.state.last_event_sequence, 3);
+        }
+    }
+
+    #[test]
+    fn mapper_v2_does_not_relabel_legacy_audit_bundles() {
+        for provider in DirectProvider::ALL {
+            assert!(provider.mapper().versions().mapper_version.ends_with("-v2"));
+            assert!(
+                provider
+                    .legacy_mapper()
+                    .versions()
+                    .mapper_version
+                    .ends_with("-v1")
+            );
         }
     }
 }

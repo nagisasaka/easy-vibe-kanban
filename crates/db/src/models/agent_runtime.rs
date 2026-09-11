@@ -2,14 +2,14 @@ use chrono::{DateTime, Utc};
 use executors::{
     actions::ExecutorAction,
     runtime::{
-        AgentEventEnvelope, AgentRunPortCommand, AgentRunPortCommandEnvelope,
-        AgentRunRequestEnvelope, AgentRunStatus, ContractVersionError,
+        AgentEventEnvelope, AgentLiveEvent, AgentLiveEventPayload, AgentRunPortCommand,
+        AgentRunPortCommandEnvelope, AgentRunRequestEnvelope, AgentRunStatus, ContractVersionError,
         OrchestrationCommandValidationError, ProjectionStatus, ProviderSessionReference,
         ReducerApply, ReducerError, RunAttemptRequest, RunState, reduce_agent_event,
     },
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, SqlitePool, types::Json};
+use sqlx::{FromRow, SqliteConnection, SqlitePool, types::Json};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -204,6 +204,97 @@ pub struct NativeAuditStreamRecord {
 }
 
 impl AgentRunRecord {
+    /// Quarantine one non-retryable host observation and advance its cursor in
+    /// the same transaction. This is only called after batch fallback isolates
+    /// the exact failing host event; later observations may continue while the
+    /// run remains explicitly projection-degraded.
+    pub async fn record_projection_failure_and_advance_cursor(
+        pool: &SqlitePool,
+        agent_run_id: Uuid,
+        run_attempt_id: Uuid,
+        host_event_sequence: u64,
+        error_kind: &str,
+        reason: &str,
+    ) -> Result<(), AgentRuntimePersistenceError> {
+        let host_event_sequence = i64::try_from(host_event_sequence).map_err(|error| {
+            AgentRuntimePersistenceError::Serialization(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                error,
+            )))
+        })?;
+        let mut transaction = pool.begin().await?;
+        let state_json: Json<RunState> =
+            sqlx::query_scalar("SELECT state_json FROM agent_run_state WHERE agent_run_id = ?")
+                .bind(agent_run_id)
+                .fetch_optional(&mut *transaction)
+                .await?
+                .ok_or(AgentRuntimePersistenceError::MissingState(agent_run_id))?;
+        let mut state = state_json.0;
+        state.projection_status = ProjectionStatus::ProjectionDegraded;
+        state.updated_at = Utc::now();
+        let state_json = serde_json::to_string(&state)?;
+        sqlx::query(
+            "UPDATE agent_run_state SET projection_status = 'projection_degraded', state_json = ?, updated_at = ? WHERE agent_run_id = ?",
+        )
+        .bind(state_json)
+        .bind(state.updated_at)
+        .bind(agent_run_id)
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query(
+            "UPDATE agent_runs SET projection_status = 'projection_degraded', updated_at = ? WHERE id = ?",
+        )
+        .bind(state.updated_at)
+        .bind(agent_run_id)
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query(
+            "UPDATE agent_run_attempts SET projection_status = 'projection_degraded', updated_at = ? WHERE id = ?",
+        )
+        .bind(state.updated_at)
+        .bind(run_attempt_id)
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query(
+            r#"
+            INSERT INTO agent_projection_failures (
+                id, agent_run_id, run_attempt_id, host_event_sequence, error_kind, reason
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(run_attempt_id, host_event_sequence) DO UPDATE SET
+                error_kind = excluded.error_kind,
+                reason = excluded.reason
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(agent_run_id)
+        .bind(run_attempt_id)
+        .bind(host_event_sequence)
+        .bind(error_kind)
+        .bind(reason)
+        .execute(&mut *transaction)
+        .await?;
+        let cursor_update = sqlx::query(
+            r#"
+            UPDATE agent_process_registry
+            SET last_host_event_sequence = MAX(last_host_event_sequence, ?), updated_at = ?
+            WHERE run_attempt_id = ?
+            "#,
+        )
+        .bind(host_event_sequence)
+        .bind(state.updated_at)
+        .bind(run_attempt_id)
+        .execute(&mut *transaction)
+        .await?;
+        if cursor_update.rows_affected() != 1 {
+            return Err(AgentRuntimePersistenceError::IdentityConflict {
+                entity: "projection failure host cursor",
+                key: run_attempt_id.to_string(),
+            });
+        }
+        transaction.commit().await?;
+        Ok(())
+    }
+
     pub async fn find_latest_for_workspaces(
         pool: &SqlitePool,
         archived: bool,
@@ -1230,6 +1321,16 @@ impl AgentProviderSessionRecord {
         session_id: Uuid,
         reference: &ProviderSessionReference,
     ) -> Result<(), AgentRuntimePersistenceError> {
+        let mut connection = pool.acquire().await?;
+        Self::upsert_on(&mut connection, id, session_id, reference).await
+    }
+
+    async fn upsert_on(
+        connection: &mut SqliteConnection,
+        id: Uuid,
+        session_id: Uuid,
+        reference: &ProviderSessionReference,
+    ) -> Result<(), AgentRuntimePersistenceError> {
         reference.validate_current()?;
         let existing = sqlx::query_as::<_, AgentProviderSessionRecord>(
             r#"
@@ -1241,7 +1342,7 @@ impl AgentProviderSessionRecord {
             "#,
         )
         .bind(session_id)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *connection)
         .await?;
 
         if let Some(existing) = &existing {
@@ -1290,7 +1391,7 @@ impl AgentProviderSessionRecord {
         .bind(&stored_reference.provider_session_id)
         .bind(reference_json)
         .bind(stored_reference.observed_at)
-        .execute(pool)
+        .execute(&mut *connection)
         .await?;
         Ok(())
     }
@@ -1343,6 +1444,338 @@ fn merge_provider_session_metadata(
 }
 
 impl AgentEventRecord {
+    /// Atomically append all durable semantics from one process-host response,
+    /// project the resulting state once, and advance the host cursor. Incoming
+    /// provider/native sequence values are intentionally replaced with dense
+    /// canonical sequences inside this transaction.
+    pub async fn append_and_project_host_batch(
+        pool: &SqlitePool,
+        events: &[AgentEventEnvelope],
+        snapshots: &[AgentLiveEvent],
+        provider_sessions: &[ProviderSessionReference],
+        run_attempt_id: Uuid,
+        through_host_sequence: u64,
+    ) -> Result<Vec<AgentEventEnvelope>, AgentRuntimePersistenceError> {
+        for event in events {
+            event.validate_for_projection()?;
+            if event.run_attempt_id != run_attempt_id {
+                return Err(AgentRuntimePersistenceError::IdentityConflict {
+                    entity: "host batch run attempt",
+                    key: run_attempt_id.to_string(),
+                });
+            }
+        }
+        for snapshot in snapshots {
+            if snapshot.run_attempt_id != run_attempt_id {
+                return Err(AgentRuntimePersistenceError::IdentityConflict {
+                    entity: "host snapshot run attempt",
+                    key: run_attempt_id.to_string(),
+                });
+            }
+        }
+        for provider_session in provider_sessions {
+            provider_session.validate_current()?;
+        }
+
+        let host_sequence = i64::try_from(through_host_sequence).map_err(|error| {
+            AgentRuntimePersistenceError::Serialization(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                error,
+            )))
+        })?;
+        let mut transaction = pool.begin().await?;
+        let persisted_identity: Option<(Uuid, Uuid)> = sqlx::query_as(
+            r#"
+            SELECT attempts.agent_run_id, runs.session_id
+            FROM agent_run_attempts attempts
+            JOIN agent_runs runs ON runs.id = attempts.agent_run_id
+            WHERE attempts.id = ?
+            "#,
+        )
+        .bind(run_attempt_id)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        let Some((persisted_run_id, persisted_session_id)) = persisted_identity else {
+            return Err(AgentRuntimePersistenceError::IdentityConflict {
+                entity: "host batch run attempt",
+                key: run_attempt_id.to_string(),
+            });
+        };
+        if events.iter().any(|event| {
+            event.agent_run_id != persisted_run_id || event.session_id != persisted_session_id
+        }) || snapshots.iter().any(|snapshot| {
+            snapshot.agent_run_id != persisted_run_id || snapshot.session_id != persisted_session_id
+        }) {
+            return Err(AgentRuntimePersistenceError::IdentityConflict {
+                entity: "host batch persisted identity",
+                key: run_attempt_id.to_string(),
+            });
+        }
+        for provider_session in provider_sessions {
+            AgentProviderSessionRecord::upsert_on(
+                &mut transaction,
+                Uuid::new_v4(),
+                persisted_session_id,
+                provider_session,
+            )
+            .await?;
+        }
+        let mut state = if let Some(first) = events.first() {
+            let state_json: Json<RunState> =
+                sqlx::query_scalar("SELECT state_json FROM agent_run_state WHERE agent_run_id = ?")
+                    .bind(first.agent_run_id)
+                    .fetch_optional(&mut *transaction)
+                    .await?
+                    .ok_or(AgentRuntimePersistenceError::MissingState(
+                        first.agent_run_id,
+                    ))?;
+            Some(state_json.0)
+        } else {
+            None
+        };
+        let mut inserted = Vec::new();
+
+        for incoming in events {
+            if let Some(existing) = sqlx::query_as::<_, ExistingAgentEvent>(
+                "SELECT event_envelope FROM agent_events WHERE event_id = ?",
+            )
+            .bind(incoming.event_id)
+            .fetch_optional(&mut *transaction)
+            .await?
+            {
+                let mut comparable = incoming.clone();
+                comparable.sequence = existing.event_envelope.0.sequence;
+                if comparable == existing.event_envelope.0 {
+                    continue;
+                }
+                return Err(AgentRuntimePersistenceError::IdempotencyConflict {
+                    entity: "agent event",
+                    key: incoming.event_id.to_string(),
+                });
+            }
+
+            let state = state
+                .as_mut()
+                .ok_or(AgentRuntimePersistenceError::MissingState(
+                    incoming.agent_run_id,
+                ))?;
+            if state.agent_run_id != incoming.agent_run_id {
+                return Err(AgentRuntimePersistenceError::IdentityConflict {
+                    entity: "host batch agent run",
+                    key: incoming.agent_run_id.to_string(),
+                });
+            }
+            let mut event = incoming.clone();
+            event.sequence = state.last_event_sequence.saturating_add(1);
+            reduce_agent_event(state, &event)?;
+            let event_json = serde_json::to_string(&event)?;
+            sqlx::query(
+                r#"
+                INSERT INTO agent_events (
+                    event_id, session_id, agent_run_id, turn_id, run_attempt_id,
+                    run_attempt_number, sequence, correlation_id, schema_version,
+                    payload_version, event_envelope
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(event.event_id)
+            .bind(event.session_id)
+            .bind(event.agent_run_id)
+            .bind(event.turn_id)
+            .bind(event.run_attempt_id)
+            .bind(i64::from(event.run_attempt_number))
+            .bind(i64::try_from(event.sequence).map_err(|error| {
+                AgentRuntimePersistenceError::Serialization(serde_json::Error::io(
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+                ))
+            })?)
+            .bind(event.correlation_id)
+            .bind(i64::from(event.schema_version))
+            .bind(i64::from(event.payload_version))
+            .bind(event_json)
+            .execute(&mut *transaction)
+            .await?;
+            inserted.push(event);
+        }
+
+        if let Some(state) = state.as_ref().filter(|_| !inserted.is_empty()) {
+            let projected_json = serde_json::to_string(state)?;
+            sqlx::query(
+                r#"
+                UPDATE agent_run_state
+                SET last_run_attempt_id = ?, last_run_attempt_number = ?,
+                    last_event_sequence = ?, last_event_id = ?, status = ?,
+                    projection_status = ?, state_json = ?, updated_at = ?
+                WHERE agent_run_id = ?
+                "#,
+            )
+            .bind(state.last_run_attempt_id)
+            .bind(i64::from(state.last_run_attempt_number))
+            .bind(i64::try_from(state.last_event_sequence).map_err(|error| {
+                AgentRuntimePersistenceError::Serialization(serde_json::Error::io(
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+                ))
+            })?)
+            .bind(state.last_event_id)
+            .bind(state.status)
+            .bind(state.projection_status)
+            .bind(projected_json)
+            .bind(state.updated_at)
+            .bind(state.agent_run_id)
+            .execute(&mut *transaction)
+            .await?;
+            sqlx::query(
+                "UPDATE agent_runs SET status = ?, projection_status = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(state.status)
+            .bind(state.projection_status)
+            .bind(state.updated_at)
+            .bind(state.agent_run_id)
+            .execute(&mut *transaction)
+            .await?;
+            sqlx::query(
+                r#"
+                UPDATE agent_run_attempts
+                SET status = ?, projection_status = ?,
+                    finished_at = CASE
+                        WHEN ? AND finished_at IS NULL THEN ?
+                        ELSE finished_at
+                    END,
+                    updated_at = ?
+                WHERE id = ?
+                "#,
+            )
+            .bind(state.status)
+            .bind(state.projection_status)
+            .bind(state.status.is_terminal())
+            .bind(state.updated_at)
+            .bind(state.updated_at)
+            .bind(run_attempt_id)
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        for snapshot in snapshots {
+            let AgentLiveEventPayload::TokenUsageSnapshot {
+                input_tokens,
+                output_tokens,
+                cached_input_tokens,
+            } = &snapshot.payload
+            else {
+                continue;
+            };
+            let native_sequence = i64::try_from(snapshot.native_sequence).map_err(|error| {
+                AgentRuntimePersistenceError::Serialization(serde_json::Error::io(
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+                ))
+            })?;
+            let input_tokens = i64::try_from(*input_tokens).map_err(|error| {
+                AgentRuntimePersistenceError::Serialization(serde_json::Error::io(
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+                ))
+            })?;
+            let output_tokens = i64::try_from(*output_tokens).map_err(|error| {
+                AgentRuntimePersistenceError::Serialization(serde_json::Error::io(
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+                ))
+            })?;
+            let cached_input_tokens = (*cached_input_tokens)
+                .map(i64::try_from)
+                .transpose()
+                .map_err(|error| {
+                    AgentRuntimePersistenceError::Serialization(serde_json::Error::io(
+                        std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+                    ))
+                })?;
+            let event_json = serde_json::to_string(snapshot)?;
+            let existing: Option<(i64, String)> = sqlx::query_as(
+                "SELECT native_sequence, event_json FROM agent_run_usage_snapshots WHERE run_attempt_id = ?",
+            )
+            .bind(snapshot.run_attempt_id)
+            .fetch_optional(&mut *transaction)
+            .await?;
+            if let Some((existing_sequence, existing_json)) = existing {
+                if existing_sequence == native_sequence && existing_json != event_json {
+                    return Err(AgentRuntimePersistenceError::IdempotencyConflict {
+                        entity: "agent run usage snapshot",
+                        key: format!("{}:{native_sequence}", snapshot.run_attempt_id),
+                    });
+                }
+                if existing_sequence >= native_sequence {
+                    continue;
+                }
+            }
+            sqlx::query(
+                r#"
+                INSERT INTO agent_run_usage_snapshots (
+                    run_attempt_id, agent_run_id, session_id, run_attempt_number,
+                    native_sequence, input_tokens, output_tokens,
+                    cached_input_tokens, event_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_attempt_id) DO UPDATE SET
+                    native_sequence = excluded.native_sequence,
+                    input_tokens = excluded.input_tokens,
+                    output_tokens = excluded.output_tokens,
+                    cached_input_tokens = excluded.cached_input_tokens,
+                    event_json = excluded.event_json,
+                    updated_at = excluded.updated_at
+                WHERE excluded.native_sequence > agent_run_usage_snapshots.native_sequence
+                "#,
+            )
+            .bind(snapshot.run_attempt_id)
+            .bind(snapshot.agent_run_id)
+            .bind(snapshot.session_id)
+            .bind(i64::from(snapshot.run_attempt_number))
+            .bind(native_sequence)
+            .bind(input_tokens)
+            .bind(output_tokens)
+            .bind(cached_input_tokens)
+            .bind(event_json)
+            .bind(snapshot.timestamp)
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        let cursor_update = sqlx::query(
+            r#"
+            UPDATE agent_process_registry
+            SET last_host_event_sequence = MAX(last_host_event_sequence, ?), updated_at = ?
+            WHERE run_attempt_id = ?
+            "#,
+        )
+        .bind(host_sequence)
+        .bind(Utc::now())
+        .bind(run_attempt_id)
+        .execute(&mut *transaction)
+        .await?;
+        if cursor_update.rows_affected() != 1 {
+            return Err(AgentRuntimePersistenceError::IdentityConflict {
+                entity: "host cursor run attempt",
+                key: run_attempt_id.to_string(),
+            });
+        }
+        transaction.commit().await?;
+        Ok(inserted)
+    }
+
+    pub async fn usage_snapshots_for_run(
+        pool: &SqlitePool,
+        agent_run_id: Uuid,
+    ) -> Result<Vec<AgentLiveEvent>, AgentRuntimePersistenceError> {
+        let snapshots: Vec<Json<AgentLiveEvent>> = sqlx::query_scalar(
+            r#"
+            SELECT event_json
+            FROM agent_run_usage_snapshots
+            WHERE agent_run_id = ?
+            ORDER BY run_attempt_number, native_sequence
+            "#,
+        )
+        .bind(agent_run_id)
+        .fetch_all(pool)
+        .await?;
+        Ok(snapshots.into_iter().map(|snapshot| snapshot.0).collect())
+    }
+
     pub async fn append(
         pool: &SqlitePool,
         event: &AgentEventEnvelope,
@@ -1580,6 +2013,8 @@ fn enum_string<T: Serialize>(
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use executors::{
         actions::{
             ExecutorActionType,
@@ -1594,7 +2029,11 @@ mod tests {
             RunAttemptMode, WorkspaceMode, WorkspaceReference,
         },
     };
-    use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::{
+        Connection,
+        sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+    };
+    use tempfile::TempDir;
 
     use super::*;
 
@@ -1604,8 +2043,13 @@ mod tests {
             .connect("sqlite::memory:")
             .await
             .expect("connect sqlite");
+        setup_schema(&pool).await;
+        pool
+    }
+
+    async fn setup_schema(pool: &SqlitePool) {
         sqlx::query("PRAGMA foreign_keys = ON")
-            .execute(&pool)
+            .execute(pool)
             .await
             .expect("enable foreign keys");
         sqlx::raw_sql(
@@ -1631,16 +2075,21 @@ mod tests {
             );
             "#,
         )
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("create anchor schema");
         sqlx::raw_sql(include_str!(
             "../../migrations/20260811000000_agent_runtime_v1.sql"
         ))
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("create runtime schema");
-        pool
+        sqlx::raw_sql(include_str!(
+            "../../migrations/20260909000000_agent_projection_failures.sql"
+        ))
+        .execute(pool)
+        .await
+        .expect("create projection failure schema");
     }
 
     fn requests(
@@ -1814,6 +2263,365 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(registry_status, "reserved");
+    }
+
+    #[tokio::test]
+    async fn host_batch_commits_events_projection_and_cursor_atomically() {
+        let pool = setup_pool().await;
+        let (session_id, workspace_id) = insert_anchors(&pool).await;
+        let (request, attempt) = requests(session_id, workspace_id, "host-batch");
+        AgentRunRecord::persist_identity_before_launch(&pool, &request, &attempt)
+            .await
+            .unwrap();
+
+        let mut completed = event(&request, &attempt, 1_001);
+        completed.payload = AgentEventPayload::Message {
+            message: CanonicalMessage {
+                message_id: Uuid::new_v4(),
+                role: AgentRuntimeMessageRole::Assistant,
+                content: "complete answer".to_string(),
+            },
+            final_output: true,
+        };
+        let mut thinking = event(&request, &attempt, 1_002);
+        thinking.payload = AgentEventPayload::Thinking {
+            content: "published reasoning".to_string(),
+        };
+        let provider_session = ProviderSessionReference {
+            schema_version: executors::runtime::PROVIDER_SESSION_REFERENCE_SCHEMA_VERSION,
+            provider_id: "codex".to_string(),
+            runtime_profile_id: "CODEX:default".to_string(),
+            provider_session_id: "thread-1".to_string(),
+            observed_at: Utc::now(),
+            metadata: None,
+        };
+        let inserted = AgentEventRecord::append_and_project_host_batch(
+            &pool,
+            &[completed.clone(), thinking.clone()],
+            &[],
+            std::slice::from_ref(&provider_session),
+            attempt.run_attempt_id,
+            1_002,
+        )
+        .await
+        .unwrap();
+        assert_eq!(inserted.len(), 2);
+        assert_eq!(inserted[0].sequence, 1);
+        assert_eq!(inserted[1].sequence, 2);
+        let cursor: i64 = sqlx::query_scalar(
+            "SELECT last_host_event_sequence FROM agent_process_registry WHERE run_attempt_id = ?",
+        )
+        .bind(attempt.run_attempt_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(cursor, 1_002);
+        let stored_provider_session: String = sqlx::query_scalar(
+            "SELECT provider_session_id FROM agent_provider_sessions WHERE session_id = ?",
+        )
+        .bind(session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stored_provider_session, "thread-1");
+
+        let duplicate = AgentEventRecord::append_and_project_host_batch(
+            &pool,
+            &[completed.clone(), thinking],
+            &[],
+            std::slice::from_ref(&provider_session),
+            attempt.run_attempt_id,
+            1_002,
+        )
+        .await
+        .unwrap();
+        assert!(duplicate.is_empty());
+
+        let mut conflicting = completed.clone();
+        conflicting.payload = AgentEventPayload::Thinking {
+            content: "different".to_string(),
+        };
+        let mut later = event(&request, &attempt, 1_002);
+        later.payload = AgentEventPayload::Thinking {
+            content: "must roll back".to_string(),
+        };
+        let mut rolled_back_session = provider_session.clone();
+        rolled_back_session.metadata = Some(serde_json::json!({ "must": "roll back" }));
+        let error = AgentEventRecord::append_and_project_host_batch(
+            &pool,
+            &[later, conflicting],
+            &[],
+            &[rolled_back_session],
+            attempt.run_attempt_id,
+            1_002,
+        )
+        .await;
+        assert!(matches!(
+            error,
+            Err(AgentRuntimePersistenceError::IdempotencyConflict { .. })
+        ));
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_events")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 2, "failed batch must leave no partial insert");
+        let cursor: i64 = sqlx::query_scalar(
+            "SELECT last_host_event_sequence FROM agent_process_registry WHERE run_attempt_id = ?",
+        )
+        .bind(attempt.run_attempt_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(cursor, 1_002, "failed batch must not advance host cursor");
+        let stored_reference: Json<ProviderSessionReference> = sqlx::query_scalar(
+            "SELECT session_reference FROM agent_provider_sessions WHERE session_id = ?",
+        )
+        .bind(session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            stored_reference.0.metadata, None,
+            "provider session update must roll back with a failed batch"
+        );
+    }
+
+    #[tokio::test]
+    async fn sqlite_busy_keeps_host_cursor_and_retry_applies_once() {
+        let directory = TempDir::new().unwrap();
+        let options = SqliteConnectOptions::new()
+            .filename(directory.path().join("contention.sqlite"))
+            .create_if_missing(true)
+            .journal_mode(sqlx::sqlite::SqliteJournalMode::Delete)
+            .busy_timeout(Duration::from_millis(50));
+        let pool = SqlitePoolOptions::new()
+            .max_connections(4)
+            .connect_with(options.clone())
+            .await
+            .unwrap();
+        setup_schema(&pool).await;
+        let (session_id, workspace_id) = insert_anchors(&pool).await;
+        let (request, attempt) = requests(session_id, workspace_id, "busy-host-batch");
+        AgentRunRecord::persist_identity_before_launch(&pool, &request, &attempt)
+            .await
+            .unwrap();
+        let event = event(&request, &attempt, 1);
+
+        let mut locker = sqlx::SqliteConnection::connect_with(&options)
+            .await
+            .unwrap();
+        sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut locker)
+            .await
+            .unwrap();
+        let locked = AgentEventRecord::append_and_project_host_batch(
+            &pool,
+            &[event.clone()],
+            &[],
+            &[],
+            attempt.run_attempt_id,
+            1,
+        )
+        .await;
+        assert!(matches!(
+            locked,
+            Err(AgentRuntimePersistenceError::Database(
+                sqlx::Error::Database(_)
+            ))
+        ));
+        let cursor: i64 = sqlx::query_scalar(
+            "SELECT last_host_event_sequence FROM agent_process_registry WHERE run_attempt_id = ?",
+        )
+        .bind(attempt.run_attempt_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(cursor, 0);
+
+        sqlx::query("ROLLBACK").execute(&mut locker).await.unwrap();
+        let inserted = AgentEventRecord::append_and_project_host_batch(
+            &pool,
+            &[event],
+            &[],
+            &[],
+            attempt.run_attempt_id,
+            1,
+        )
+        .await
+        .unwrap();
+        assert_eq!(inserted.len(), 1);
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_events")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn thousand_live_message_deltas_persist_only_the_completed_message() {
+        let pool = setup_pool().await;
+        let (session_id, workspace_id) = insert_anchors(&pool).await;
+        let (request, attempt) = requests(session_id, workspace_id, "compacted-message");
+        AgentRunRecord::persist_identity_before_launch(&pool, &request, &attempt)
+            .await
+            .unwrap();
+        let message_id = Uuid::new_v4();
+        let deltas = (1..=1_000)
+            .map(|native_sequence| AgentLiveEvent {
+                schema_version: 1,
+                event_id: Uuid::new_v4(),
+                session_id,
+                agent_run_id: request.agent_run_id,
+                turn_id: request.turn_id,
+                run_attempt_id: attempt.run_attempt_id,
+                run_attempt_number: attempt.attempt_number,
+                native_sequence,
+                timestamp: Utc::now(),
+                payload: AgentLiveEventPayload::MessageDelta {
+                    message_id,
+                    provider_item_id: "provider-message-1".to_string(),
+                    role: AgentRuntimeMessageRole::Assistant,
+                    delta: "x".to_string(),
+                },
+            })
+            .collect::<Vec<_>>();
+        let mut completed = event(&request, &attempt, 1);
+        completed.payload = AgentEventPayload::Message {
+            message: CanonicalMessage {
+                message_id,
+                role: AgentRuntimeMessageRole::Assistant,
+                content: "complete".to_string(),
+            },
+            final_output: true,
+        };
+
+        let inserted = AgentEventRecord::append_and_project_host_batch(
+            &pool,
+            &[completed],
+            &deltas,
+            &[],
+            attempt.run_attempt_id,
+            1_001,
+        )
+        .await
+        .unwrap();
+        assert_eq!(inserted.len(), 1);
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_events")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn usage_is_upserted_as_latest_snapshot_without_canonical_history() {
+        let pool = setup_pool().await;
+        let (session_id, workspace_id) = insert_anchors(&pool).await;
+        let (request, attempt) = requests(session_id, workspace_id, "usage-snapshot");
+        AgentRunRecord::persist_identity_before_launch(&pool, &request, &attempt)
+            .await
+            .unwrap();
+        let usage = |native_sequence, input_tokens| AgentLiveEvent {
+            schema_version: 1,
+            event_id: Uuid::new_v4(),
+            session_id,
+            agent_run_id: request.agent_run_id,
+            turn_id: request.turn_id,
+            run_attempt_id: attempt.run_attempt_id,
+            run_attempt_number: attempt.attempt_number,
+            native_sequence,
+            timestamp: Utc::now(),
+            payload: AgentLiveEventPayload::TokenUsageSnapshot {
+                input_tokens,
+                output_tokens: 8,
+                cached_input_tokens: Some(3),
+            },
+        };
+
+        AgentEventRecord::append_and_project_host_batch(
+            &pool,
+            &[],
+            &[usage(10, 20)],
+            &[],
+            attempt.run_attempt_id,
+            1,
+        )
+        .await
+        .unwrap();
+        AgentEventRecord::append_and_project_host_batch(
+            &pool,
+            &[],
+            &[usage(11, 30)],
+            &[],
+            attempt.run_attempt_id,
+            2,
+        )
+        .await
+        .unwrap();
+
+        let event_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_events")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(event_count, 0);
+        let snapshots = AgentEventRecord::usage_snapshots_for_run(&pool, request.agent_run_id)
+            .await
+            .unwrap();
+        assert!(matches!(
+            snapshots.as_slice(),
+            [AgentLiveEvent {
+                native_sequence: 11,
+                payload: AgentLiveEventPayload::TokenUsageSnapshot {
+                    input_tokens: 30,
+                    ..
+                },
+                ..
+            }]
+        ));
+    }
+
+    #[tokio::test]
+    async fn isolated_projection_failure_records_reason_and_cursor_atomically() {
+        let pool = setup_pool().await;
+        let (session_id, workspace_id) = insert_anchors(&pool).await;
+        let (request, attempt) = requests(session_id, workspace_id, "projection-failure");
+        AgentRunRecord::persist_identity_before_launch(&pool, &request, &attempt)
+            .await
+            .unwrap();
+
+        AgentRunRecord::record_projection_failure_and_advance_cursor(
+            &pool,
+            request.agent_run_id,
+            attempt.run_attempt_id,
+            7,
+            "validation",
+            "malformed semantic event",
+        )
+        .await
+        .unwrap();
+        let (cursor, reason): (i64, String) = sqlx::query_as(
+            r#"
+            SELECT registry.last_host_event_sequence, failure.reason
+            FROM agent_process_registry registry
+            JOIN agent_projection_failures failure
+              ON failure.run_attempt_id = registry.run_attempt_id
+            WHERE registry.run_attempt_id = ?
+            "#,
+        )
+        .bind(attempt.run_attempt_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(cursor, 7);
+        assert_eq!(reason, "malformed semantic event");
+        let projection_status: ProjectionStatus = sqlx::query_scalar(
+            "SELECT projection_status FROM agent_run_state WHERE agent_run_id = ?",
+        )
+        .bind(request.agent_run_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(projection_status, ProjectionStatus::ProjectionDegraded);
     }
 
     #[test]

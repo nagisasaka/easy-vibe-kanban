@@ -50,16 +50,40 @@ function event(
 }
 
 describe('deriveCanonicalAgentRunActionPolicy', () => {
-  it('fails closed when state is unavailable or degraded', () => {
+  it('keeps emergency cancel open but other degraded controls fail closed', () => {
     expect(deriveCanonicalAgentRunActionPolicy(null, []).cancel.reason).toBe(
       'state_unavailable'
     );
+    const degraded = deriveCanonicalAgentRunActionPolicy(
+      { ...state, projection_status: 'projection_degraded' },
+      []
+    );
+    expect(degraded.cancel.allowed).toBe(true);
+    expect(degraded.submit_input.reason).toBe('projection_degraded');
+    expect(degraded.resolve_approval.reason).toBe('projection_degraded');
+  });
+
+  it('allows degraded cancel for awaiting input and blocks it after success', () => {
     expect(
       deriveCanonicalAgentRunActionPolicy(
-        { ...state, projection_status: 'projection_degraded' },
+        {
+          ...state,
+          status: 'awaiting_input',
+          projection_status: 'projection_degraded',
+        },
+        []
+      ).cancel.allowed
+    ).toBe(true);
+    expect(
+      deriveCanonicalAgentRunActionPolicy(
+        {
+          ...state,
+          status: 'succeeded',
+          projection_status: 'projection_degraded',
+        },
         []
       ).cancel.reason
-    ).toBe('projection_degraded');
+    ).toBe('runtime_terminal');
   });
 
   it('allows cancel only for active non-terminal states', () => {

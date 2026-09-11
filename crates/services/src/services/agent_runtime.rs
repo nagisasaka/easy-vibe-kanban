@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use db::models::agent_runtime::{
     AgentEventRecord, AgentRunCommandRecord, AgentRunStateRecord, AgentRuntimePersistenceError,
@@ -324,6 +326,33 @@ impl<'a> AgentRuntimeReadService<'a> {
         };
         stats.event_count = all_events.len() as u64;
         stats.unknown_event_count = page.state.unknown_event_count;
+        let usage_snapshots: Vec<(Uuid, i64, i64, Option<i64>)> = sqlx::query_as(
+            r#"
+            SELECT run_attempt_id, input_tokens, output_tokens, cached_input_tokens
+            FROM agent_run_usage_snapshots
+            WHERE agent_run_id = ?
+            "#,
+        )
+        .bind(agent_run_id)
+        .fetch_all(self.pool)
+        .await?;
+        let snapshot_attempts: HashSet<Uuid> = usage_snapshots
+            .iter()
+            .map(|(run_attempt_id, ..)| *run_attempt_id)
+            .collect();
+        for (_, input_tokens, output_tokens, cached_input_tokens) in usage_snapshots {
+            stats.input_tokens = stats
+                .input_tokens
+                .saturating_add(u64::try_from(input_tokens).unwrap_or_default());
+            stats.output_tokens = stats
+                .output_tokens
+                .saturating_add(u64::try_from(output_tokens).unwrap_or_default());
+            stats.cached_input_tokens = stats.cached_input_tokens.saturating_add(
+                cached_input_tokens
+                    .and_then(|tokens| u64::try_from(tokens).ok())
+                    .unwrap_or_default(),
+            );
+        }
         for event in &all_events {
             stats.first_event_at = stats.first_event_at.map_or(Some(event.timestamp), |value| {
                 Some(value.min(event.timestamp))
@@ -344,11 +373,16 @@ impl<'a> AgentRuntimeReadService<'a> {
                     output_tokens,
                     cached_input_tokens,
                 } => {
-                    stats.input_tokens = stats.input_tokens.saturating_add(*input_tokens);
-                    stats.output_tokens = stats.output_tokens.saturating_add(*output_tokens);
-                    stats.cached_input_tokens = stats
-                        .cached_input_tokens
-                        .saturating_add(cached_input_tokens.unwrap_or_default());
+                    // Historical runs have usage in canonical events. New
+                    // attempts keep a cumulative latest-value snapshot, so do
+                    // not sum their repeated notifications again.
+                    if !snapshot_attempts.contains(&event.run_attempt_id) {
+                        stats.input_tokens = stats.input_tokens.saturating_add(*input_tokens);
+                        stats.output_tokens = stats.output_tokens.saturating_add(*output_tokens);
+                        stats.cached_input_tokens = stats
+                            .cached_input_tokens
+                            .saturating_add(cached_input_tokens.unwrap_or_default());
+                    }
                 }
                 AgentEventPayload::Error { .. } => stats.error_count += 1,
                 AgentEventPayload::ProviderExtension { .. } => stats.provider_extension_count += 1,

@@ -29,6 +29,19 @@ RUST_LOG=debug npx easy-vibe-kanban
 
 This will provide verbose logging output that can help identify the root cause of issues.
 
+## Stop Is Available During Projection Degradation
+
+Agent output is preserved in Native Audit before it is projected into SQLite. If
+the UI reports that an AgentRun projection is degraded, history-dependent
+actions such as submitting input or resolving approval are disabled. **Stop**
+remains available while the underlying run is active so you can safely cancel
+the provider process.
+
+A short `database is locked` conflict is retried automatically and does not by
+itself permanently degrade the run. Persistent projection failures are recorded
+for diagnosis and future replay. Do not wipe the database for a transient lock;
+capture debug logs first.
+
 ## DANGER: Wiping Your Database 
 
 If you encounter irrecoverable errors and need to completely wipe your Vibe Kanban database, you can delete the application data directory for your operating system. 

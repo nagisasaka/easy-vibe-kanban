@@ -1,27 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import type {
-  AgentEventCursor,
-  AgentEventEnvelope,
-  RunState,
-} from 'shared/types';
+import type { AgentRunStreamMessage } from 'shared/types';
 import { openLocalApiWebSocket } from '@/shared/lib/localApiTransport';
 import {
   emptyCanonicalAgentTimeline,
+  clearAgentLiveEvents,
+  mergeAgentLiveEvent,
   mergeCanonicalAgentTimeline,
   type CanonicalAgentTimeline,
 } from './canonicalAgentTimeline';
-
-type AgentRunStreamMessage =
-  | { type: 'event'; data: { event: AgentEventEnvelope; replay: boolean } }
-  | {
-      type: 'ready';
-      data: { state: RunState; cursor?: AgentEventCursor | null };
-    }
-  | {
-      type: 'state';
-      data: { state: RunState; cursor?: AgentEventCursor | null };
-    }
-  | { type: 'error'; data: { message: string } };
 
 export interface UseAgentRunCanonicalStreamResult {
   timeline: CanonicalAgentTimeline | null;
@@ -78,6 +64,15 @@ export function useAgentRunCanonicalStream(
       }, delay);
     };
 
+    const discardDisconnectedLiveState = () => {
+      const current = timelineRef.current;
+      if (!current) return;
+      const durableOnly = clearAgentLiveEvents(current);
+      if (durableOnly === current) return;
+      timelineRef.current = durableOnly;
+      setTimeline(durableOnly);
+    };
+
     const connect = async () => {
       const cursor = timelineRef.current?.cursor;
       const params = new URLSearchParams();
@@ -113,6 +108,9 @@ export function useAgentRunCanonicalStream(
                   parsed.data.event,
                 ]);
                 break;
+              case 'live':
+                next = mergeAgentLiveEvent(current, parsed.data.event);
+                break;
               case 'ready':
               case 'state':
                 next = mergeCanonicalAgentTimeline(
@@ -142,6 +140,7 @@ export function useAgentRunCanonicalStream(
         };
         socket.onclose = () => {
           socketRef.current = null;
+          discardDisconnectedLiveState();
           setIsConnected(false);
           scheduleReconnect();
         };

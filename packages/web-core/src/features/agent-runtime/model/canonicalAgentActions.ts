@@ -123,12 +123,6 @@ export function deriveCanonicalAgentRunActionPolicy(
   if (!state) {
     return unavailablePolicy('state_unavailable');
   }
-  if (!isCanonicalProjectionAvailable(state)) {
-    return unavailablePolicy('projection_degraded');
-  }
-
-  const input = findLatestUnresolvedCanonicalControl(events, 'input');
-  const approval = findLatestUnresolvedCanonicalControl(events, 'approval');
   const terminal =
     state.status === 'succeeded' ||
     state.status === 'failed' ||
@@ -141,6 +135,21 @@ export function deriveCanonicalAgentRunActionPolicy(
     state.status === 'running' ||
     state.status === 'awaiting_input' ||
     state.status === 'awaiting_approval';
+
+  // Cancel is the emergency control plane: an active provider must remain
+  // stoppable even when history projection may be incomplete. All controls
+  // that depend on exact canonical history continue to fail closed.
+  if (!isCanonicalProjectionAvailable(state)) {
+    return {
+      ...unavailablePolicy('projection_degraded'),
+      cancel: canCancel
+        ? allow('cancel')
+        : block('cancel', terminal ? 'runtime_terminal' : 'runtime_busy'),
+    };
+  }
+
+  const input = findLatestUnresolvedCanonicalControl(events, 'input');
+  const approval = findLatestUnresolvedCanonicalControl(events, 'approval');
 
   return {
     cancel: canCancel

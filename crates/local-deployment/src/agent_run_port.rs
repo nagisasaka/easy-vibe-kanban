@@ -35,12 +35,13 @@ use executors::{
     profile::ExecutorConfig,
     runtime::{
         AGENT_EVENT_PAYLOAD_VERSION, AGENT_EVENT_SCHEMA_VERSION, AgentCapability,
-        AgentEventEnvelope, AgentEventPayload, AgentEventStream, AgentRunIntent, AgentRunPort,
-        AgentRunPortCommand, AgentRunPortCommandEnvelope, AgentRunPortError, AgentRunPortSnapshot,
-        AgentRunRequestEnvelope, AgentRunStatus, AgentRuntimeError, AgentRuntimeErrorKind,
-        AgentRuntimeMessageRole, CanonicalMessage, NativeAuditChannel, NativeAuditFrame,
-        NativeAuditIntegrityStatus, NativeAuditMetadata, NativeAuditReference, NativeAuditWriter,
-        ProviderSessionReference, RunAttemptMode, RunAttemptRequest,
+        AgentEventEnvelope, AgentEventPayload, AgentEventStream, AgentLiveEvent, AgentRunIntent,
+        AgentRunPort, AgentRunPortCommand, AgentRunPortCommandEnvelope, AgentRunPortError,
+        AgentRunPortSnapshot, AgentRunRequestEnvelope, AgentRunStatus, AgentRuntimeError,
+        AgentRuntimeErrorKind, AgentRuntimeMessageRole, CanonicalMessage, NativeAuditChannel,
+        NativeAuditFrame, NativeAuditIntegrityStatus, NativeAuditMetadata, NativeAuditReference,
+        NativeAuditWriter, ProjectionStatus, ProviderSessionReference, RunAttemptMode,
+        RunAttemptRequest,
     },
 };
 use futures::{StreamExt, stream};
@@ -101,6 +102,7 @@ pub struct LocalAgentRunPort {
     launching_attempts: Arc<Mutex<HashSet<Uuid>>>,
     audit_writers: Arc<Mutex<HashMap<Uuid, NativeAuditWriter>>>,
     event_senders: Arc<RwLock<HashMap<Uuid, broadcast::Sender<AgentEventEnvelope>>>>,
+    live_event_senders: Arc<RwLock<HashMap<Uuid, broadcast::Sender<AgentLiveEvent>>>>,
     terminal_event_sender: broadcast::Sender<AgentRunTerminalEvent>,
     event_write_lock: Arc<Mutex<()>>,
     command_lock: Arc<Mutex<()>>,
@@ -247,6 +249,7 @@ impl LocalAgentRunPort {
             launching_attempts: Arc::new(Mutex::new(HashSet::new())),
             audit_writers: Arc::new(Mutex::new(HashMap::new())),
             event_senders: Arc::new(RwLock::new(HashMap::new())),
+            live_event_senders: Arc::new(RwLock::new(HashMap::new())),
             terminal_event_sender,
             event_write_lock: Arc::new(Mutex::new(())),
             command_lock: Arc::new(Mutex::new(())),
@@ -256,6 +259,13 @@ impl LocalAgentRunPort {
 
     pub(crate) fn subscribe_terminal_events(&self) -> broadcast::Receiver<AgentRunTerminalEvent> {
         self.terminal_event_sender.subscribe()
+    }
+
+    pub async fn subscribe_live_events(
+        &self,
+        agent_run_id: Uuid,
+    ) -> broadcast::Receiver<AgentLiveEvent> {
+        self.live_sender(agent_run_id).await.subscribe()
     }
 
     /// Reconnect to every persisted durable process host during application startup.
@@ -583,6 +593,36 @@ impl LocalAgentRunPort {
         Ok(())
     }
 
+    fn staged_event(
+        request: &AgentRunRequestEnvelope,
+        attempt: &RunAttemptRequest,
+        payload: AgentEventPayload,
+        native_refs: Vec<NativeAuditReference>,
+        timestamp: chrono::DateTime<Utc>,
+        event_id: Option<Uuid>,
+        orchestration_identity: (Option<Uuid>, Option<Uuid>),
+    ) -> AgentEventEnvelope {
+        AgentEventEnvelope {
+            schema_version: AGENT_EVENT_SCHEMA_VERSION,
+            payload_version: AGENT_EVENT_PAYLOAD_VERSION,
+            event_id: event_id.unwrap_or_else(Uuid::new_v4),
+            session_id: request.session_id,
+            agent_run_id: request.agent_run_id,
+            turn_id: request.turn_id,
+            run_attempt_id: attempt.run_attempt_id,
+            run_attempt_number: attempt.attempt_number,
+            // Replaced atomically with a dense canonical sequence by the
+            // host-batch persistence method.
+            sequence: 0,
+            correlation_id: request.correlation_id,
+            orchestration_run_id: orchestration_identity.0,
+            orchestration_node_execution_id: orchestration_identity.1,
+            timestamp,
+            native_refs,
+            payload,
+        }
+    }
+
     async fn append_recoverable(
         &self,
         request: &AgentRunRequestEnvelope,
@@ -690,6 +730,14 @@ impl LocalAgentRunPort {
         senders
             .entry(agent_run_id)
             .or_insert_with(|| broadcast::channel(256).0)
+            .clone()
+    }
+
+    async fn live_sender(&self, agent_run_id: Uuid) -> broadcast::Sender<AgentLiveEvent> {
+        let mut senders = self.live_event_senders.write().await;
+        senders
+            .entry(agent_run_id)
+            .or_insert_with(|| broadcast::channel(512).0)
             .clone()
     }
 
@@ -1417,8 +1465,43 @@ impl LocalAgentRunPort {
         attempt: &RunAttemptRequest,
         events: Vec<crate::process_host::HostEvent>,
     ) -> Result<(), AgentRunPortError> {
+        let Some(through_host_sequence) = events.last().map(|event| event.sequence) else {
+            return Ok(());
+        };
+        if events.first().is_some_and(|event| event.sequence == 0)
+            || events
+                .windows(2)
+                .any(|pair| pair[0].sequence >= pair[1].sequence)
+        {
+            return Err(AgentRunPortError::Rejected(
+                "process host observations must have a strictly increasing positive sequence"
+                    .to_string(),
+            ));
+        }
+        let orchestration_identity: (Option<Uuid>, Option<Uuid>) = sqlx::query_as(
+            "SELECT orchestration_run_id, node_execution_id FROM orchestration_agent_run_links WHERE agent_run_id = ?",
+        )
+        .bind(request.agent_run_id)
+        .fetch_optional(&self.db.pool)
+        .await
+        .map_err(port_database)?
+        .unwrap_or((None, None));
+        let mut durable_events = Vec::new();
+        let mut live_events = Vec::new();
+        let mut host_groups = Vec::new();
+        let mut observed_sessions = Vec::new();
+        let mut terminal_ack = None;
+        let mut exited_process = None;
+        let mut projected_status = self
+            .query(request.agent_run_id)
+            .await
+            .ok()
+            .map(|snapshot| snapshot.state.status);
+
         for event in events {
-            let terminal = matches!(&event.payload, HostEventPayload::Terminal { .. });
+            let host_sequence = event.sequence;
+            let durable_start = durable_events.len();
+            let live_start = live_events.len();
             match event.payload {
                 HostEventPayload::Started {
                     provider_pid,
@@ -1451,7 +1534,7 @@ impl LocalAgentRunPort {
                         .register(registered)
                         .await
                         .map_err(|error| AgentRunPortError::Unavailable(error.to_string()))?;
-                    self.append_recoverable(
+                    durable_events.push(Self::staged_event(
                         request,
                         attempt,
                         AgentEventPayload::Message {
@@ -1461,9 +1544,9 @@ impl LocalAgentRunPort {
                         vec![canonical_input_ref],
                         request.created_at,
                         Some(request.input.message_id),
-                    )
-                    .await;
-                    self.append_recoverable(
+                        orchestration_identity,
+                    ));
+                    durable_events.push(Self::staged_event(
                         request,
                         attempt,
                         AgentEventPayload::LifecycleChanged {
@@ -1472,15 +1555,48 @@ impl LocalAgentRunPort {
                         Vec::new(),
                         event.timestamp,
                         Some(event.event_id),
-                    )
-                    .await;
+                        orchestration_identity,
+                    ));
+                    projected_status = Some(AgentRunStatus::Running);
                 }
                 HostEventPayload::Mapped {
-                    event: mapped,
+                    mut event,
                     native_ref,
                 } => {
-                    self.append_mapped_event(request, attempt, mapped, native_ref)
-                        .await;
+                    event.native_refs = vec![native_ref];
+                    if let AgentEventPayload::SessionObserved { provider_session } = &event.payload
+                    {
+                        observed_sessions.push(provider_session.clone());
+                    }
+                    if should_stage_mapped_lifecycle(projected_status, &event.payload) {
+                        if let AgentEventPayload::LifecycleChanged { status } = event.payload {
+                            projected_status = Some(status);
+                            event.payload = AgentEventPayload::LifecycleChanged { status };
+                        }
+                        durable_events.push(event);
+                    }
+                }
+                HostEventPayload::Projected {
+                    durable_events: projected,
+                    live_events: live,
+                    native_ref,
+                } => {
+                    live_events.extend(live);
+                    for mut mapped in projected {
+                        mapped.native_refs = vec![native_ref.clone()];
+                        if let AgentEventPayload::SessionObserved { provider_session } =
+                            &mapped.payload
+                        {
+                            observed_sessions.push(provider_session.clone());
+                        }
+                        if should_stage_mapped_lifecycle(projected_status, &mapped.payload) {
+                            if let AgentEventPayload::LifecycleChanged { status } = mapped.payload {
+                                projected_status = Some(status);
+                                mapped.payload = AgentEventPayload::LifecycleChanged { status };
+                            }
+                            durable_events.push(mapped);
+                        }
+                    }
                 }
                 HostEventPayload::Terminal {
                     mut status,
@@ -1493,12 +1609,7 @@ impl LocalAgentRunPort {
                     NativeAuditStreamRecord::finalize(&self.db.pool, &audit_manifest)
                         .await
                         .map_err(port_database)?;
-                    let current_status = self
-                        .query(request.agent_run_id)
-                        .await
-                        .ok()
-                        .map(|snapshot| snapshot.state.status);
-                    if current_status == Some(AgentRunStatus::Cancelling) {
+                    if projected_status == Some(AgentRunStatus::Cancelling) {
                         let process_registry_status: Option<String> = sqlx::query_scalar(
                             "SELECT registry_status FROM agent_process_registry WHERE run_attempt_id = ?",
                         )
@@ -1516,36 +1627,34 @@ impl LocalAgentRunPort {
                     if status != AgentRunStatus::Cancelled
                         && let Some(error) = error
                     {
-                        self.append_recoverable(
+                        durable_events.push(Self::staged_event(
                             request,
                             attempt,
                             AgentEventPayload::Error { error },
                             Vec::new(),
                             event.timestamp,
                             error_event_id,
-                        )
-                        .await;
+                            orchestration_identity,
+                        ));
                     }
                     // A transient snapshot/read failure must not discard the
                     // host's durable terminal fact.  Append it and let the
                     // canonical projection path report degradation; when a
                     // successful read proves the run is already terminal,
                     // the reducer's terminal guard makes a duplicate safe.
-                    let should_append_terminal = self
-                        .query(request.agent_run_id)
-                        .await
-                        .map(|current| !current.state.status.is_terminal())
-                        .unwrap_or(true);
+                    let should_append_terminal =
+                        projected_status.is_none_or(|status| !status.is_terminal());
                     if should_append_terminal {
-                        self.append_recoverable(
+                        durable_events.push(Self::staged_event(
                             request,
                             attempt,
                             AgentEventPayload::LifecycleChanged { status },
                             Vec::new(),
                             event.timestamp,
                             Some(event.event_id),
-                        )
-                        .await;
+                            orchestration_identity,
+                        ));
+                        projected_status = Some(status);
                     }
                     // A provider can fail before a child is spawned. In that
                     // case the host emits a terminal event without Started,
@@ -1560,43 +1669,184 @@ impl LocalAgentRunPort {
                     .await
                     .map_err(port_database)?;
                     if pid.is_some() {
-                        AgentRunRecord::mark_process_exited(
-                            &self.db.pool,
-                            attempt.run_attempt_id,
-                            exit_code,
-                            event.timestamp,
-                        )
-                        .await
-                        .map_err(|error| AgentRunPortError::Unavailable(error.to_string()))?;
-                        if let Err(error) = self
-                            .process_registry
-                            .remove_runtime(attempt.run_attempt_id)
-                            .await
-                        {
-                            tracing::warn!(run_attempt_id = %attempt.run_attempt_id, %error, "failed to remove exited process registry entry");
-                        }
+                        exited_process = Some((exit_code, event.timestamp));
                     }
+                    terminal_ack = Some(event.sequence);
                 }
             }
-            AgentRunRecord::advance_process_host_cursor(
+            host_groups.push((
+                host_sequence,
+                durable_events[durable_start..].to_vec(),
+                live_events[live_start..].to_vec(),
+            ));
+        }
+
+        let _guard = self.event_write_lock.lock().await;
+        let mut retry = 0u8;
+        let inserted = loop {
+            match AgentEventRecord::append_and_project_host_batch(
+                &self.db.pool,
+                &durable_events,
+                &live_events,
+                &observed_sessions,
+                attempt.run_attempt_id,
+                through_host_sequence,
+            )
+            .await
+            {
+                Ok(inserted) => break inserted,
+                Err(error) if is_transient_sqlite_contention(&error) && retry < 1 => {
+                    retry += 1;
+                    tokio::time::sleep(Duration::from_millis(50 * u64::from(retry))).await;
+                }
+                Err(error) if is_transient_sqlite_contention(&error) => {
+                    return Err(AgentRunPortError::Unavailable(format!(
+                        "temporary SQLite contention while projecting host batch: {error}"
+                    )));
+                }
+                Err(error) if is_non_retryable_projection_error(&error) => {
+                    tracing::warn!(agent_run_id = %request.agent_run_id, %error, "host batch failed permanently; isolating the offending host observation");
+                    let mut recovered = Vec::new();
+                    let mut recovered_live = Vec::new();
+                    for (host_sequence, group_events, group_live) in &host_groups {
+                        match AgentEventRecord::append_and_project_host_batch(
+                            &self.db.pool,
+                            group_events,
+                            group_live,
+                            &group_events
+                                .iter()
+                                .filter_map(|event| match &event.payload {
+                                    AgentEventPayload::SessionObserved { provider_session } => {
+                                        Some(provider_session.clone())
+                                    }
+                                    _ => None,
+                                })
+                                .collect::<Vec<_>>(),
+                            attempt.run_attempt_id,
+                            *host_sequence,
+                        )
+                        .await
+                        {
+                            Ok(inserted) => {
+                                recovered.extend(inserted);
+                                recovered_live.extend(group_live.clone());
+                            }
+                            Err(group_error) if is_transient_sqlite_contention(&group_error) => {
+                                return Err(AgentRunPortError::Unavailable(format!(
+                                    "temporary SQLite contention while isolating host batch: {group_error}"
+                                )));
+                            }
+                            Err(group_error) if is_non_retryable_projection_error(&group_error) => {
+                                AgentRunRecord::record_projection_failure_and_advance_cursor(
+                                    &self.db.pool,
+                                    request.agent_run_id,
+                                    attempt.run_attempt_id,
+                                    *host_sequence,
+                                    "non_retryable_projection",
+                                    &group_error.to_string(),
+                                )
+                                .await
+                                .map_err(|record_error| {
+                                    AgentRunPortError::Unavailable(format!(
+                                        "failed to record isolated projection failure: {record_error}"
+                                    ))
+                                })?;
+                                tracing::error!(
+                                    agent_run_id = %request.agent_run_id,
+                                    run_attempt_id = %attempt.run_attempt_id,
+                                    host_event_sequence = *host_sequence,
+                                    error = %group_error,
+                                    "quarantined non-retryable host observation; Native Audit remains authoritative"
+                                );
+                            }
+                            Err(group_error) => {
+                                return Err(AgentRunPortError::Unavailable(format!(
+                                    "database failure while isolating host batch; cursor was not advanced: {group_error}"
+                                )));
+                            }
+                        }
+                    }
+                    live_events = recovered_live;
+                    break recovered;
+                }
+                Err(error) => {
+                    return Err(AgentRunPortError::Unavailable(format!(
+                        "database failure while projecting host batch; cursor was not advanced: {error}"
+                    )));
+                }
+            }
+        };
+        drop(_guard);
+
+        let sender = self.sender(request.agent_run_id).await;
+        let live_sender = self.live_sender(request.agent_run_id).await;
+        let mut inserted_by_id: HashMap<Uuid, AgentEventEnvelope> = inserted
+            .into_iter()
+            .map(|event| (event.event_id, event))
+            .collect();
+        let mut live_by_id: HashMap<Uuid, AgentLiveEvent> = live_events
+            .into_iter()
+            .map(|event| (event.event_id, event))
+            .collect();
+        // Deliver only after the batch commit, but retain host/native ordering
+        // between transient progress and durable semantic events.
+        for (_, group_events, group_live) in &host_groups {
+            for staged in group_events {
+                let Some(event) = inserted_by_id.remove(&staged.event_id) else {
+                    continue;
+                };
+                let terminal_event = match &event.payload {
+                    AgentEventPayload::LifecycleChanged { status } if status.is_terminal() => {
+                        Some(AgentRunTerminalEvent {
+                            agent_run_id: request.agent_run_id,
+                            session_id: request.session_id,
+                            status: *status,
+                        })
+                    }
+                    _ => None,
+                };
+                let _ = sender.send(event);
+                if let Some(terminal_event) = terminal_event {
+                    let _ = self.terminal_event_sender.send(terminal_event);
+                }
+            }
+            for staged in group_live {
+                if let Some(event) = live_by_id.remove(&staged.event_id) {
+                    let _ = live_sender.send(event);
+                }
+            }
+        }
+        debug_assert!(inserted_by_id.is_empty());
+        debug_assert!(live_by_id.is_empty());
+
+        if let Some((exit_code, exited_at)) = exited_process {
+            AgentRunRecord::mark_process_exited(
                 &self.db.pool,
                 attempt.run_attempt_id,
-                event.sequence,
+                exit_code,
+                exited_at,
             )
             .await
             .map_err(|error| AgentRunPortError::Unavailable(error.to_string()))?;
-            if terminal {
-                if let Some((endpoint, token)) = self.load_host_attachment(attempt).await? {
-                    let _ = send_host_command(
-                        &endpoint,
-                        &token,
-                        HostCommand::AckTerminal {
-                            through_sequence: event.sequence,
-                        },
-                    )
-                    .await;
-                }
+            if let Err(error) = self
+                .process_registry
+                .remove_runtime(attempt.run_attempt_id)
+                .await
+            {
+                tracing::warn!(run_attempt_id = %attempt.run_attempt_id, %error, "failed to remove exited process registry entry");
             }
+        }
+        if let Some(sequence) = terminal_ack
+            && let Some((endpoint, token)) = self.load_host_attachment(attempt).await?
+        {
+            let _ = send_host_command(
+                &endpoint,
+                &token,
+                HostCommand::AckTerminal {
+                    through_sequence: sequence,
+                },
+            )
+            .await;
         }
         Ok(())
     }
@@ -2836,6 +3086,13 @@ impl AgentRunPort for LocalAgentRunPort {
         // prevents cancel/retry/input races between local tasks.
         let _command_guard = self.command_lock.lock().await;
         let agent_run_id = command.agent_run_id;
+        if !matches!(&command.command, AgentRunPortCommand::Cancel { .. })
+            && self.query(agent_run_id).await?.state.projection_status != ProjectionStatus::Current
+        {
+            return Err(AgentRunPortError::Rejected(
+                "canonical projection is degraded; only cancellation is allowed".to_string(),
+            ));
+        }
         match &command.command {
             AgentRunPortCommand::Cancel { .. } => {
                 let (request, attempt) = self.load_request(agent_run_id).await?;
@@ -3114,6 +3371,59 @@ fn port_database(error: sqlx::Error) -> AgentRunPortError {
     AgentRunPortError::Unavailable(error.to_string())
 }
 
+fn should_stage_mapped_lifecycle(
+    current_status: Option<AgentRunStatus>,
+    payload: &AgentEventPayload,
+) -> bool {
+    let AgentEventPayload::LifecycleChanged { status } = payload else {
+        return true;
+    };
+    current_status.is_none_or(|current| {
+        !current.is_terminal()
+            && (current != AgentRunStatus::Cancelling || *status == AgentRunStatus::Cancelled)
+    })
+}
+
+fn is_transient_sqlite_contention(
+    error: &db::models::agent_runtime::AgentRuntimePersistenceError,
+) -> bool {
+    let db::models::agent_runtime::AgentRuntimePersistenceError::Database(sqlx::Error::Database(
+        database,
+    )) = error
+    else {
+        return false;
+    };
+    database
+        .code()
+        .and_then(|code| code.parse::<i32>().ok())
+        .is_some_and(|code| code & 0xff == 5 || code & 0xff == 6)
+}
+
+/// Only deterministic contract/reducer failures may be quarantined. Database
+/// infrastructure failures are never converted into a skipped host cursor:
+/// the next attach must replay them after the storage problem is repaired.
+fn is_non_retryable_projection_error(
+    error: &db::models::agent_runtime::AgentRuntimePersistenceError,
+) -> bool {
+    use db::models::agent_runtime::AgentRuntimePersistenceError;
+
+    matches!(
+        error,
+        AgentRuntimePersistenceError::InvalidAttempt(_)
+            | AgentRuntimePersistenceError::InvalidCommand(_)
+            | AgentRuntimePersistenceError::InvalidVersion(_)
+            | AgentRuntimePersistenceError::InvalidFirstAttempt
+            | AgentRuntimePersistenceError::IdempotencyConflict { .. }
+            | AgentRuntimePersistenceError::IdentityConflict { .. }
+            | AgentRuntimePersistenceError::InvalidEnumEncoding(_)
+            | AgentRuntimePersistenceError::Serialization(_)
+            | AgentRuntimePersistenceError::Reducer(_)
+            | AgentRuntimePersistenceError::MissingState(_)
+            | AgentRuntimePersistenceError::MissingLaunchGate(_)
+            | AgentRuntimePersistenceError::InvalidDirectCommand
+    )
+}
+
 fn port_audit(error: executors::runtime::NativeAuditError) -> AgentRunPortError {
     AgentRunPortError::Unavailable(error.to_string())
 }
@@ -3158,6 +3468,12 @@ mod tests {
         .execute(&pool)
         .await
         .expect("create runtime schema");
+        sqlx::raw_sql(include_str!(
+            "../../db/migrations/20260909000000_agent_projection_failures.sql"
+        ))
+        .execute(&pool)
+        .await
+        .expect("create projection failure schema");
         DBService { pool }
     }
 

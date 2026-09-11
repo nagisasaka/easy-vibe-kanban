@@ -6,10 +6,11 @@ use axum::{
     response::{IntoResponse, Json as ResponseJson},
     routing::{get, post},
 };
+use db::models::agent_runtime::AgentEventRecord;
 use deployment::Deployment;
 use executors::runtime::{
-    AgentEventEnvelope, AgentRunPortCommand, AgentRunPortCommandEnvelope, AgentRunPortError,
-    ORCHESTRATION_COMMAND_SCHEMA_VERSION, RunAttemptMode, RunState,
+    AgentEventEnvelope, AgentLiveEvent, AgentRunPortCommand, AgentRunPortCommandEnvelope,
+    AgentRunPortError, ORCHESTRATION_COMMAND_SCHEMA_VERSION, RunAttemptMode, RunState,
 };
 use serde::{Deserialize, Serialize};
 use services::services::agent_runtime::{
@@ -107,6 +108,9 @@ pub enum AgentRunStreamMessage {
     Event {
         event: AgentEventEnvelope,
         replay: bool,
+    },
+    Live {
+        event: AgentLiveEvent,
     },
     Ready {
         state: RunState,
@@ -284,6 +288,12 @@ async fn handle_agent_run_events_ws(
     query: AgentEventQuery,
 ) -> anyhow::Result<()> {
     let reader = AgentRuntimeReadService::new(&deployment.db().pool);
+    // Subscribe before replaying durable history so live updates arriving in
+    // the replay window are buffered. They never affect the durable cursor.
+    let mut live_events = deployment
+        .agent_run_port()
+        .subscribe_live_events(agent_run_id)
+        .await;
     let mut cursor = match query.cursor() {
         Ok(cursor) => cursor,
         Err(error) => {
@@ -332,6 +342,12 @@ async fn handle_agent_run_events_ws(
             .await?;
         }
         if !page.has_more {
+            for event in
+                AgentEventRecord::usage_snapshots_for_run(&deployment.db().pool, agent_run_id)
+                    .await?
+            {
+                send_stream_message(&mut socket, &AgentRunStreamMessage::Live { event }).await?;
+            }
             send_stream_message(
                 &mut socket,
                 &AgentRunStreamMessage::Ready {
@@ -348,6 +364,21 @@ async fn handle_agent_run_events_ws(
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {
+            live = live_events.recv() => {
+                match live {
+                    Ok(event) => {
+                        send_stream_message(
+                            &mut socket,
+                            &AgentRunStreamMessage::Live { event },
+                        )
+                        .await?;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        tracing::debug!(%agent_run_id, skipped, "AgentRun live stream lagged; durable completion will repair the view");
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
             _ = interval.tick() => {
                 let page = reader
                     .history_page(agent_run_id, cursor, STREAM_PAGE_SIZE)
