@@ -3,6 +3,7 @@ import type {
   AgentLiveEvent,
   RunState,
 } from 'shared/types';
+import { AgentGoalStatus } from 'shared/types';
 import { describe, expect, it } from 'vitest';
 import {
   emptyCanonicalAgentTimeline,
@@ -201,6 +202,37 @@ describe('mergeCanonicalAgentTimeline', () => {
 
     expect(timeline.items[0]?.kind).toBe('unknown');
     expect(timeline.state?.projection_status).toBe('projection_degraded');
+  });
+
+  it('keeps goal updates durable and deduplicated across replay', () => {
+    const goalUpdate = {
+      ...event(2, 'goal-update'),
+      payload: {
+        type: 'goal_updated',
+        data: {
+          goal: {
+            objective: 'Ship the feature',
+            status: AgentGoalStatus.active,
+            token_budget: 50_000n,
+            tokens_used: 1_200n,
+            time_used_seconds: 42n,
+          },
+        },
+      },
+    } as AgentEventEnvelope;
+    const first = mergeCanonicalAgentTimeline(
+      emptyCanonicalAgentTimeline(),
+      [goalUpdate],
+      { ...state, goal: goalUpdate.payload.data.goal }
+    );
+    const replayed = mergeCanonicalAgentTimeline(first, [goalUpdate]);
+
+    expect(replayed.events).toHaveLength(1);
+    expect(replayed.items[0]).toMatchObject({
+      kind: 'goal',
+      content: 'Ship the feature',
+    });
+    expect(replayed.state?.goal?.tokens_used).toBe(1_200n);
   });
 });
 

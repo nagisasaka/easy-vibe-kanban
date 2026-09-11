@@ -1,11 +1,15 @@
 import type {
   AgentRunSummary,
+  AgentGoalStatus,
   CancelAgentRunRequest,
   ResolveAgentRunApprovalRequest,
   RetryAgentRunRequest,
   RunAttemptMode,
   RunState,
   SubmitAgentRunInputRequest,
+  SteerAgentRunRequest,
+  UpdateAgentRunGoalRequest,
+  UpdatePlanGoalDraftRequest,
 } from 'shared/types';
 import type { AgentEventCursor } from '@/features/agent-runtime/model/canonicalAgentTimeline';
 import { handleApiResponse } from './api';
@@ -111,6 +115,54 @@ export const agentRunsApi = {
       reason,
     };
     return postControl(agentRunId, 'cancel', request);
+  },
+
+  async interruptTurn(agentRunId: string): Promise<RunState> {
+    return postControl(
+      agentRunId,
+      'interrupt',
+      controlIdentity('interrupt', agentRunId)
+    );
+  },
+
+  async steer(agentRunId: string, content: string): Promise<RunState> {
+    const request: SteerAgentRunRequest = {
+      ...controlIdentity('steer', agentRunId),
+      content,
+    };
+    return postControl(agentRunId, 'steer', request);
+  },
+
+  async updateGoal(
+    agentRunId: string,
+    update: { objective?: string; status?: AgentGoalStatus }
+  ): Promise<RunState> {
+    const request: UpdateAgentRunGoalRequest = {
+      ...controlIdentity('goal', agentRunId),
+      ...update,
+    };
+    return postControl(agentRunId, 'goal', request);
+  },
+
+  async updatePlanGoalDraft(
+    agentRunId: string,
+    objective: string
+  ): Promise<RunState> {
+    const request: UpdatePlanGoalDraftRequest = {
+      ...controlIdentity('plan-goal-draft', agentRunId),
+      objective,
+    };
+    return postControl(agentRunId, 'plan-goal-draft', request);
+  },
+
+  async clearGoal(agentRunId: string): Promise<RunState> {
+    return handleApiResponse<RunState>(
+      await makeLocalApiRequest(`/api/agent-runs/${agentRunId}/goal`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(controlIdentity('goal-clear', agentRunId)),
+      })
+    );
   },
 
   async submitInput(

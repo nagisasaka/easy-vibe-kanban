@@ -915,7 +915,23 @@ reasoning_id?: string | null,
 /**
  * Permission policy override
  */
-permission_policy?: PermissionPolicy | null, };
+permission_policy?: PermissionPolicy | null, 
+/**
+ * Workflow mode. Missing values preserve the historic Code behavior,
+ * except that a legacy PLAN permission is interpreted as Plan by Codex.
+ */
+execution_mode?: ExecutionMode | null, 
+/**
+ * Optional native Codex Goal token budget. Must be positive when set.
+ */
+goal_token_budget?: number | null, 
+/**
+ * Spawned-agent concurrency cap for this session. `None` means Codex
+ * chooses its default and `Some(0)` disables subagents.
+ */
+goal_max_concurrent_agents?: number | null, };
+
+export enum ExecutionMode { code = "code", plan = "plan", goal = "goal", plan_with_goal = "plan_with_goal" }
 
 export type ScriptContext = "SetupScript" | "CleanupScript" | "ArchiveScript" | "DevServer" | "ToolInstallScript";
 
@@ -998,7 +1014,7 @@ export type Gemini = { append_prompt: AppendPrompt, model?: string | null, yolo?
 
 export type OhMyPi = { append_prompt: AppendPrompt, model?: string | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 
-export type Codex = { append_prompt: AppendPrompt, sandbox?: SandboxMode | null, ask_for_approval?: AskForApproval | null, oss?: boolean | null, model?: string | null, model_reasoning_effort?: ReasoningEffort | null, model_reasoning_summary?: ReasoningSummary | null, model_reasoning_summary_format?: ReasoningSummaryFormat | null, profile?: string | null, base_instructions?: string | null, include_apply_patch_tool?: boolean | null, model_provider?: string | null, compact_prompt?: string | null, developer_instructions?: string | null, plan: boolean, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
+export type Codex = { append_prompt: AppendPrompt, sandbox?: SandboxMode | null, ask_for_approval?: AskForApproval | null, oss?: boolean | null, model?: string | null, model_reasoning_effort?: ReasoningEffort | null, model_reasoning_summary?: ReasoningSummary | null, model_reasoning_summary_format?: ReasoningSummaryFormat | null, profile?: string | null, base_instructions?: string | null, include_apply_patch_tool?: boolean | null, model_provider?: string | null, compact_prompt?: string | null, developer_instructions?: string | null, plan: boolean, execution_mode: ExecutionMode, goal_token_budget?: number | null, goal_max_concurrent_agents?: number | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 
 export type SandboxMode = "auto" | "read-only" | "workspace-write" | "danger-full-access";
 
@@ -1142,7 +1158,11 @@ export enum WorkspaceMode { shared_workspace = "shared_workspace", isolated_work
 
 export type WorkspaceReference = { workspace_id: string, mode: WorkspaceMode, path: string, };
 
-export enum AgentCapability { session_resume = "session_resume", steering = "steering", approval = "approval", images = "images", review = "review", mcp = "mcp", subagents = "subagents", token_usage = "token_usage" }
+export enum AgentCapability { session_resume = "session_resume", steering = "steering", approval = "approval", images = "images", review = "review", mcp = "mcp", subagents = "subagents", token_usage = "token_usage", goal = "goal" }
+
+export enum AgentGoalStatus { active = "active", paused = "paused", blocked = "blocked", usageLimited = "usageLimited", budgetLimited = "budgetLimited", complete = "complete" }
+
+export type AgentGoalState = { objective: string, status: AgentGoalStatus, token_budget?: bigint | null, tokens_used: bigint, time_used_seconds: bigint, };
 
 export enum CapabilityState { native = "native", emulated = "emulated", unsupported = "unsupported", unknown = "unknown" }
 
@@ -1164,7 +1184,7 @@ export type RunAttemptRequest = { schema_version: number, payload_version: numbe
 
 export type NativeAuditReference = { stream_id: string, sequence: bigint, checksum?: string | null, };
 
-export type AgentEventPayload = { "type": "lifecycle_changed", "data": { status: AgentRunStatus, } } | { "type": "session_observed", "data": { provider_session: ProviderSessionReference, } } | { "type": "message", "data": { message: CanonicalMessage, final_output: boolean, } } | { "type": "thinking", "data": { content: string, } } | { "type": "tool_call", "data": { tool_call_id?: string | null, tool_name: string, status: AgentRuntimeToolStatus, arguments?: JsonValue | null, result?: JsonValue | null, } } | { "type": "approval_requested", "data": { approval_id: string, tool_call_id?: string | null, tool_name: string, } } | { "type": "approval_resolved", "data": { approval_id: string, approved: boolean, reason?: string | null, } } | { "type": "input_requested", "data": { input_id: string, prompt: string, } } | { "type": "input_resolved", "data": { input_id: string, answered: boolean, } } | { "type": "token_usage", "data": { input_tokens: bigint, output_tokens: bigint, cached_input_tokens?: bigint | null, } } | { "type": "error", "data": { error: AgentRuntimeError, } } | { "type": "projection_degraded", "data": { reason: string, } } | { "type": "provider_extension", "data": { provider_namespace: string, provider_event: string, payload: JsonValue, } } | { "type": "unknown", "data": { event_type: string, payload: JsonValue, } };
+export type AgentEventPayload = { "type": "lifecycle_changed", "data": { status: AgentRunStatus, } } | { "type": "session_observed", "data": { provider_session: ProviderSessionReference, } } | { "type": "message", "data": { message: CanonicalMessage, final_output: boolean, } } | { "type": "thinking", "data": { content: string, } } | { "type": "tool_call", "data": { tool_call_id?: string | null, tool_name: string, status: AgentRuntimeToolStatus, arguments?: JsonValue | null, result?: JsonValue | null, } } | { "type": "approval_requested", "data": { approval_id: string, tool_call_id?: string | null, tool_name: string, } } | { "type": "approval_resolved", "data": { approval_id: string, approved: boolean, reason?: string | null, } } | { "type": "input_requested", "data": { input_id: string, prompt: string, } } | { "type": "input_resolved", "data": { input_id: string, answered: boolean, } } | { "type": "token_usage", "data": { input_tokens: bigint, output_tokens: bigint, cached_input_tokens?: bigint | null, } } | { "type": "goal_updated", "data": { goal: AgentGoalState, } } | { "type": "goal_cleared" } | { "type": "error", "data": { error: AgentRuntimeError, } } | { "type": "projection_degraded", "data": { reason: string, } } | { "type": "provider_extension", "data": { provider_namespace: string, provider_event: string, payload: JsonValue, } } | { "type": "unknown", "data": { event_type: string, payload: JsonValue, } };
 
 export type AgentEventEnvelope = { schema_version: number, payload_version: number, event_id: string, session_id: string, agent_run_id: string, turn_id: string, run_attempt_id: string, run_attempt_number: number, sequence: bigint, correlation_id: string, orchestration_run_id?: string | null, orchestration_node_execution_id?: string | null, timestamp: string, native_refs?: Array<NativeAuditReference>, payload: AgentEventPayload, };
 
@@ -1176,7 +1196,7 @@ export enum AgentRunStatus { pending = "pending", starting = "starting", running
 
 export enum ProjectionStatus { current = "current", projection_degraded = "projection_degraded", rebuilding = "rebuilding" }
 
-export type RunState = { state_schema_version: number, reducer_version: number, session_id: string, agent_run_id: string, turn_id: string, status: AgentRunStatus, projection_status: ProjectionStatus, last_run_attempt_id?: string | null, last_run_attempt_number: number, last_event_sequence: bigint, last_event_id?: string | null, provider_session?: ProviderSessionReference | null, terminal_output?: CanonicalMessage | null, last_error?: AgentRuntimeError | null, unknown_event_count: bigint, updated_at: string, };
+export type RunState = { state_schema_version: number, reducer_version: number, session_id: string, agent_run_id: string, turn_id: string, status: AgentRunStatus, projection_status: ProjectionStatus, last_run_attempt_id?: string | null, last_run_attempt_number: number, last_event_sequence: bigint, last_event_id?: string | null, provider_session?: ProviderSessionReference | null, terminal_output?: CanonicalMessage | null, last_error?: AgentRuntimeError | null, goal?: AgentGoalState | null, unknown_event_count: bigint, updated_at: string, };
 
 export type AgentRunPortSnapshot = { agent_run_id: string, state: RunState, };
 
@@ -1199,6 +1219,12 @@ export type ResolveAgentRunApprovalRequest = { approval_id: string, approved: bo
 export type RetryAgentRunRequest = { mode: RunAttemptMode, run_attempt_id: string, command_id: string, idempotency_key: string, correlation_id: string, created_at: string, };
 
 export type AgentRunStreamMessage = { "type": "event", "data": { event: AgentEventEnvelope, replay: boolean, } } | { "type": "live", "data": { event: AgentLiveEvent, } } | { "type": "ready", "data": { state: RunState, cursor?: AgentEventCursor | null, } } | { "type": "state", "data": { state: RunState, cursor?: AgentEventCursor | null, } } | { "type": "error", "data": { message: string, } };
+
+export type SteerAgentRunRequest = { content: string, command_id: string, idempotency_key: string, correlation_id: string, created_at: string, };
+
+export type UpdateAgentRunGoalRequest = { objective?: string, status?: AgentGoalStatus, command_id: string, idempotency_key: string, correlation_id: string, created_at: string, };
+
+export type UpdatePlanGoalDraftRequest = { objective: string, command_id: string, idempotency_key: string, correlation_id: string, created_at: string, };
 
 export enum OrchestrationProductKind { workflow = "workflow", arena = "arena" }
 
@@ -1224,7 +1250,7 @@ export type UpstreamHandoff = { source_ref: UpstreamSourceReference, initiating_
 
 export type AgentRunPortCommandEnvelope = { schema_version: number, command_id: string, idempotency_key: string, agent_run_id: string, orchestration_run_id?: string | null, orchestration_node_execution_id?: string | null, correlation_id: string, created_at: string, command: AgentRunPortCommand, };
 
-export type AgentRunPortCommand = { "type": "create", "data": { request: AgentRunRequestEnvelope, attempt: RunAttemptRequest, } } | { "type": "cancel", "data": { reason: string, } } | { "type": "submit_input", "data": { input_id: string, content: string, } } | { "type": "resolve_approval", "data": { approval_id: string, approved: boolean, reason?: string | null, } } | { "type": "retry", "data": { mode: RunAttemptMode, run_attempt_id: string, } };
+export type AgentRunPortCommand = { "type": "create", "data": { request: AgentRunRequestEnvelope, attempt: RunAttemptRequest, } } | { "type": "cancel", "data": { reason: string, } } | { "type": "interrupt_turn" } | { "type": "submit_input", "data": { input_id: string, content: string, } } | { "type": "resolve_approval", "data": { approval_id: string, approved: boolean, reason?: string | null, } } | { "type": "steer", "data": { content: string, } } | { "type": "update_plan_goal_draft", "data": { objective: string, } } | { "type": "goal_update", "data": { objective?: string | null, status?: AgentGoalStatus | null, token_budget?: bigint | null | null, } } | { "type": "goal_clear" } | { "type": "retry", "data": { mode: RunAttemptMode, run_attempt_id: string, } };
 
 export enum OrchestrationRunStatus { pending = "pending", running = "running", waiting_for_input = "waiting_for_input", waiting_for_approval = "waiting_for_approval", cancelling = "cancelling", succeeded = "succeeded", failed = "failed", cancelled = "cancelled" }
 

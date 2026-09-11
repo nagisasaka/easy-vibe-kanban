@@ -96,7 +96,7 @@ use crate::{
     },
     logs::utils::patch,
     model_selector::{ModelInfo, ModelSelectorConfig, PermissionPolicy, ReasoningOption},
-    profile::ExecutorConfig,
+    profile::{ExecutionMode, ExecutorConfig},
     stdout_dup::create_stdout_pipe_writer,
 };
 
@@ -286,6 +286,12 @@ pub struct Codex {
     pub developer_instructions: Option<String>,
     #[serde(default)]
     pub plan: bool,
+    #[serde(default)]
+    pub execution_mode: ExecutionMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal_token_budget: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal_max_concurrent_agents: Option<u16>,
     #[serde(flatten)]
     pub cmd: CmdOverrides,
 
@@ -417,6 +423,13 @@ impl StandardCodingAgentExecutor for Codex {
                 .as_ref()
                 .map(|e| e.as_str().to_string()),
             permission_policy: Some(permission_policy),
+            execution_mode: Some(if self.plan {
+                ExecutionMode::Plan
+            } else {
+                self.execution_mode
+            }),
+            goal_token_budget: self.goal_token_budget,
+            goal_max_concurrent_agents: self.goal_max_concurrent_agents,
         }
     }
 
@@ -533,6 +546,33 @@ impl StandardCodingAgentExecutor for Codex {
 }
 
 impl Codex {
+    pub(crate) fn effective_execution_mode(&self) -> ExecutionMode {
+        if self.plan && self.execution_mode == ExecutionMode::Code {
+            ExecutionMode::Plan
+        } else {
+            self.execution_mode
+        }
+    }
+
+    pub(crate) fn prepare_execution_prompt(&self, prompt: String) -> String {
+        let prompt = match self.goal_max_concurrent_agents {
+            Some(0) => format!(
+                "{prompt}\n\nExecution constraint: do not spawn or delegate to subagents for this goal."
+            ),
+            Some(limit) => format!(
+                "{prompt}\n\nExecution constraint: when work can be divided safely, use at most {limit} concurrent spawned subagents (excluding the primary agent). Avoid concurrent writes to the same files."
+            ),
+            None => prompt,
+        };
+        if self.effective_execution_mode() == ExecutionMode::PlanWithGoal {
+            format!(
+                "{prompt}\n\nProduce an approval-ready goal contract as the final plan, with sections named Outcome, Constraints, Implementation Plan, and Verification and Completion Criteria. The approved text will become the persistent Goal objective, so make it self-contained and include measurable completion conditions."
+            )
+        } else {
+            prompt
+        }
+    }
+
     /// V1 direct-runtime metadata and decoder entry point.
     pub const DIRECT_PROVIDER: super::provider_adapter::DirectProvider =
         super::provider_adapter::DirectProvider::Codex;
@@ -581,9 +621,21 @@ impl Codex {
                 }
                 crate::model_selector::PermissionPolicy::Plan => {
                     self.plan = true;
+                    if executor_config.execution_mode.is_none() {
+                        self.execution_mode = ExecutionMode::Plan;
+                    }
                 }
             }
         }
+        if let Some(execution_mode) = executor_config.execution_mode {
+            self.execution_mode = execution_mode;
+            self.plan = matches!(
+                execution_mode,
+                ExecutionMode::Plan | ExecutionMode::PlanWithGoal
+            );
+        }
+        self.goal_token_budget = executor_config.goal_token_budget;
+        self.goal_max_concurrent_agents = executor_config.goal_max_concurrent_agents;
     }
 
     pub(crate) fn use_direct_approvals(&mut self, approvals: Arc<dyn ExecutorApprovalService>) {
@@ -784,6 +836,8 @@ impl Codex {
             None,
             false,
             self.plan,
+            ExecutionMode::Code,
+            None,
             None,
             RepoContext::default(),
             false,
@@ -870,6 +924,20 @@ impl Codex {
 
     fn build_config_overrides(&self) -> Option<HashMap<String, Value>> {
         let mut overrides = HashMap::new();
+
+        match self.goal_max_concurrent_agents {
+            Some(0) => {
+                overrides.insert("agents.enabled".to_string(), Value::Bool(false));
+            }
+            Some(limit) => {
+                overrides.insert("agents.enabled".to_string(), Value::Bool(true));
+                overrides.insert(
+                    "agents.max_concurrent_threads_per_session".to_string(),
+                    Value::from(limit),
+                );
+            }
+            None => {}
+        }
 
         if let Some(effort) = &self.model_reasoning_effort {
             overrides.insert(
@@ -976,6 +1044,10 @@ impl Codex {
 
         client.set_resolved_model(resolved_model);
         client.register_session(&thread_id).await?;
+        if client.execution_mode() == ExecutionMode::Goal {
+            client.start_goal(thread_id, combined_prompt).await?;
+            return Ok(());
+        }
         let collaboration_mode = client.initial_collaboration_mode()?;
         let input = build_chat_input(combined_prompt, selected_skills);
         client
@@ -1043,7 +1115,12 @@ impl Codex {
             (&self.sandbox, &self.ask_for_approval),
             (Some(SandboxMode::DangerFullAccess), None)
         );
-        let plan_mode = self.plan;
+        let execution_mode = self.effective_execution_mode();
+        let plan_mode = matches!(
+            execution_mode,
+            ExecutionMode::Plan | ExecutionMode::PlanWithGoal
+        );
+        let goal_token_budget = self.goal_token_budget.map(i64::from);
         let reasoning_effort = self
             .model_reasoning_effort
             .as_ref()
@@ -1068,6 +1145,8 @@ impl Codex {
                 approvals,
                 auto_approve,
                 plan_mode,
+                execution_mode,
+                goal_token_budget,
                 reasoning_effort,
                 repo_context,
                 commit_reminder,
@@ -1293,7 +1372,7 @@ mod tests {
     use crate::{
         actions::SelectedSkill,
         executors::{BaseCodingAgent, StandardCodingAgentExecutor},
-        profile::ExecutorConfig,
+        profile::{ExecutionMode, ExecutorConfig},
     };
 
     fn test_executor() -> Codex {
@@ -1308,6 +1387,9 @@ mod tests {
             agent_id: None,
             reasoning_id: Some(reasoning_id.to_string()),
             permission_policy: None,
+            execution_mode: None,
+            goal_token_budget: None,
+            goal_max_concurrent_agents: None,
         }
     }
 
@@ -1401,6 +1483,61 @@ mod tests {
             overrides.get("model_reasoning_effort"),
             Some(&json!("minimal"))
         );
+    }
+
+    #[test]
+    fn goal_overrides_are_scoped_to_the_app_server_thread() {
+        let mut executor = test_executor();
+        let mut config = ExecutorConfig::new(BaseCodingAgent::Codex);
+        config.execution_mode = Some(ExecutionMode::Goal);
+        config.goal_token_budget = Some(50_000);
+        config.goal_max_concurrent_agents = Some(4);
+
+        executor.apply_direct_overrides(&config);
+
+        assert_eq!(executor.effective_execution_mode(), ExecutionMode::Goal);
+        assert_eq!(executor.goal_token_budget, Some(50_000));
+        let overrides = executor.build_config_overrides().unwrap();
+        assert_eq!(overrides.get("agents.enabled"), Some(&json!(true)));
+        assert_eq!(
+            overrides.get("agents.max_concurrent_threads_per_session"),
+            Some(&json!(4))
+        );
+    }
+
+    #[test]
+    fn parallel_agents_off_adds_config_and_objective_guardrails() {
+        let mut executor = test_executor();
+        let mut config = ExecutorConfig::new(BaseCodingAgent::Codex);
+        config.execution_mode = Some(ExecutionMode::Goal);
+        config.goal_max_concurrent_agents = Some(0);
+        executor.apply_direct_overrides(&config);
+
+        assert_eq!(
+            executor
+                .build_config_overrides()
+                .unwrap()
+                .get("agents.enabled"),
+            Some(&json!(false))
+        );
+        assert!(
+            executor
+                .prepare_execution_prompt("Implement it".to_string())
+                .contains("do not spawn or delegate to subagents")
+        );
+    }
+
+    #[test]
+    fn plan_with_goal_requests_an_approval_ready_goal_contract() {
+        let mut executor = test_executor();
+        let mut config = ExecutorConfig::new(BaseCodingAgent::Codex);
+        config.execution_mode = Some(ExecutionMode::PlanWithGoal);
+        executor.apply_direct_overrides(&config);
+
+        let prompt = executor.prepare_execution_prompt("Implement it".to_string());
+        assert!(prompt.contains("Outcome"));
+        assert!(prompt.contains("Constraints"));
+        assert!(prompt.contains("Verification and Completion Criteria"));
     }
 
     #[test]

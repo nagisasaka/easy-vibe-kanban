@@ -22,6 +22,9 @@ const OVERRIDE_FIELDS = [
   'agent_id',
   'reasoning_id',
   'permission_policy',
+  'execution_mode',
+  'goal_token_budget',
+  'goal_max_concurrent_agents',
 ] as const;
 
 /**

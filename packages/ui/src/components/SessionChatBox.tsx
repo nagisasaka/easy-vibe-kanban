@@ -290,6 +290,8 @@ interface SessionChatBoxProps<TExecutor extends string = string> {
   dropzone?: DropzoneProps;
   /** Mobile layout active — enlarges approval targets and shows a one-tap Deny. */
   isMobile?: boolean;
+  /** Label for the running-state message action (for example, Goal steering). */
+  runningActionLabel?: string;
 }
 
 function defaultExecutorLabel(executor: string) {
@@ -366,6 +368,7 @@ export function SessionChatBox<TExecutor extends string = string>({
   supportsContextUsage,
   dropzone,
   isMobile,
+  runningActionLabel,
 }: SessionChatBoxProps<TExecutor>) {
   const { t } = useTranslation('tasks');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -455,7 +458,8 @@ export function SessionChatBox<TExecutor extends string = string>({
   const isRunning = status === 'running' || status === 'queued';
   const areContentInsertActionsDisabled = isDisabled || isQueued;
   const sendActionLabel = t('conversation.actions.send');
-  const queueActionLabel = t('conversation.actions.queue');
+  const queueActionLabel =
+    runningActionLabel ?? t('conversation.actions.queue');
   const cancelQueueActionLabel = t('conversation.actions.cancelQueue');
   const stopActionLabel = t('conversation.actions.stop');
   const approveActionLabel = t('conversation.actions.approve');

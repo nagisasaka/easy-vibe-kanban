@@ -124,6 +124,34 @@
       "type": "boolean",
       "default": false
     },
+    "execution_mode": {
+      "description": "How an interactive coding request should be executed.\n\nThis is intentionally separate from [`PermissionPolicy`]: planning and\nlong-running goal execution describe workflow, while permission policy\ndescribes what the provider may do without asking.",
+      "type": "string",
+      "enum": [
+        "code",
+        "plan",
+        "goal",
+        "plan_with_goal"
+      ],
+      "default": "code"
+    },
+    "goal_token_budget": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0
+    },
+    "goal_max_concurrent_agents": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint16",
+      "minimum": 0,
+      "maximum": 65535
+    },
     "base_command_override": {
       "title": "Base Command Override",
       "description": "Override the base command with a custom command",

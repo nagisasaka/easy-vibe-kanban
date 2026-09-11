@@ -211,6 +211,7 @@ pub enum AgentRunPortCommand {
     Cancel {
         reason: String,
     },
+    InterruptTurn,
     SubmitInput {
         input_id: String,
         content: String,
@@ -221,6 +222,21 @@ pub enum AgentRunPortCommand {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
+    Steer {
+        content: String,
+    },
+    UpdatePlanGoalDraft {
+        objective: String,
+    },
+    GoalUpdate {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        objective: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<super::AgentGoalStatus>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token_budget: Option<Option<i64>>,
+    },
+    GoalClear,
     Retry {
         mode: RunAttemptMode,
         run_attempt_id: Uuid,

@@ -703,6 +703,9 @@ impl StandardCodingAgentExecutor for ClaudeCode {
             agent_id: None,
             reasoning_id: self.effort.as_ref().map(|e| e.as_ref().to_owned()),
             permission_policy: Some(permission_policy),
+            execution_mode: None,
+            goal_token_budget: None,
+            goal_max_concurrent_agents: None,
         }
     }
 

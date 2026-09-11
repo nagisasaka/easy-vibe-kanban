@@ -66,6 +66,12 @@ impl crate::executors::ExecutorControl for ProtocolPeer {
                 std::io::ErrorKind::Unsupported,
                 "Claude Code does not expose a separate host input response",
             ))),
+            DirectControl::UpdatePlanGoalDraft { .. }
+            | DirectControl::GoalUpdate { .. }
+            | DirectControl::GoalClear => Err(ExecutorError::Io(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "Claude Code does not expose Codex Goal controls",
+            ))),
         }
     }
 }

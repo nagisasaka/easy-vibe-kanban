@@ -828,8 +828,8 @@ async fn monitor_process(
                     Ok(sent_bytes) => sent_bytes,
                     Err(message) => {
                         if !cancel {
-                            let _ = result.send(Err(message.clone()));
-                            break ExitCause::ProtocolFailure(message);
+                            let _ = result.send(Err(message));
+                            continue;
                         }
                         // Cancellation is still authoritative when the
                         // provider-native interrupt is unavailable (for

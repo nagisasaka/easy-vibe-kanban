@@ -396,6 +396,10 @@ impl DirectProvider {
                     crate::runtime::AgentCapability::TokenUsage,
                     CapabilityState::Native,
                 ),
+                (
+                    crate::runtime::AgentCapability::Goal,
+                    CapabilityState::Unsupported,
+                ),
             ]),
             Self::Codex => capability_states(&[
                 (
@@ -428,6 +432,10 @@ impl DirectProvider {
                 ),
                 (
                     crate::runtime::AgentCapability::TokenUsage,
+                    CapabilityState::Native,
+                ),
+                (
+                    crate::runtime::AgentCapability::Goal,
                     CapabilityState::Native,
                 ),
             ]),
@@ -464,6 +472,10 @@ impl DirectProvider {
                     crate::runtime::AgentCapability::TokenUsage,
                     CapabilityState::Native,
                 ),
+                (
+                    crate::runtime::AgentCapability::Goal,
+                    CapabilityState::Unsupported,
+                ),
             ]),
             Self::OhMyPi => capability_states(&[
                 (
@@ -497,6 +509,10 @@ impl DirectProvider {
                 (
                     crate::runtime::AgentCapability::TokenUsage,
                     CapabilityState::Native,
+                ),
+                (
+                    crate::runtime::AgentCapability::Goal,
+                    CapabilityState::Unsupported,
                 ),
             ]),
         };
@@ -564,6 +580,15 @@ pub enum DirectControl {
     Steer {
         text: String,
     },
+    UpdatePlanGoalDraft {
+        objective: String,
+    },
+    GoalUpdate {
+        objective: Option<String>,
+        status: Option<crate::runtime::AgentGoalStatus>,
+        token_budget: Option<Option<i64>>,
+    },
+    GoalClear,
 }
 
 impl DirectControl {
@@ -573,6 +598,10 @@ impl DirectControl {
             Self::Approve { .. } => Some(crate::runtime::AgentCapability::Approval),
             Self::Input { .. } => None,
             Self::Steer { .. } => Some(crate::runtime::AgentCapability::Steering),
+            Self::UpdatePlanGoalDraft { .. } => Some(crate::runtime::AgentCapability::Goal),
+            Self::GoalUpdate { .. } | Self::GoalClear => {
+                Some(crate::runtime::AgentCapability::Goal)
+            }
         }
     }
 }
@@ -714,6 +743,8 @@ pub enum TypedProviderEvent {
         output_tokens: u64,
         cached_input_tokens: Option<u64>,
     },
+    GoalUpdated(crate::runtime::AgentGoalState),
+    GoalCleared,
     Error(AgentRuntimeError),
     Unknown {
         event_type: String,
@@ -1093,6 +1124,45 @@ fn classify_codex_payload(
 
     let params = payload.get("params").unwrap_or(payload);
     match event_type.as_str() {
+        "thread/goal/updated" | "thread.goal.updated" => {
+            let goal = params.get("goal")?;
+            let status = match goal.get("status").and_then(Value::as_str)? {
+                "active" => crate::runtime::AgentGoalStatus::Active,
+                "paused" => crate::runtime::AgentGoalStatus::Paused,
+                "blocked" => crate::runtime::AgentGoalStatus::Blocked,
+                "usageLimited" | "usage_limited" => crate::runtime::AgentGoalStatus::UsageLimited,
+                "budgetLimited" | "budget_limited" => {
+                    crate::runtime::AgentGoalStatus::BudgetLimited
+                }
+                "complete" => crate::runtime::AgentGoalStatus::Complete,
+                _ => return Some(Err(NativeAuditError::MalformedFrame(sequence))),
+            };
+            let objective = goal.get("objective").and_then(Value::as_str);
+            Some(match objective {
+                Some(objective) => Ok(TypedProviderEvent::GoalUpdated(
+                    crate::runtime::AgentGoalState {
+                        objective: objective.to_string(),
+                        status,
+                        token_budget: goal
+                            .get("tokenBudget")
+                            .or_else(|| goal.get("token_budget"))
+                            .and_then(Value::as_i64),
+                        tokens_used: goal
+                            .get("tokensUsed")
+                            .or_else(|| goal.get("tokens_used"))
+                            .and_then(Value::as_i64)
+                            .unwrap_or(0),
+                        time_used_seconds: goal
+                            .get("timeUsedSeconds")
+                            .or_else(|| goal.get("time_used_seconds"))
+                            .and_then(Value::as_i64)
+                            .unwrap_or(0),
+                    },
+                )),
+                None => Err(NativeAuditError::MalformedFrame(sequence)),
+            })
+        }
+        "thread/goal/cleared" | "thread.goal.cleared" => Some(Ok(TypedProviderEvent::GoalCleared)),
         "thread/started" | "thread.started" => {
             let session_id = params
                 .pointer("/thread/id")
@@ -1431,6 +1501,10 @@ fn map_typed_event_v1(
             output_tokens: *output_tokens,
             cached_input_tokens: *cached_input_tokens,
         },
+        TypedProviderEvent::GoalUpdated(goal) => {
+            AgentEventPayload::GoalUpdated { goal: goal.clone() }
+        }
+        TypedProviderEvent::GoalCleared => AgentEventPayload::GoalCleared,
         TypedProviderEvent::ThinkingDelta { .. }
         | TypedProviderEvent::ToolOutputDelta { .. }
         | TypedProviderEvent::AuditOnly { .. }
@@ -1618,6 +1692,10 @@ fn project_typed_event(
         TypedProviderEvent::Error(error) => AgentEventPayload::Error {
             error: error.clone(),
         },
+        TypedProviderEvent::GoalUpdated(goal) => {
+            AgentEventPayload::GoalUpdated { goal: goal.clone() }
+        }
+        TypedProviderEvent::GoalCleared => AgentEventPayload::GoalCleared,
         TypedProviderEvent::MessageDelta { .. }
         | TypedProviderEvent::ThinkingDelta { .. }
         | TypedProviderEvent::ToolOutputDelta { .. }
@@ -2393,6 +2471,45 @@ mod tests {
                 final_output: true,
             } if id == "item-3" && content == "Repository summarized."
         ));
+    }
+
+    #[test]
+    fn maps_codex_goal_progress_to_canonical_state() {
+        let provider = DirectProvider::Codex;
+        let manifest = fixture_manifest(provider);
+        let decoded = provider
+            .decode_native_frame(&frame_at(
+                provider,
+                1,
+                serde_json::json!({
+                    "method": "thread/goal/updated",
+                    "params": {
+                        "threadId": "thread-1",
+                        "goal": {
+                            "objective": "Ship the feature",
+                            "status": "active",
+                            "tokenBudget": 50000,
+                            "tokensUsed": 1200,
+                            "timeUsedSeconds": 42
+                        }
+                    }
+                }),
+            ))
+            .unwrap();
+        let projected = project_typed_event(provider, &decoded, &manifest).unwrap();
+
+        assert!(matches!(
+            projected.durable_events.as_slice(),
+            [AgentEvent {
+                payload: AgentEventPayload::GoalUpdated { goal },
+                ..
+            }] if goal.objective == "Ship the feature"
+                && goal.status == crate::runtime::AgentGoalStatus::Active
+                && goal.token_budget == Some(50_000)
+                && goal.tokens_used == 1_200
+                && goal.time_used_seconds == 42
+        ));
+        assert!(projected.live_events.is_empty());
     }
 
     #[test]

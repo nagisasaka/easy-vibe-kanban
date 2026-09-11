@@ -11,7 +11,7 @@ use deployment::Deployment;
 use executors::{
     actions::SelectedSkill,
     executors::provider_adapter::DirectProvider,
-    profile::ExecutorConfig,
+    profile::{ExecutionMode, ExecutorConfig},
     provider_policy::direct_provider_capability_snapshot,
     runtime::{
         AGENT_REQUEST_PAYLOAD_VERSION, AGENT_REQUEST_SCHEMA_VERSION, AgentCapability,
@@ -445,6 +445,7 @@ pub(super) async fn create_agent_run(
     let runtime_profile_id = launch.executor_config.profile_id().cache_key();
     let capability_snapshot =
         direct_provider_capability_snapshot(provider, runtime_profile_id.clone());
+    validate_execution_config(&launch.executor_config, &capability_snapshot)?;
     validate_required_capabilities(
         launch.intent,
         launch.provider_session.is_some(),
@@ -526,6 +527,35 @@ pub(super) async fn create_agent_run(
     port.query(persisted_agent_run_id)
         .await
         .map_err(agent_run_port_error)
+}
+
+fn validate_execution_config(
+    config: &ExecutorConfig,
+    snapshot: &CapabilitySnapshot,
+) -> Result<(), ApiError> {
+    let mode = config.execution_mode.unwrap_or_else(|| {
+        if config.permission_policy == Some(executors::model_selector::PermissionPolicy::Plan) {
+            ExecutionMode::Plan
+        } else {
+            ExecutionMode::Code
+        }
+    });
+    if matches!(mode, ExecutionMode::Goal | ExecutionMode::PlanWithGoal) {
+        require_native_capability(snapshot, AgentCapability::Goal)?;
+    }
+    if config.goal_token_budget == Some(0) {
+        return Err(ApiError::BadRequest(
+            "Goal token budget must be a positive integer".to_string(),
+        ));
+    }
+    if !matches!(mode, ExecutionMode::Goal | ExecutionMode::PlanWithGoal)
+        && (config.goal_token_budget.is_some() || config.goal_max_concurrent_agents.is_some())
+    {
+        return Err(ApiError::BadRequest(
+            "Goal options require Goal or Plan with Goal mode".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_required_capabilities(

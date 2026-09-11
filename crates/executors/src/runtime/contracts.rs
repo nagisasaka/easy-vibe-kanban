@@ -63,6 +63,7 @@ pub enum AgentCapability {
     Mcp,
     Subagents,
     TokenUsage,
+    Goal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -193,6 +194,28 @@ pub struct CanonicalMessage {
     pub message_id: Uuid,
     pub role: AgentRuntimeMessageRole,
     pub content: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(use_ts_enum)]
+pub enum AgentGoalStatus {
+    Active,
+    Paused,
+    Blocked,
+    UsageLimited,
+    BudgetLimited,
+    Complete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct AgentGoalState {
+    pub objective: String,
+    pub status: AgentGoalStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_budget: Option<i64>,
+    pub tokens_used: i64,
+    pub time_used_seconds: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -461,6 +484,10 @@ pub enum AgentEventPayload {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cached_input_tokens: Option<u64>,
     },
+    GoalUpdated {
+        goal: AgentGoalState,
+    },
+    GoalCleared,
     Error {
         error: AgentRuntimeError,
     },
@@ -521,6 +548,8 @@ const KNOWN_AGENT_EVENT_TYPES: &[&str] = &[
     "input_requested",
     "input_resolved",
     "token_usage",
+    "goal_updated",
+    "goal_cleared",
     "error",
     "projection_degraded",
     "provider_extension",
@@ -642,6 +671,8 @@ pub struct RunState {
     pub terminal_output: Option<CanonicalMessage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_error: Option<AgentRuntimeError>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal: Option<AgentGoalState>,
     pub unknown_event_count: u64,
     pub updated_at: DateTime<Utc>,
 }
@@ -663,6 +694,7 @@ impl RunState {
             provider_session: None,
             terminal_output: None,
             last_error: None,
+            goal: None,
             unknown_event_count: 0,
             updated_at: request.created_at,
         }
@@ -744,6 +776,9 @@ mod tests {
             agent_id: None,
             reasoning_id: Some("high".to_string()),
             permission_policy: None,
+            execution_mode: None,
+            goal_token_budget: None,
+            goal_max_concurrent_agents: None,
         };
         let runtime_profile_id = executor_config.profile_id().cache_key();
         let request = AgentRunRequestEnvelope {

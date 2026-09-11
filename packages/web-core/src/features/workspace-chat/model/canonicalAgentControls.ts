@@ -1,8 +1,16 @@
 import { agentRunsApi } from '@/shared/lib/agentRunApi';
-import type { QuestionAnswer } from 'shared/types';
+import type { AgentGoalStatus, QuestionAnswer } from 'shared/types';
 
 export interface CanonicalAgentControlClient {
   cancel(agentRunId: string, reason: string): Promise<unknown>;
+  interruptTurn(agentRunId: string): Promise<unknown>;
+  steer(agentRunId: string, content: string): Promise<unknown>;
+  updateGoal(
+    agentRunId: string,
+    update: { objective?: string; status?: AgentGoalStatus }
+  ): Promise<unknown>;
+  updatePlanGoalDraft(agentRunId: string, objective: string): Promise<unknown>;
+  clearGoal(agentRunId: string): Promise<unknown>;
   submitInput(
     agentRunId: string,
     inputId: string,
@@ -22,6 +30,16 @@ export function createCanonicalAgentControls(
   return {
     cancel: (agentRunId: string, reason: string) =>
       client.cancel(agentRunId, reason),
+    interruptTurn: (agentRunId: string) => client.interruptTurn(agentRunId),
+    steer: (agentRunId: string, content: string) =>
+      client.steer(agentRunId, content),
+    updateGoal: (
+      agentRunId: string,
+      update: { objective?: string; status?: AgentGoalStatus }
+    ) => client.updateGoal(agentRunId, update),
+    updatePlanGoalDraft: (agentRunId: string, objective: string) =>
+      client.updatePlanGoalDraft(agentRunId, objective),
+    clearGoal: (agentRunId: string) => client.clearGoal(agentRunId),
     submitInput: (agentRunId: string, inputId: string, content: string) =>
       client.submitInput(agentRunId, inputId, content),
     approve: (agentRunId: string, approvalId: string) =>

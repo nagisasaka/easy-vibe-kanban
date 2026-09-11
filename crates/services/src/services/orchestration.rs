@@ -234,8 +234,13 @@ where
                 }
             }
             AgentRunPortCommand::Cancel { .. }
+            | AgentRunPortCommand::InterruptTurn
             | AgentRunPortCommand::SubmitInput { .. }
             | AgentRunPortCommand::ResolveApproval { .. }
+            | AgentRunPortCommand::Steer { .. }
+            | AgentRunPortCommand::UpdatePlanGoalDraft { .. }
+            | AgentRunPortCommand::GoalUpdate { .. }
+            | AgentRunPortCommand::GoalClear
             | AgentRunPortCommand::Retry { .. } => self.port.control(command.clone()).await,
         };
         match result {

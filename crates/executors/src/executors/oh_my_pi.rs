@@ -224,6 +224,9 @@ impl OhMyPi {
             agent_id: None,
             reasoning_id: None,
             permission_policy: Some(crate::model_selector::PermissionPolicy::Supervised),
+            execution_mode: None,
+            goal_token_budget: None,
+            goal_max_concurrent_agents: None,
         }
     }
 }
@@ -285,6 +288,9 @@ impl StandardCodingAgentExecutor for OhMyPi {
             agent_id: None,
             reasoning_id: None,
             permission_policy: Some(crate::model_selector::PermissionPolicy::Supervised),
+            execution_mode: None,
+            goal_token_budget: None,
+            goal_max_concurrent_agents: None,
         }
     }
 }

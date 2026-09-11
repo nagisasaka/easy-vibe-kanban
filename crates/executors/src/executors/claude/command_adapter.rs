@@ -154,6 +154,14 @@ pub(crate) fn encode_control(control: DirectControl) -> Result<Vec<u8>, serde_js
         DirectControl::Steer { text } => {
             serde_json::json!({"type":"user","message":{"role":"user","content":text}})
         }
+        DirectControl::UpdatePlanGoalDraft { .. }
+        | DirectControl::GoalUpdate { .. }
+        | DirectControl::GoalClear => {
+            return Err(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "Claude Code does not expose Codex Goal controls",
+            )));
+        }
     };
     encode_stdio_rpc(&request)
 }
