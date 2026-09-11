@@ -1,8 +1,14 @@
-import type { AgentEventEnvelope, RunState } from 'shared/types';
+import type {
+  AgentEventEnvelope,
+  AgentLiveEvent,
+  RunState,
+} from 'shared/types';
 import { describe, expect, it } from 'vitest';
 import {
   emptyCanonicalAgentTimeline,
+  clearAgentLiveEvents,
   isCanonicalAgentRunTerminal,
+  mergeAgentLiveEvent,
   mergeCanonicalAgentTimeline,
 } from './canonicalAgentTimeline';
 
@@ -55,6 +61,105 @@ const event = (
 });
 
 describe('mergeCanonicalAgentTimeline', () => {
+  it('buffers ordered live deltas without advancing the durable cursor and repairs on completion', () => {
+    const live = (sequence: number, delta: string): AgentLiveEvent => ({
+      schema_version: 1,
+      event_id: `live-${sequence}`,
+      session_id: 'session',
+      agent_run_id: 'run',
+      turn_id: 'turn',
+      run_attempt_id: 'attempt',
+      run_attempt_number: 1,
+      native_sequence: sequence,
+      timestamp: '2026-08-12T00:00:00Z',
+      payload: {
+        type: 'message_delta',
+        data: {
+          message_id: 'message-1',
+          provider_item_id: 'provider-message-1',
+          role: 'assistant',
+          delta,
+        },
+      },
+    });
+    const initial = mergeCanonicalAgentTimeline(
+      emptyCanonicalAgentTimeline(),
+      [event(1)],
+      state
+    );
+    const streamed = mergeAgentLiveEvent(
+      mergeAgentLiveEvent(initial, live(3, 'B')),
+      live(2, 'A')
+    );
+    expect(streamed.cursor).toEqual({ run_attempt_number: 1, sequence: 1n });
+    expect(streamed.transientEvents.map((entry) => entry.sequence)).toEqual([
+      2, 3,
+    ]);
+    expect(
+      mergeAgentLiveEvent(streamed, {
+        ...live(4, 'wrong attempt'),
+        run_attempt_id: 'other-attempt',
+      })
+    ).toBe(streamed);
+
+    const completed = {
+      ...event(2, 'completed'),
+      payload: {
+        type: 'message',
+        data: {
+          message: {
+            message_id: 'message-1',
+            role: 'assistant',
+            content: 'AB',
+          },
+          final_output: true,
+        },
+      },
+    } as AgentEventEnvelope;
+    const repaired = mergeCanonicalAgentTimeline(streamed, [completed]);
+    expect(repaired.transientEvents).toEqual([]);
+    expect(mergeAgentLiveEvent(repaired, live(4, 'late'))).toBe(repaired);
+  });
+
+  it('replaces cumulative usage snapshots and discards live state for reconnect', () => {
+    const usage = (sequence: number, inputTokens: number): AgentLiveEvent => ({
+      schema_version: 1,
+      event_id: `usage-${sequence}`,
+      session_id: 'session',
+      agent_run_id: 'run',
+      turn_id: 'turn',
+      run_attempt_id: 'attempt',
+      run_attempt_number: 1,
+      native_sequence: sequence,
+      timestamp: '2026-08-12T00:00:00Z',
+      payload: {
+        type: 'token_usage_snapshot',
+        data: {
+          input_tokens: inputTokens,
+          output_tokens: 2,
+          cached_input_tokens: null,
+        },
+      },
+    });
+    const initial = mergeCanonicalAgentTimeline(
+      emptyCanonicalAgentTimeline(),
+      [event(1)],
+      state
+    );
+    const latest = mergeAgentLiveEvent(
+      mergeAgentLiveEvent(initial, usage(5, 10)),
+      usage(6, 20)
+    );
+    expect(latest.events).toHaveLength(1);
+    expect(latest.transientEvents).toHaveLength(1);
+    expect(latest.transientEvents[0]?.payload).toMatchObject({
+      type: 'token_usage',
+      data: { input_tokens: 20 },
+    });
+    expect(mergeAgentLiveEvent(latest, usage(4, 5))).toBe(latest);
+    expect(clearAgentLiveEvents(latest).transientEvents).toEqual([]);
+  });
+
   it('replays and deduplicates by event identity while preserving cursor order', () => {
     const first = mergeCanonicalAgentTimeline(
       emptyCanonicalAgentTimeline(),
@@ -73,7 +178,7 @@ describe('mergeCanonicalAgentTimeline', () => {
       'message 2',
       'message 3',
     ]);
-    expect(second.cursor).toEqual({ run_attempt_number: 1, sequence: 3 });
+    expect(second.cursor).toEqual({ run_attempt_number: 1, sequence: 3n });
   });
 
   it('keeps unknown/degraded events visible as canonical items', () => {

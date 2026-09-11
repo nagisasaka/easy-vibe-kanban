@@ -25,15 +25,15 @@ use executors::{
         CancellationToken, ExecutorControl, ExecutorExitResult,
         provider_adapter::{
             DirectControl, DirectIntent, DirectProvider, DirectProviderLaunchRequest,
-            launch_direct_provider,
+            ProviderFrameClassification, launch_direct_provider,
         },
     },
     profile::ExecutorConfig,
     runtime::{
-        AgentEventEnvelope, AgentRunStatus, AgentRuntimeError, AgentRuntimeErrorKind,
-        CanonicalMessage, NativeAuditChannel, NativeAuditDirection, NativeAuditFrame,
-        NativeAuditIntegrityStatus, NativeAuditManifest, NativeAuditMetadata, NativeAuditReference,
-        NativeAuditWriter, ProviderSessionReference,
+        AgentEventEnvelope, AgentLiveEvent, AgentRunStatus, AgentRuntimeError,
+        AgentRuntimeErrorKind, CanonicalMessage, NativeAuditChannel, NativeAuditDirection,
+        NativeAuditFrame, NativeAuditIntegrityStatus, NativeAuditManifest, NativeAuditMetadata,
+        NativeAuditReference, NativeAuditWriter, ProviderSessionReference,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -176,6 +176,13 @@ pub(crate) enum HostEventPayload {
         event: AgentEventEnvelope,
         native_ref: NativeAuditReference,
     },
+    /// Provider-neutral projection of one already-audited native frame. Empty
+    /// vectors are meaningful: the frame was intentionally audit-only.
+    Projected {
+        durable_events: Vec<AgentEventEnvelope>,
+        live_events: Vec<AgentLiveEvent>,
+        native_ref: NativeAuditReference,
+    },
     Terminal {
         status: AgentRunStatus,
         error: Option<AgentRuntimeError>,
@@ -229,7 +236,11 @@ enum ProcessCommand {
 enum OutputNotice {
     StdoutClosed,
     StderrClosed,
-    Mapped(AgentEventEnvelope, NativeAuditReference),
+    Projected {
+        durable_events: Vec<AgentEventEnvelope>,
+        live_events: Vec<AgentLiveEvent>,
+        native_ref: NativeAuditReference,
+    },
     ProviderTerminal(AgentRunStatus),
     AuditFailure(String),
     ProtocolFailure(String),
@@ -637,33 +648,37 @@ fn spawn_stdout_reader(
                             }
                         }
                     };
-                    let decoded = match provider.decode_native_frame(&frame) {
-                        Ok(decoded) => decoded,
+                    let decoded = match provider.classify_native_frame(&frame) {
+                        ProviderFrameClassification::Event { event, .. } => *event,
+                        ProviderFrameClassification::UnsupportedRequired { error } => {
+                            let _ = notices.send(OutputNotice::ProtocolFailure(error.to_string()));
+                            break;
+                        }
+                    };
+                    let projection = match provider.project_provider_event(&decoded, &manifest) {
+                        Ok(projection) => projection,
                         Err(error) => {
                             let _ = notices.send(OutputNotice::ProtocolFailure(error.to_string()));
                             break;
                         }
                     };
-                    let mapped = match provider.map_provider_event(&decoded, &manifest) {
-                        Ok(mapped) => mapped,
-                        Err(error) => {
-                            let _ = notices.send(OutputNotice::ProtocolFailure(error.to_string()));
-                            break;
-                        }
-                    };
-                    for event in mapped {
-                        let terminal =
-                            match &event.payload {
+                    let terminal =
+                        projection
+                            .durable_events
+                            .iter()
+                            .find_map(|event| match &event.payload {
                                 executors::runtime::AgentEventPayload::LifecycleChanged {
                                     status,
                                 } if status.is_terminal() => Some(*status),
                                 _ => None,
-                            };
-                        let _ = notices.send(OutputNotice::Mapped(event, native_ref.clone()));
-                        if let Some(status) = terminal {
-                            let _ = notices.send(OutputNotice::ProviderTerminal(status));
-                            break;
-                        }
+                            });
+                    let _ = notices.send(OutputNotice::Projected {
+                        durable_events: projection.durable_events,
+                        live_events: projection.live_events,
+                        native_ref,
+                    });
+                    if let Some(status) = terminal {
+                        let _ = notices.send(OutputNotice::ProviderTerminal(status));
                     }
                 }
                 Err(error) => {
@@ -760,8 +775,12 @@ async fn monitor_process(
                 match notice {
                     Some(OutputNotice::StdoutClosed) => stdout_closed = true,
                     Some(OutputNotice::StderrClosed) => stderr_closed = true,
-                    Some(OutputNotice::Mapped(event, native_ref)) => {
-                        host.append_event(HostEventPayload::Mapped { event, native_ref }).await;
+                    Some(OutputNotice::Projected { durable_events, live_events, native_ref }) => {
+                        host.append_event(HostEventPayload::Projected {
+                            durable_events,
+                            live_events,
+                            native_ref,
+                        }).await;
                     }
                     Some(OutputNotice::ProviderTerminal(status)) => break ExitCause::ProviderTerminal(status),
                     Some(OutputNotice::AuditFailure(error)) => break ExitCause::AuditFailure(error),
@@ -867,9 +886,17 @@ async fn monitor_process(
             match notices.recv().await {
                 Some(OutputNotice::StdoutClosed) => stdout_closed = true,
                 Some(OutputNotice::StderrClosed) => stderr_closed = true,
-                Some(OutputNotice::Mapped(event, native_ref)) => {
-                    host.append_event(HostEventPayload::Mapped { event, native_ref })
-                        .await;
+                Some(OutputNotice::Projected {
+                    durable_events,
+                    live_events,
+                    native_ref,
+                }) => {
+                    host.append_event(HostEventPayload::Projected {
+                        durable_events,
+                        live_events,
+                        native_ref,
+                    })
+                    .await;
                 }
                 Some(OutputNotice::AuditFailure(error)) => {
                     return Some(ExitCause::AuditFailure(error));

@@ -14,6 +14,7 @@ pub const CAPABILITY_SNAPSHOT_SCHEMA_VERSION: u16 = 1;
 pub const PROVIDER_SESSION_REFERENCE_SCHEMA_VERSION: u16 = 1;
 pub const AGENT_EVENT_SCHEMA_VERSION: u16 = 1;
 pub const AGENT_EVENT_PAYLOAD_VERSION: u16 = 1;
+pub const AGENT_LIVE_EVENT_SCHEMA_VERSION: u16 = 1;
 pub const RUN_STATE_SCHEMA_VERSION: u16 = 1;
 pub const RUN_STATE_REDUCER_VERSION: u16 = 1;
 
@@ -361,6 +362,51 @@ pub struct NativeAuditReference {
     pub sequence: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
+}
+
+/// Ephemeral provider progress delivered to connected clients without entering
+/// the canonical SQLite event log. Native Audit remains the lossless source;
+/// a later durable semantic event is authoritative after reconnect or lag.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
+pub enum AgentLiveEventPayload {
+    MessageDelta {
+        message_id: Uuid,
+        provider_item_id: String,
+        role: AgentRuntimeMessageRole,
+        delta: String,
+    },
+    ThinkingDelta {
+        provider_item_id: String,
+        delta: String,
+    },
+    ToolOutputDelta {
+        provider_item_id: String,
+        delta: String,
+    },
+    /// Latest cumulative usage reported by the provider. Unlike a delta, this
+    /// value is also persisted as a replaceable snapshot for reconnects and
+    /// stats; it never becomes canonical event history.
+    TokenUsageSnapshot {
+        input_tokens: u64,
+        output_tokens: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cached_input_tokens: Option<u64>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct AgentLiveEvent {
+    pub schema_version: u16,
+    pub event_id: Uuid,
+    pub session_id: Uuid,
+    pub agent_run_id: Uuid,
+    pub turn_id: Uuid,
+    pub run_attempt_id: Uuid,
+    pub run_attempt_number: u32,
+    pub native_sequence: u64,
+    pub timestamp: DateTime<Utc>,
+    pub payload: AgentLiveEventPayload,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

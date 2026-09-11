@@ -22,6 +22,24 @@ function numericTokenCount(value: number | bigint): number {
   return Number.isSafeInteger(count) ? count : Number.MAX_SAFE_INTEGER;
 }
 
+function displaySequence(event: AgentEventEnvelope): bigint {
+  const nativeSequence = event.native_refs?.at(-1)?.sequence;
+  const sequence = nativeSequence ?? event.sequence;
+  return typeof sequence === 'bigint' ? sequence : BigInt(sequence);
+}
+
+function displayEventSort(
+  a: AgentEventEnvelope,
+  b: AgentEventEnvelope
+): number {
+  if (a.run_attempt_number !== b.run_attempt_number) {
+    return a.run_attempt_number - b.run_attempt_number;
+  }
+  const aSequence = displaySequence(a);
+  const bSequence = displaySequence(b);
+  return aSequence < bSequence ? -1 : aSequence > bSequence ? 1 : 0;
+}
+
 function identityFromEvents(
   events: readonly AgentEventEnvelope[],
   active: boolean
@@ -154,7 +172,11 @@ function appendRunEntries(
   run: CanonicalAgentSessionRun,
   output: PatchTypeWithKey[]
 ) {
-  const events = run.timeline?.events ?? [];
+  const events = run.timeline
+    ? [...run.timeline.events, ...run.timeline.transientEvents].sort(
+        displayEventSort
+      )
+    : [];
   const state = run.timeline?.state ?? run.summary.state;
   const runActive = isCanonicalRunActive(state);
   const toolIndexes = new Map<string, number>();

@@ -69,6 +69,7 @@
 
 - [竞品模型对比](./competitor-analysis.md)：AionUI、MultiCA、Happy、QM 的 runtime/session/turn/event/adapter 分析。
 - [VK 目标架构](./architecture.md)：组件边界、数据模型、审计双轨、直接替换和验证策略。
+- [Data planes and projection recovery](./data-planes-and-recovery.md)：Audit/Live/Canonical/Snapshot 分层、批量事务、SQLite 竞争恢复和降级取消。
 
 ## 参考范围
 

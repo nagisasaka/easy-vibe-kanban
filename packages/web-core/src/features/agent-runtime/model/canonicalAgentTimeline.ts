@@ -2,6 +2,7 @@ import type {
   AgentEventCursor,
   AgentEventEnvelope,
   AgentEventPayload,
+  AgentLiveEvent,
   AgentRunStatus,
   RunState,
 } from 'shared/types';
@@ -36,6 +37,7 @@ export interface CanonicalAgentTimelineItem {
 export interface CanonicalAgentTimeline {
   readonly state: RunState | null;
   readonly events: readonly AgentEventEnvelope[];
+  readonly transientEvents: readonly AgentEventEnvelope[];
   readonly items: readonly CanonicalAgentTimelineItem[];
   readonly cursor: AgentEventCursor | null;
 }
@@ -43,6 +45,7 @@ export interface CanonicalAgentTimeline {
 export const emptyCanonicalAgentTimeline = (): CanonicalAgentTimeline => ({
   state: null,
   events: [],
+  transientEvents: [],
   items: [],
   cursor: null,
 });
@@ -167,6 +170,18 @@ export function mergeCanonicalAgentTimeline(
   }
 
   const mergedEvents = [...previous.events, ...freshEvents].sort(eventSort);
+  const completedMessageIds = new Set(
+    freshEvents.flatMap((event) =>
+      event.payload.type === 'message' && event.payload.data.final_output
+        ? [event.payload.data.message.message_id]
+        : []
+    )
+  );
+  const transientEvents = previous.transientEvents.filter(
+    (event) =>
+      event.payload.type !== 'message' ||
+      !completedMessageIds.has(event.payload.data.message.message_id)
+  );
   const mergedItems = mergedEvents.map(itemFromEvent);
   const latestEvent = mergedEvents.at(-1);
   const eventCursor = latestEvent
@@ -183,9 +198,120 @@ export function mergeCanonicalAgentTimeline(
         ? previous.state
         : newestRunState(previous.state, state),
     events: mergedEvents,
+    transientEvents,
     items: mergedItems,
     cursor,
   };
+}
+
+/** Merge an ephemeral progress update without advancing the durable cursor. */
+export function mergeAgentLiveEvent(
+  previous: CanonicalAgentTimeline,
+  live: AgentLiveEvent
+): CanonicalAgentTimeline {
+  if (
+    (previous.state && previous.state.agent_run_id !== live.agent_run_id) ||
+    (previous.state &&
+      (live.run_attempt_number < previous.state.last_run_attempt_number ||
+        (live.run_attempt_number === previous.state.last_run_attempt_number &&
+          previous.state.last_run_attempt_id !== null &&
+          previous.state.last_run_attempt_id !== live.run_attempt_id)))
+  ) {
+    return previous;
+  }
+  if (
+    previous.transientEvents.some((event) => event.event_id === live.event_id)
+  ) {
+    return previous;
+  }
+  if (live.payload.type === 'message_delta') {
+    const messageId = live.payload.data.message_id;
+    if (
+      previous.events.some(
+        (event) =>
+          event.payload.type === 'message' &&
+          event.payload.data.final_output &&
+          event.payload.data.message.message_id === messageId
+      )
+    ) {
+      return previous;
+    }
+  }
+  if (live.payload.type === 'thinking_delta') return previous;
+  if (live.payload.type === 'tool_output_delta') return previous;
+  const payload: AgentEventPayload =
+    live.payload.type === 'message_delta'
+      ? {
+          type: 'message',
+          data: {
+            message: {
+              message_id: live.payload.data.message_id,
+              role: live.payload.data.role,
+              content: live.payload.data.delta,
+            },
+            final_output: false,
+          },
+        }
+      : {
+          type: 'token_usage',
+          data: {
+            input_tokens: live.payload.data.input_tokens,
+            output_tokens: live.payload.data.output_tokens,
+            cached_input_tokens: live.payload.data.cached_input_tokens,
+          },
+        };
+  const event: AgentEventEnvelope = {
+    schema_version: 1,
+    payload_version: 1,
+    event_id: live.event_id,
+    session_id: live.session_id,
+    agent_run_id: live.agent_run_id,
+    turn_id: live.turn_id,
+    run_attempt_id: live.run_attempt_id,
+    run_attempt_number: live.run_attempt_number,
+    sequence: live.native_sequence,
+    correlation_id: live.event_id,
+    timestamp: live.timestamp,
+    native_refs: [],
+    payload,
+  };
+  if (live.payload.type === 'token_usage_snapshot') {
+    const existing = previous.transientEvents.find(
+      (candidate) =>
+        candidate.run_attempt_id === live.run_attempt_id &&
+        candidate.payload.type === 'token_usage'
+    );
+    if (
+      existing &&
+      sequenceBigInt(existing.sequence) > sequenceBigInt(live.native_sequence)
+    ) {
+      return previous;
+    }
+    return {
+      ...previous,
+      transientEvents: [
+        ...previous.transientEvents.filter(
+          (candidate) =>
+            candidate.run_attempt_id !== live.run_attempt_id ||
+            candidate.payload.type !== 'token_usage'
+        ),
+        event,
+      ].sort(eventSort),
+    };
+  }
+  return {
+    ...previous,
+    transientEvents: [...previous.transientEvents, event].sort(eventSort),
+  };
+}
+
+/** Discard display-only deltas when a WebSocket disconnects. */
+export function clearAgentLiveEvents(
+  previous: CanonicalAgentTimeline
+): CanonicalAgentTimeline {
+  return previous.transientEvents.length === 0
+    ? previous
+    : { ...previous, transientEvents: [] };
 }
 
 function newestCursor(

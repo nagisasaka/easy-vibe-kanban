@@ -1148,6 +1148,10 @@ export type AgentEventPayload = { "type": "lifecycle_changed", "data": { status:
 
 export type AgentEventEnvelope = { schema_version: number, payload_version: number, event_id: string, session_id: string, agent_run_id: string, turn_id: string, run_attempt_id: string, run_attempt_number: number, sequence: bigint, correlation_id: string, orchestration_run_id?: string | null, orchestration_node_execution_id?: string | null, timestamp: string, native_refs?: Array<NativeAuditReference>, payload: AgentEventPayload, };
 
+export type AgentLiveEventPayload = { "type": "message_delta", "data": { message_id: string, provider_item_id: string, role: AgentRuntimeMessageRole, delta: string, } } | { "type": "thinking_delta", "data": { provider_item_id: string, delta: string, } } | { "type": "tool_output_delta", "data": { provider_item_id: string, delta: string, } } | { "type": "token_usage_snapshot", "data": { input_tokens: bigint, output_tokens: bigint, cached_input_tokens?: bigint | null, } };
+
+export type AgentLiveEvent = { schema_version: number, event_id: string, session_id: string, agent_run_id: string, turn_id: string, run_attempt_id: string, run_attempt_number: number, native_sequence: bigint, timestamp: string, payload: AgentLiveEventPayload, };
+
 export enum AgentRunStatus { pending = "pending", starting = "starting", running = "running", awaiting_input = "awaiting_input", awaiting_approval = "awaiting_approval", cancelling = "cancelling", succeeded = "succeeded", failed = "failed", cancelled = "cancelled", crashed = "crashed", audit_failed = "audit_failed" }
 
 export enum ProjectionStatus { current = "current", projection_degraded = "projection_degraded", rebuilding = "rebuilding" }
@@ -1173,6 +1177,8 @@ export type SubmitAgentRunInputRequest = { input_id: string, content: string, co
 export type ResolveAgentRunApprovalRequest = { approval_id: string, approved: boolean, reason?: string, command_id: string, idempotency_key: string, correlation_id: string, created_at: string, };
 
 export type RetryAgentRunRequest = { mode: RunAttemptMode, run_attempt_id: string, command_id: string, idempotency_key: string, correlation_id: string, created_at: string, };
+
+export type AgentRunStreamMessage = { "type": "event", "data": { event: AgentEventEnvelope, replay: boolean, } } | { "type": "live", "data": { event: AgentLiveEvent, } } | { "type": "ready", "data": { state: RunState, cursor?: AgentEventCursor | null, } } | { "type": "state", "data": { state: RunState, cursor?: AgentEventCursor | null, } } | { "type": "error", "data": { message: string, } };
 
 export enum OrchestrationProductKind { workflow = "workflow", arena = "arena" }
 
