@@ -875,6 +875,7 @@ impl AuditBundle {
             provider_session: None,
             terminal_output: None,
             last_error: None,
+            goal: None,
             unknown_event_count: 0,
             updated_at: self.manifest.created_at,
         };

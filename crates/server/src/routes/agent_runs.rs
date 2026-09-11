@@ -56,6 +56,35 @@ pub struct SubmitAgentRunInputRequest {
 }
 
 #[derive(Debug, Clone, Deserialize, TS)]
+pub struct SteerAgentRunRequest {
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub identity: AgentRunControlIdentity,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+pub struct UpdateAgentRunGoalRequest {
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub identity: AgentRunControlIdentity,
+    #[serde(default)]
+    #[ts(optional)]
+    pub objective: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub status: Option<executors::runtime::AgentGoalStatus>,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+pub struct UpdatePlanGoalDraftRequest {
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub identity: AgentRunControlIdentity,
+    pub objective: String,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
 pub struct ResolveAgentRunApprovalRequest {
     #[serde(flatten)]
     #[ts(flatten)]
@@ -186,6 +215,20 @@ async fn cancel_agent_run(
     .await
 }
 
+async fn interrupt_agent_run_turn(
+    State(deployment): State<DeploymentImpl>,
+    Path(agent_run_id): Path<Uuid>,
+    axum::Json(identity): axum::Json<AgentRunControlIdentity>,
+) -> Result<ResponseJson<ApiResponse<RunState>>, ApiError> {
+    dispatch_control(
+        &deployment,
+        agent_run_id,
+        identity,
+        AgentRunPortCommand::InterruptTurn,
+    )
+    .await
+}
+
 async fn submit_agent_run_input(
     State(deployment): State<DeploymentImpl>,
     Path(agent_run_id): Path<Uuid>,
@@ -199,6 +242,70 @@ async fn submit_agent_run_input(
             input_id: request.input_id,
             content: request.content,
         },
+    )
+    .await
+}
+
+async fn steer_agent_run(
+    State(deployment): State<DeploymentImpl>,
+    Path(agent_run_id): Path<Uuid>,
+    axum::Json(request): axum::Json<SteerAgentRunRequest>,
+) -> Result<ResponseJson<ApiResponse<RunState>>, ApiError> {
+    dispatch_control(
+        &deployment,
+        agent_run_id,
+        request.identity,
+        AgentRunPortCommand::Steer {
+            content: request.content,
+        },
+    )
+    .await
+}
+
+async fn update_agent_run_goal(
+    State(deployment): State<DeploymentImpl>,
+    Path(agent_run_id): Path<Uuid>,
+    axum::Json(request): axum::Json<UpdateAgentRunGoalRequest>,
+) -> Result<ResponseJson<ApiResponse<RunState>>, ApiError> {
+    dispatch_control(
+        &deployment,
+        agent_run_id,
+        request.identity,
+        AgentRunPortCommand::GoalUpdate {
+            objective: request.objective,
+            status: request.status,
+            token_budget: None,
+        },
+    )
+    .await
+}
+
+async fn update_plan_goal_draft(
+    State(deployment): State<DeploymentImpl>,
+    Path(agent_run_id): Path<Uuid>,
+    axum::Json(request): axum::Json<UpdatePlanGoalDraftRequest>,
+) -> Result<ResponseJson<ApiResponse<RunState>>, ApiError> {
+    dispatch_control(
+        &deployment,
+        agent_run_id,
+        request.identity,
+        AgentRunPortCommand::UpdatePlanGoalDraft {
+            objective: request.objective,
+        },
+    )
+    .await
+}
+
+async fn clear_agent_run_goal(
+    State(deployment): State<DeploymentImpl>,
+    Path(agent_run_id): Path<Uuid>,
+    axum::Json(identity): axum::Json<AgentRunControlIdentity>,
+) -> Result<ResponseJson<ApiResponse<RunState>>, ApiError> {
+    dispatch_control(
+        &deployment,
+        agent_run_id,
+        identity,
+        AgentRunPortCommand::GoalClear,
     )
     .await
 }
@@ -470,8 +577,21 @@ pub(super) fn router(_: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/agent-runs/{agent_run_id}", get(get_agent_run))
         .route("/agent-runs/{agent_run_id}/cancel", post(cancel_agent_run))
         .route(
+            "/agent-runs/{agent_run_id}/interrupt",
+            post(interrupt_agent_run_turn),
+        )
+        .route(
             "/agent-runs/{agent_run_id}/input",
             post(submit_agent_run_input),
+        )
+        .route("/agent-runs/{agent_run_id}/steer", post(steer_agent_run))
+        .route(
+            "/agent-runs/{agent_run_id}/plan-goal-draft",
+            post(update_plan_goal_draft),
+        )
+        .route(
+            "/agent-runs/{agent_run_id}/goal",
+            post(update_agent_run_goal).delete(clear_agent_run_goal),
         )
         .route(
             "/agent-runs/{agent_run_id}/approval",

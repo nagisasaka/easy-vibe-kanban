@@ -3106,6 +3106,24 @@ impl AgentRunPort for LocalAgentRunPort {
                 }
                 self.cancel_attached_attempt(&request, &attempt).await
             }
+            AgentRunPortCommand::InterruptTurn => {
+                let (request, attempt) = self.load_request(agent_run_id).await?;
+                if self.query(agent_run_id).await?.state.status.is_terminal() {
+                    return Err(AgentRunPortError::Rejected(
+                        "cannot interrupt a terminal AgentRun".to_string(),
+                    ));
+                }
+                let provider = self.provider(&request.provider_id)?;
+                let direct_control = DirectControl::Cancel;
+                let bytes = encode_control(
+                    provider,
+                    &attempt.capability_snapshot,
+                    direct_control.clone(),
+                )
+                .map_err(|error| AgentRunPortError::Rejected(error.to_string()))?;
+                self.write_attached_control(&attempt, &bytes, direct_control)
+                    .await
+            }
             AgentRunPortCommand::SubmitInput { input_id, content } => {
                 let (request, attempt) = self.load_request(agent_run_id).await?;
                 if self.query(agent_run_id).await?.state.status.is_terminal() {
@@ -3206,6 +3224,129 @@ impl AgentRunPort for LocalAgentRunPort {
                     None,
                 )
                 .await
+            }
+            AgentRunPortCommand::Steer { content } => {
+                let (request, attempt) = self.load_request(agent_run_id).await?;
+                if self.query(agent_run_id).await?.state.status.is_terminal() {
+                    return Err(AgentRunPortError::Rejected(
+                        "cannot steer a terminal AgentRun".to_string(),
+                    ));
+                }
+                if content.trim().is_empty() {
+                    return Err(AgentRunPortError::Rejected(
+                        "steering content must not be empty".to_string(),
+                    ));
+                }
+                let provider = self.provider(&request.provider_id)?;
+                let direct_control = DirectControl::Steer {
+                    text: content.clone(),
+                };
+                let bytes = encode_control(
+                    provider,
+                    &attempt.capability_snapshot,
+                    direct_control.clone(),
+                )
+                .map_err(|error| AgentRunPortError::Rejected(error.to_string()))?;
+                self.write_attached_control(&attempt, &bytes, direct_control)
+                    .await?;
+                self.append_event(
+                    &request,
+                    &attempt,
+                    AgentEventPayload::Message {
+                        message: CanonicalMessage {
+                            message_id: command.command_id,
+                            role: AgentRuntimeMessageRole::User,
+                            content: content.clone(),
+                        },
+                        final_output: false,
+                    },
+                    Vec::new(),
+                    command.created_at,
+                    Some(command.command_id),
+                )
+                .await
+            }
+            AgentRunPortCommand::UpdatePlanGoalDraft { objective } => {
+                let (request, attempt) = self.load_request(agent_run_id).await?;
+                if self.query(agent_run_id).await?.state.status.is_terminal() {
+                    return Err(AgentRunPortError::Rejected(
+                        "cannot update a draft on a terminal AgentRun".to_string(),
+                    ));
+                }
+                if objective.trim().is_empty() {
+                    return Err(AgentRunPortError::Rejected(
+                        "Plan with Goal objective must not be empty".to_string(),
+                    ));
+                }
+                let provider = self.provider(&request.provider_id)?;
+                let direct_control = DirectControl::UpdatePlanGoalDraft {
+                    objective: objective.clone(),
+                };
+                let bytes = encode_control(
+                    provider,
+                    &attempt.capability_snapshot,
+                    direct_control.clone(),
+                )
+                .map_err(|error| AgentRunPortError::Rejected(error.to_string()))?;
+                self.write_attached_control(&attempt, &bytes, direct_control)
+                    .await
+            }
+            AgentRunPortCommand::GoalUpdate {
+                objective,
+                status,
+                token_budget,
+            } => {
+                let (request, attempt) = self.load_request(agent_run_id).await?;
+                if self.query(agent_run_id).await?.state.status.is_terminal() {
+                    return Err(AgentRunPortError::Rejected(
+                        "cannot update the goal of a terminal AgentRun".to_string(),
+                    ));
+                }
+                if objective
+                    .as_ref()
+                    .is_some_and(|value| value.trim().is_empty())
+                {
+                    return Err(AgentRunPortError::Rejected(
+                        "goal objective must not be empty".to_string(),
+                    ));
+                }
+                if token_budget.flatten().is_some_and(|budget| budget <= 0) {
+                    return Err(AgentRunPortError::Rejected(
+                        "goal token budget must be positive".to_string(),
+                    ));
+                }
+                let provider = self.provider(&request.provider_id)?;
+                let direct_control = DirectControl::GoalUpdate {
+                    objective: objective.clone(),
+                    status: *status,
+                    token_budget: *token_budget,
+                };
+                let bytes = encode_control(
+                    provider,
+                    &attempt.capability_snapshot,
+                    direct_control.clone(),
+                )
+                .map_err(|error| AgentRunPortError::Rejected(error.to_string()))?;
+                self.write_attached_control(&attempt, &bytes, direct_control)
+                    .await
+            }
+            AgentRunPortCommand::GoalClear => {
+                let (request, attempt) = self.load_request(agent_run_id).await?;
+                if self.query(agent_run_id).await?.state.status.is_terminal() {
+                    return Err(AgentRunPortError::Rejected(
+                        "cannot clear the goal of a terminal AgentRun".to_string(),
+                    ));
+                }
+                let provider = self.provider(&request.provider_id)?;
+                let direct_control = DirectControl::GoalClear;
+                let bytes = encode_control(
+                    provider,
+                    &attempt.capability_snapshot,
+                    direct_control.clone(),
+                )
+                .map_err(|error| AgentRunPortError::Rejected(error.to_string()))?;
+                self.write_attached_control(&attempt, &bytes, direct_control)
+                    .await
             }
             AgentRunPortCommand::Retry {
                 mode,
@@ -3542,6 +3683,9 @@ mod tests {
                 agent_id: None,
                 reasoning_id: None,
                 permission_policy: None,
+                execution_mode: None,
+                goal_token_budget: None,
+                goal_max_concurrent_agents: None,
             },
             selected_skills: None,
             reset_to_message_id: None,
@@ -3637,6 +3781,9 @@ mod tests {
             agent_id: None,
             reasoning_id: None,
             permission_policy: None,
+            execution_mode: None,
+            goal_token_budget: None,
+            goal_max_concurrent_agents: None,
         };
         attempt.reset_to_message_id = Some("message-17".to_string());
         attempt.provider_session = Some(executors::runtime::ProviderSessionReference {

@@ -3,6 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useDropzone } from 'react-dropzone';
 import {
   BaseAgentCapability,
+  AgentGoalStatus,
+  ExecutionMode,
   type Session,
   type BaseCodingAgent,
   type ExecutorConfig,
@@ -82,6 +84,8 @@ import { resolveWorkspaceWorkingDirectory } from '@/shared/lib/workspaceContext'
 import { isExecutionProcessActive } from '@/shared/lib/executionProcessRuntime';
 import { deriveCanonicalAgentRunActionPolicy } from '@/features/agent-runtime';
 import { canonicalAgentControls } from '../model/canonicalAgentControls';
+import { GoalProgressCard } from './GoalProgressCard';
+import { PlanGoalApprovalCard } from './PlanGoalApprovalCard';
 
 /** Compute execution status from boolean flags */
 function computeExecutionStatus(params: {
@@ -236,6 +240,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
   const activeAgentRunState = activeAgentRun
     ? (activeAgentRun.timeline?.state ?? activeAgentRun.summary.state)
     : null;
+  const activeGoal = activeAgentRunState?.goal ?? null;
   const activeAgentRunEvents = activeAgentRun?.timeline?.events ?? [];
   const canonicalAgentActionPolicy = useMemo(
     () =>
@@ -248,6 +253,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
   const latestAgentRunState = latestAgentRun
     ? (latestAgentRun.timeline?.state ?? latestAgentRun.summary.state)
     : null;
+  const displayedGoal = activeGoal ?? latestAgentRunState?.goal ?? null;
   const isAgentRunActive = Boolean(activeAgentRun);
   const isAgentRunCancelling = latestAgentRunState?.status === 'cancelling';
 
@@ -350,6 +356,39 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
         console.error('Failed to cancel AgentRun:', err);
       },
     });
+  const goalControlMutation = useMutation({
+    mutationFn: async (
+      control:
+        | {
+            type: 'update';
+            agentRunId: string;
+            objective?: string;
+            status?: AgentGoalStatus;
+          }
+        | { type: 'clear'; agentRunId: string }
+        | { type: 'interrupt'; agentRunId: string }
+    ) => {
+      if (control.type === 'clear') {
+        return canonicalAgentControls.clearGoal(control.agentRunId);
+      }
+      if (control.type === 'interrupt') {
+        return canonicalAgentControls.interruptTurn(control.agentRunId);
+      }
+      return canonicalAgentControls.updateGoal(control.agentRunId, {
+        objective: control.objective,
+        status: control.status,
+      });
+    },
+  });
+  const steerMutation = useMutation({
+    mutationFn: ({
+      agentRunId,
+      content,
+    }: {
+      agentRunId: string;
+      content: string;
+    }) => canonicalAgentControls.steer(agentRunId, content),
+  });
   const isStopping =
     isCancelAgentRunPending ||
     isAgentRunCancelling ||
@@ -507,6 +546,47 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
     onPersist: (cfg) => void saveToScratch(localMessageRef.current, cfg),
   });
   const providerPolicy = useAgentProviderPolicy(effectiveExecutor);
+  const planWithGoalObjective = useMemo(() => {
+    if (
+      executorConfig?.execution_mode !== ExecutionMode.plan_with_goal ||
+      pendingApproval?.kind !== 'approval' ||
+      !['plan', 'codex.plan'].includes(pendingApproval.toolName)
+    ) {
+      return null;
+    }
+    for (let index = entries.length - 1; index >= 0; index--) {
+      const entry = entries[index];
+      if (entry?.type !== 'NORMALIZED_ENTRY') continue;
+      const entryType = entry.content.entry_type;
+      if (
+        entryType.type === 'tool_use' &&
+        entryType.action_type.action === 'plan_presentation' &&
+        entryType.action_type.plan.trim()
+      ) {
+        return entryType.action_type.plan;
+      }
+    }
+    return null;
+  }, [entries, executorConfig?.execution_mode, pendingApproval]);
+  const planGoalApprovalMutation = useMutation({
+    mutationFn: async (objective: string) => {
+      if (pendingApproval?.kind !== 'approval') return;
+      await canonicalAgentControls.updatePlanGoalDraft(
+        pendingApproval.agentRunId,
+        objective
+      );
+      await approveAsync({
+        approvalId: pendingApproval.approvalId,
+        agentRunId: pendingApproval.agentRunId,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: workspaceSummaryKeys.all,
+      });
+      onScrollToBottom();
+    },
+  });
   const [stagedResumeSession, setStagedResumeSession] =
     useState<ResumableAgentSession | null>(null);
 
@@ -634,6 +714,23 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
 
     const { prompt } = buildAgentPrompt(localMessage, [reviewMarkdown]);
 
+    if (activeGoal?.status === AgentGoalStatus.active && activeAgentRun) {
+      try {
+        await steerMutation.mutateAsync({
+          agentRunId: activeAgentRun.summary.agent_run_id,
+          content: prompt,
+        });
+      } catch {
+        return;
+      }
+      cancelDebouncedSave();
+      setLocalMessage('');
+      setSelectedSkills([]);
+      clearUploadedAttachments();
+      reviewContext?.clearComments();
+      return;
+    }
+
     cancelDebouncedSave();
     await saveToScratch(localMessage, executorConfig);
     await queueMessage(prompt, executorConfig, selectedSkills);
@@ -653,6 +750,9 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
     setLocalMessage,
     clearUploadedAttachments,
     reviewContext,
+    activeGoal?.status,
+    activeAgentRun,
+    steerMutation,
   ]);
 
   // Editor change handler
@@ -1212,139 +1312,198 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
     );
   }
 
-  return (
-    <SessionChatBox<BaseCodingAgent>
-      status={status}
-      isMobile={isMobile}
-      onViewCode={disableViewCode ? undefined : handleViewCode}
-      onOpenWorkspace={
-        showOpenWorkspaceButton && workspaceId ? handleOpenWorkspace : undefined
+  const goalProgressNode = displayedGoal && latestAgentRun && (
+    <GoalProgressCard
+      goal={displayedGoal}
+      controllable={Boolean(activeAgentRun)}
+      busy={goalControlMutation.isPending}
+      error={goalControlMutation.error?.message ?? steerMutation.error?.message}
+      onPause={() =>
+        goalControlMutation.mutate({
+          type: 'update',
+          agentRunId: latestAgentRun.summary.agent_run_id,
+          status: AgentGoalStatus.paused,
+        })
       }
-      onScrollToPreviousMessage={onScrollToPreviousMessage}
-      userMessageTurns={userMessageTurns}
-      onScrollToUserMessage={onScrollToUserMessage}
-      getActiveTurnPatchKey={getActiveTurnPatchKey}
-      renderEditor={renderEditor}
-      repoIds={repoIds}
-      tokenUsageInfo={tokenUsageInfo}
-      supportsContextUsage={supportsContextUsage}
-      formatExecutorLabel={toPrettyCase}
-      formatSessionDate={(createdAt) =>
-        formatDateShortWithTime(
-          createdAt instanceof Date ? createdAt.toISOString() : createdAt
-        )
+      onResume={() =>
+        goalControlMutation.mutate({
+          type: 'update',
+          agentRunId: latestAgentRun.summary.agent_run_id,
+          status: AgentGoalStatus.active,
+        })
       }
-      renderAgentIcon={(executor, className) => (
-        <AgentIcon
-          agent={executor as BaseCodingAgent | null | undefined}
-          className={className}
-        />
-      )}
-      editor={{
-        value: editorValue,
-        onChange: handleEditorChange,
-      }}
-      actions={{
-        onSend: handleSend,
-        onQueue: handleQueueMessage,
-        onCancelQueue: handleCancelQueue,
-        onStop: handleStop,
-        onPasteFiles: uploadFiles,
-      }}
-      actionPolicy={runtimeActionPolicy}
-      session={{
-        sessions,
-        selectedSessionId: sessionId,
-        onSelectSession: onSelectSession ?? (() => {}),
-        isInitialSendMode: isNewSessionMode,
-        isNewSessionMode: needsExecutorSelection,
-        onNewSession: onStartNewSession,
-        onRenameSession: handleRenameSession,
-      }}
-      toolbarActions={{
-        items: toolbarActionItems,
-      }}
-      onPrCommentClick={
-        actionCtx.hasOpenPR ? handleInsertPrComments : undefined
+      onEdit={(objective) =>
+        goalControlMutation.mutate({
+          type: 'update',
+          agentRunId: latestAgentRun.summary.agent_run_id,
+          objective,
+        })
       }
-      stats={{
-        filesChanged,
-        linesAdded,
-        linesRemoved,
-        hasConflicts,
-        conflictedFilesCount,
-        onResolveConflicts: handleResolveConflicts,
-      }}
-      error={sendError}
-      agent={effectiveExecutor}
-      todos={todos}
-      inProgressTodo={inProgressTodo}
-      executor={
-        needsExecutorSelection
-          ? {
-              selected: effectiveExecutor,
-              options: executorOptions,
-              onChange: handleExecutorChange,
-              afterSelector: resumePickerNode,
-            }
-          : undefined
+      onClear={() =>
+        goalControlMutation.mutate({
+          type: 'clear',
+          agentRunId: latestAgentRun.summary.agent_run_id,
+        })
       }
-      feedbackMode={
-        feedbackContext
-          ? {
-              isActive: isInFeedbackMode,
-              onSubmitFeedback: handleSubmitFeedback,
-              onCancel: handleCancelFeedback,
-              isSubmitting: feedbackContext.isSubmitting,
-              error: feedbackContext.error,
-              isTimedOut: feedbackContext.isTimedOut,
-            }
-          : undefined
+      onInterruptTurn={() =>
+        goalControlMutation.mutate({
+          type: 'interrupt',
+          agentRunId: latestAgentRun.summary.agent_run_id,
+        })
       }
-      approvalMode={
-        pendingApproval?.kind === 'approval'
-          ? {
-              isActive: true,
-              onApprove: handleApprove,
-              onRequestChanges: handleRequestChanges,
-              onDeny: handleDeny,
-              isSubmitting: isApproving || isDenying,
-              isTimedOut: isApprovalTimedOut,
-              error: denyError?.message ?? null,
-            }
-          : undefined
-      }
-      askQuestionMode={
-        pendingApproval?.kind === 'input'
-          ? {
-              isActive: true,
-              questions: pendingApproval.questions,
-              onSubmitAnswers: handleAnswerQuestion,
-              isSubmitting: isAnswering,
-              isTimedOut: isApprovalTimedOut,
-              error: answerError?.message ?? null,
-            }
-          : undefined
-      }
-      editMode={{
-        isActive: isInEditMode,
-        onSubmitEdit: handleSubmitEdit,
-        onCancel: handleCancelEdit,
-        isSubmitting: editRetryMutation.isPending,
-      }}
-      reviewComments={
-        hasReviewComments && reviewContext
-          ? {
-              count: reviewContext.comments.length,
-              previewMarkdown: reviewMarkdown,
-              onClear: reviewContext.clearComments,
-            }
-          : undefined
-      }
-      localAttachments={localAttachments}
-      dropzone={{ getRootProps, getInputProps, isDragActive }}
-      modelSelector={modelSelectorNode}
-      resumeSelector={needsExecutorSelection ? undefined : resumePickerNode}
     />
+  );
+  const planGoalApprovalNode = planWithGoalObjective && (
+    <PlanGoalApprovalCard
+      objective={planWithGoalObjective}
+      busy={planGoalApprovalMutation.isPending}
+      error={planGoalApprovalMutation.error?.message}
+      onApprove={(objective) => planGoalApprovalMutation.mutate(objective)}
+    />
+  );
+
+  return (
+    <div className="w-full">
+      {planGoalApprovalNode}
+      {goalProgressNode}
+      <SessionChatBox<BaseCodingAgent>
+        status={status}
+        isMobile={isMobile}
+        runningActionLabel={
+          activeGoal?.status === AgentGoalStatus.active ? 'Steer' : undefined
+        }
+        onViewCode={disableViewCode ? undefined : handleViewCode}
+        onOpenWorkspace={
+          showOpenWorkspaceButton && workspaceId
+            ? handleOpenWorkspace
+            : undefined
+        }
+        onScrollToPreviousMessage={onScrollToPreviousMessage}
+        userMessageTurns={userMessageTurns}
+        onScrollToUserMessage={onScrollToUserMessage}
+        getActiveTurnPatchKey={getActiveTurnPatchKey}
+        renderEditor={renderEditor}
+        repoIds={repoIds}
+        tokenUsageInfo={tokenUsageInfo}
+        supportsContextUsage={supportsContextUsage}
+        formatExecutorLabel={toPrettyCase}
+        formatSessionDate={(createdAt) =>
+          formatDateShortWithTime(
+            createdAt instanceof Date ? createdAt.toISOString() : createdAt
+          )
+        }
+        renderAgentIcon={(executor, className) => (
+          <AgentIcon
+            agent={executor as BaseCodingAgent | null | undefined}
+            className={className}
+          />
+        )}
+        editor={{
+          value: editorValue,
+          onChange: handleEditorChange,
+        }}
+        actions={{
+          onSend: handleSend,
+          onQueue: handleQueueMessage,
+          onCancelQueue: handleCancelQueue,
+          onStop: handleStop,
+          onPasteFiles: uploadFiles,
+        }}
+        actionPolicy={runtimeActionPolicy}
+        session={{
+          sessions,
+          selectedSessionId: sessionId,
+          onSelectSession: onSelectSession ?? (() => {}),
+          isInitialSendMode: isNewSessionMode,
+          isNewSessionMode: needsExecutorSelection,
+          onNewSession: onStartNewSession,
+          onRenameSession: handleRenameSession,
+        }}
+        toolbarActions={{
+          items: toolbarActionItems,
+        }}
+        onPrCommentClick={
+          actionCtx.hasOpenPR ? handleInsertPrComments : undefined
+        }
+        stats={{
+          filesChanged,
+          linesAdded,
+          linesRemoved,
+          hasConflicts,
+          conflictedFilesCount,
+          onResolveConflicts: handleResolveConflicts,
+        }}
+        error={sendError}
+        agent={effectiveExecutor}
+        todos={todos}
+        inProgressTodo={inProgressTodo}
+        executor={
+          needsExecutorSelection
+            ? {
+                selected: effectiveExecutor,
+                options: executorOptions,
+                onChange: handleExecutorChange,
+                afterSelector: resumePickerNode,
+              }
+            : undefined
+        }
+        feedbackMode={
+          feedbackContext
+            ? {
+                isActive: isInFeedbackMode,
+                onSubmitFeedback: handleSubmitFeedback,
+                onCancel: handleCancelFeedback,
+                isSubmitting: feedbackContext.isSubmitting,
+                error: feedbackContext.error,
+                isTimedOut: feedbackContext.isTimedOut,
+              }
+            : undefined
+        }
+        approvalMode={
+          pendingApproval?.kind === 'approval' && !planWithGoalObjective
+            ? {
+                isActive: true,
+                onApprove: handleApprove,
+                onRequestChanges: handleRequestChanges,
+                onDeny: handleDeny,
+                isSubmitting: isApproving || isDenying,
+                isTimedOut: isApprovalTimedOut,
+                error: denyError?.message ?? null,
+              }
+            : undefined
+        }
+        askQuestionMode={
+          pendingApproval?.kind === 'input'
+            ? {
+                isActive: true,
+                questions: pendingApproval.questions,
+                onSubmitAnswers: handleAnswerQuestion,
+                isSubmitting: isAnswering,
+                isTimedOut: isApprovalTimedOut,
+                error: answerError?.message ?? null,
+              }
+            : undefined
+        }
+        editMode={{
+          isActive: isInEditMode,
+          onSubmitEdit: handleSubmitEdit,
+          onCancel: handleCancelEdit,
+          isSubmitting: editRetryMutation.isPending,
+        }}
+        reviewComments={
+          hasReviewComments && reviewContext
+            ? {
+                count: reviewContext.comments.length,
+                previewMarkdown: reviewMarkdown,
+                onClear: reviewContext.clearComments,
+              }
+            : undefined
+        }
+        localAttachments={localAttachments}
+        dropzone={{ getRootProps, getInputProps, isDragActive }}
+        modelSelector={modelSelectorNode}
+        resumeSelector={needsExecutorSelection ? undefined : resumePickerNode}
+      />
+    </div>
   );
 }

@@ -23,8 +23,8 @@ use codex_app_server_protocol::{
     RequestId, ReviewStartParams, ReviewStartResponse, ReviewTarget, ServerRequest,
     SkillsListParams, SkillsListResponse, ThreadCompactStartParams, ThreadCompactStartResponse,
     ThreadGoalClearParams, ThreadGoalClearResponse, ThreadGoalGetParams, ThreadGoalGetResponse,
-    ThreadGoalSetParams, ThreadGoalSetResponse, ThreadItem, ThreadReadParams, ThreadReadResponse,
-    ThreadResumeParams, ThreadResumeResponse, ThreadSettingsUpdateParams,
+    ThreadGoalSetParams, ThreadGoalSetResponse, ThreadGoalStatus, ThreadItem, ThreadReadParams,
+    ThreadReadResponse, ThreadResumeParams, ThreadResumeResponse, ThreadSettingsUpdateParams,
     ThreadSettingsUpdateResponse, ThreadStartParams, ThreadStartResponse,
     ToolRequestUserInputAnswer, ToolRequestUserInputQuestion, ToolRequestUserInputResponse,
     TurnCompletedNotification, TurnInterruptParams, TurnStartParams, TurnStartResponse, TurnStatus,
@@ -52,10 +52,12 @@ use crate::{
         ExecutorControl, ExecutorError, ExecutorExitResult, codex::normalize_logs::Approval,
         provider_adapter::DirectControl,
     },
+    profile::ExecutionMode,
 };
 
 struct PendingPlan {
     item_id: String,
+    text: String,
 }
 
 pub struct AppServerClient {
@@ -67,9 +69,13 @@ pub struct AppServerClient {
     pending_feedback: Mutex<VecDeque<String>>,
     auto_approve: bool,
     plan_mode: bool,
+    execution_mode: ExecutionMode,
+    goal_token_budget: Option<i64>,
+    goal_active: AtomicBool,
     resolved_model: OnceLock<String>,
     reasoning_effort: StdMutex<Option<ProtocolReasoningEffort>>,
     pending_plan: Mutex<Option<PendingPlan>>,
+    pending_plan_goal_draft: Mutex<Option<String>>,
     repo_context: RepoContext,
     commit_reminder: bool,
     commit_reminder_prompt: String,
@@ -92,6 +98,8 @@ impl AppServerClient {
         approvals: Option<Arc<dyn ExecutorApprovalService>>,
         auto_approve: bool,
         plan_mode: bool,
+        execution_mode: ExecutionMode,
+        goal_token_budget: Option<i64>,
         reasoning_effort: Option<ProtocolReasoningEffort>,
         repo_context: RepoContext,
         commit_reminder: bool,
@@ -104,9 +112,13 @@ impl AppServerClient {
             approvals,
             auto_approve,
             plan_mode,
+            execution_mode,
+            goal_token_budget,
+            goal_active: AtomicBool::new(false),
             resolved_model: OnceLock::new(),
             reasoning_effort: StdMutex::new(reasoning_effort),
             pending_plan: Mutex::new(None),
+            pending_plan_goal_draft: Mutex::new(None),
             thread_id: Mutex::new(None),
             turn_id: Arc::new(Mutex::new(None)),
             pending_feedback: Mutex::new(VecDeque::new()),
@@ -132,6 +144,10 @@ impl AppServerClient {
 
     pub fn log_writer(&self) -> &LogWriter {
         &self.log_writer
+    }
+
+    pub fn execution_mode(&self) -> ExecutionMode {
+        self.execution_mode
     }
 
     pub async fn initialize(&self) -> Result<(), ExecutorError> {
@@ -253,6 +269,76 @@ impl AppServerClient {
                         request_id(&request),
                         &request,
                         "turn/steer",
+                        self.cancel.clone(),
+                    )
+                    .await?;
+                Ok(raw)
+            }
+            DirectControl::UpdatePlanGoalDraft { objective } => {
+                let mut pending = self.pending_plan_goal_draft.lock().await;
+                if self.execution_mode != ExecutionMode::PlanWithGoal || pending.is_none() {
+                    return Err(ExecutorError::Io(io::Error::other(
+                        "Codex has no Plan with Goal draft awaiting approval",
+                    )));
+                }
+                *pending = Some(objective);
+                serde_json::to_vec(&serde_json::json!({
+                    "method": "easy-vibe/plan-goal-draft/updated"
+                }))
+                .map_err(ExecutorError::from)
+            }
+            DirectControl::GoalUpdate {
+                objective,
+                status,
+                token_budget,
+            } => {
+                let thread_id = self.thread_id.lock().await.clone().ok_or_else(|| {
+                    ExecutorError::Io(io::Error::other("Codex has no active thread"))
+                })?;
+                let status = status.map(|status| match status {
+                    crate::runtime::AgentGoalStatus::Active => ThreadGoalStatus::Active,
+                    crate::runtime::AgentGoalStatus::Paused => ThreadGoalStatus::Paused,
+                    crate::runtime::AgentGoalStatus::Blocked => ThreadGoalStatus::Blocked,
+                    crate::runtime::AgentGoalStatus::UsageLimited => ThreadGoalStatus::UsageLimited,
+                    crate::runtime::AgentGoalStatus::BudgetLimited => {
+                        ThreadGoalStatus::BudgetLimited
+                    }
+                    crate::runtime::AgentGoalStatus::Complete => ThreadGoalStatus::Complete,
+                });
+                let request = ClientRequest::ThreadGoalSet {
+                    request_id: self.next_request_id(),
+                    params: ThreadGoalSetParams {
+                        thread_id,
+                        objective,
+                        status,
+                        token_budget,
+                    },
+                };
+                let (_, raw) = self
+                    .rpc()
+                    .request_with_raw::<ThreadGoalSetResponse, _>(
+                        request_id(&request),
+                        &request,
+                        "thread/goal/set",
+                        self.cancel.clone(),
+                    )
+                    .await?;
+                Ok(raw)
+            }
+            DirectControl::GoalClear => {
+                let thread_id = self.thread_id.lock().await.clone().ok_or_else(|| {
+                    ExecutorError::Io(io::Error::other("Codex has no active thread"))
+                })?;
+                let request = ClientRequest::ThreadGoalClear {
+                    request_id: self.next_request_id(),
+                    params: ThreadGoalClearParams { thread_id },
+                };
+                let (_, raw) = self
+                    .rpc()
+                    .request_with_raw::<ThreadGoalClearResponse, _>(
+                        request_id(&request),
+                        &request,
+                        "thread/goal/clear",
                         self.cancel.clone(),
                     )
                     .await?;
@@ -420,6 +506,21 @@ impl AppServerClient {
             params,
         };
         self.send_request(request, "thread/goal/set").await
+    }
+
+    pub async fn start_goal(
+        &self,
+        thread_id: String,
+        objective: String,
+    ) -> Result<ThreadGoalSetResponse, ExecutorError> {
+        self.goal_active.store(true, Ordering::SeqCst);
+        self.thread_goal_set(ThreadGoalSetParams {
+            thread_id,
+            objective: Some(objective),
+            status: Some(ThreadGoalStatus::Active),
+            token_budget: Some(self.goal_token_budget),
+        })
+        .await
     }
 
     pub async fn thread_goal_get(
@@ -818,6 +919,10 @@ impl AppServerClient {
             .as_ref()
             .ok_or(ExecutorApprovalError::ServiceUnavailable)?;
 
+        if self.execution_mode == ExecutionMode::PlanWithGoal {
+            *self.pending_plan_goal_draft.lock().await = Some(plan.text.clone());
+        }
+
         let approval_id = approval_service
             .create_tool_approval("plan")
             .or_else(|err| async {
@@ -866,6 +971,16 @@ impl AppServerClient {
 
         match status {
             ApprovalStatus::Approved => {
+                if self.execution_mode == ExecutionMode::PlanWithGoal {
+                    let objective = self
+                        .pending_plan_goal_draft
+                        .lock()
+                        .await
+                        .take()
+                        .unwrap_or(plan.text);
+                    self.start_goal(thread_id, objective).await?;
+                    return Ok(false);
+                }
                 self.spawn_turn_start(
                     thread_id,
                     "Implement the plan.".to_string(),
@@ -874,6 +989,7 @@ impl AppServerClient {
                 Ok(false)
             }
             ApprovalStatus::Denied { reason } => {
+                *self.pending_plan_goal_draft.lock().await = None;
                 let feedback = reason
                     .as_ref()
                     .map(|s| s.trim())
@@ -890,7 +1006,10 @@ impl AppServerClient {
                     Ok(true)
                 }
             }
-            ApprovalStatus::TimedOut | ApprovalStatus::Pending => Ok(true),
+            ApprovalStatus::TimedOut | ApprovalStatus::Pending => {
+                *self.pending_plan_goal_draft.lock().await = None;
+                Ok(true)
+            }
         }
     }
 
@@ -1202,9 +1321,47 @@ impl JsonRpcCallbacks for AppServerClient {
             && let Some(ref params) = notification.params
             && let Ok(completed) =
                 serde_json::from_value::<ItemCompletedNotification>(params.clone())
-            && let ThreadItem::Plan { id, .. } = completed.item
+            && let ThreadItem::Plan { id, text } = completed.item
         {
-            *self.pending_plan.lock().await = Some(PendingPlan { item_id: id });
+            *self.pending_plan.lock().await = Some(PendingPlan { item_id: id, text });
+        }
+
+        if method == "turn/started"
+            && let Some(turn_id) = notification
+                .params
+                .as_ref()
+                .and_then(|params| params.pointer("/turn/id"))
+                .and_then(Value::as_str)
+        {
+            *self.turn_id.lock().await = Some(turn_id.to_string());
+        }
+
+        if method == "thread/goal/updated"
+            && let Some(status) = notification
+                .params
+                .as_ref()
+                .and_then(|params| params.pointer("/goal/status"))
+                .and_then(Value::as_str)
+        {
+            let active = matches!(
+                status,
+                "active"
+                    | "paused"
+                    | "blocked"
+                    | "usageLimited"
+                    | "usage_limited"
+                    | "budgetLimited"
+                    | "budget_limited"
+            );
+            self.goal_active.store(active, Ordering::SeqCst);
+            if status == "complete" {
+                return Ok(JsonRpcControlFlow::Exit(ExecutorExitResult::Success));
+            }
+        }
+
+        if method == "thread/goal/cleared" {
+            self.goal_active.store(false, Ordering::SeqCst);
+            return Ok(JsonRpcControlFlow::Exit(ExecutorExitResult::Success));
         }
 
         // V2 turn completion detection
@@ -1233,7 +1390,8 @@ impl JsonRpcCallbacks for AppServerClient {
                 }
                 TurnStatus::Interrupted => {
                     tracing::debug!("Codex turn interrupted; flushing feedback queue");
-                    let keep_alive = self.flush_pending_feedback().await;
+                    let keep_alive = self.flush_pending_feedback().await
+                        || self.goal_active.load(Ordering::SeqCst);
                     return Ok(turn_completion_control_flow(
                         &TurnStatus::Interrupted,
                         keep_alive,
@@ -1254,6 +1412,10 @@ impl JsonRpcCallbacks for AppServerClient {
                     &TurnStatus::Completed,
                     !finished,
                 ));
+            }
+
+            if self.goal_active.load(Ordering::SeqCst) {
+                return Ok(JsonRpcControlFlow::Continue);
             }
 
             // Handle commit reminder on turn completion
@@ -1424,6 +1586,7 @@ mod version_check_tests {
         parse_turn_completed_params, reasoning_update_from_thread_settings,
         turn_completion_control_flow,
     };
+    use crate::profile::ExecutionMode;
 
     #[test]
     fn turn_completion_statuses_fail_closed() {
@@ -1587,6 +1750,8 @@ mod version_check_tests {
             None,
             false,
             false,
+            ExecutionMode::Code,
+            None,
             Some(ProtocolReasoningEffort::XHigh),
             Default::default(),
             false,
@@ -1663,6 +1828,8 @@ mod version_check_tests {
             None,
             false,
             false,
+            ExecutionMode::Code,
+            None,
             Some(ProtocolReasoningEffort::High),
             Default::default(),
             false,
@@ -1706,6 +1873,8 @@ mod version_check_tests {
             None,
             false,
             false,
+            ExecutionMode::Code,
+            None,
             Some(ProtocolReasoningEffort::XHigh),
             Default::default(),
             false,

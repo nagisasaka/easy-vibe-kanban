@@ -128,6 +128,14 @@ pub fn reduce_agent_event(
             state.projection_status = ProjectionStatus::ProjectionDegraded;
             ReducerApply::AppliedDegraded
         }
+        AgentEventPayload::GoalUpdated { goal } => {
+            state.goal = Some(goal.clone());
+            ReducerApply::Applied
+        }
+        AgentEventPayload::GoalCleared => {
+            state.goal = None;
+            ReducerApply::Applied
+        }
         AgentEventPayload::Unknown { .. } => {
             state.unknown_event_count += 1;
             state.projection_status = ProjectionStatus::ProjectionDegraded;
@@ -182,8 +190,9 @@ mod tests {
     use super::*;
     use crate::runtime::{
         AGENT_EVENT_PAYLOAD_VERSION, AGENT_EVENT_SCHEMA_VERSION, AGENT_REQUEST_PAYLOAD_VERSION,
-        AGENT_REQUEST_SCHEMA_VERSION, AgentRunIntent, AgentRunRequestEnvelope, AgentRunStatus,
-        CanonicalMessage, WorkspaceMode, WorkspaceReference,
+        AGENT_REQUEST_SCHEMA_VERSION, AgentGoalState, AgentGoalStatus, AgentRunIntent,
+        AgentRunRequestEnvelope, AgentRunStatus, CanonicalMessage, WorkspaceMode,
+        WorkspaceReference,
     };
 
     fn request() -> AgentRunRequestEnvelope {
@@ -263,6 +272,47 @@ mod tests {
             ReducerApply::Duplicate
         );
         assert_eq!(state.status, AgentRunStatus::Running);
+    }
+
+    #[test]
+    fn goal_state_is_replaced_and_cleared_without_double_counting() {
+        let request = request();
+        let mut state = RunState::pending(&request);
+        let run_attempt_id = Uuid::new_v4();
+        let goal = AgentGoalState {
+            objective: "Ship the feature".to_string(),
+            status: AgentGoalStatus::Active,
+            token_budget: Some(50_000),
+            tokens_used: 1_200,
+            time_used_seconds: 42,
+        };
+        let update = event(
+            &request,
+            run_attempt_id,
+            1,
+            1,
+            AgentEventPayload::GoalUpdated { goal: goal.clone() },
+        );
+
+        assert_eq!(
+            reduce_agent_event(&mut state, &update).unwrap(),
+            ReducerApply::Applied
+        );
+        assert_eq!(state.goal, Some(goal));
+        assert_eq!(
+            reduce_agent_event(&mut state, &update).unwrap(),
+            ReducerApply::Duplicate
+        );
+
+        let clear = event(
+            &request,
+            run_attempt_id,
+            1,
+            2,
+            AgentEventPayload::GoalCleared,
+        );
+        reduce_agent_event(&mut state, &clear).unwrap();
+        assert_eq!(state.goal, None);
     }
 
     #[test]

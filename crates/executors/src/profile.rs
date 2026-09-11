@@ -15,6 +15,24 @@ use crate::{
     model_selector::PermissionPolicy,
 };
 
+/// How an interactive coding request should be executed.
+///
+/// This is intentionally separate from [`PermissionPolicy`]: planning and
+/// long-running goal execution describe workflow, while permission policy
+/// describes what the provider may do without asking.
+#[derive(
+    Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, TS, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[ts(use_ts_enum)]
+pub enum ExecutionMode {
+    #[default]
+    Code,
+    Plan,
+    Goal,
+    PlanWithGoal,
+}
+
 /// Return the canonical form for variant keys.
 /// – "DEFAULT" is kept as-is  
 /// – everything else is converted to SCREAMING_SNAKE_CASE
@@ -141,6 +159,17 @@ pub struct ExecutorConfig {
     /// Permission policy override
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission_policy: Option<PermissionPolicy>,
+    /// Workflow mode. Missing values preserve the historic Code behavior,
+    /// except that a legacy PLAN permission is interpreted as Plan by Codex.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_mode: Option<ExecutionMode>,
+    /// Optional native Codex Goal token budget. Must be positive when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal_token_budget: Option<u32>,
+    /// Spawned-agent concurrency cap for this session. `None` means Codex
+    /// chooses its default and `Some(0)` disables subagents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal_max_concurrent_agents: Option<u16>,
 }
 
 impl ExecutorConfig {
@@ -153,6 +182,9 @@ impl ExecutorConfig {
             agent_id: None,
             reasoning_id: None,
             permission_policy: None,
+            execution_mode: None,
+            goal_token_budget: None,
+            goal_max_concurrent_agents: None,
         }
     }
 
@@ -170,6 +202,9 @@ impl ExecutorConfig {
             || self.agent_id.is_some()
             || self.reasoning_id.is_some()
             || self.permission_policy.is_some()
+            || self.execution_mode.is_some()
+            || self.goal_token_budget.is_some()
+            || self.goal_max_concurrent_agents.is_some()
     }
 }
 
@@ -182,6 +217,9 @@ impl From<ExecutorProfileId> for ExecutorConfig {
             agent_id: None,
             reasoning_id: None,
             permission_policy: None,
+            execution_mode: None,
+            goal_token_budget: None,
+            goal_max_concurrent_agents: None,
         }
     }
 }

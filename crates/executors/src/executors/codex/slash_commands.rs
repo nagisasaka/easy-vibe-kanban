@@ -559,7 +559,8 @@ impl Codex {
             Some(_) => self.build_command_builder()?.build_follow_up(&[])?,
             None => self.build_command_builder()?.build_initial()?,
         };
-        let combined_prompt = self.append_prompt.combine_prompt(prompt);
+        let combined_prompt =
+            self.prepare_execution_prompt(self.append_prompt.combine_prompt(prompt));
         let action = super::CodexSessionAction::Chat {
             prompt: combined_prompt,
             selected_skills,

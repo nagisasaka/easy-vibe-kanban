@@ -296,6 +296,9 @@ impl StandardCodingAgentExecutor for Gemini {
             } else {
                 PermissionPolicy::Supervised
             }),
+            execution_mode: None,
+            goal_token_budget: None,
+            goal_max_concurrent_agents: None,
         }
     }
 

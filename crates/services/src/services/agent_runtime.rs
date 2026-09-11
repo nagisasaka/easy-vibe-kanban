@@ -389,7 +389,9 @@ impl<'a> AgentRuntimeReadService<'a> {
                 AgentEventPayload::Unknown { .. } => {}
                 AgentEventPayload::LifecycleChanged { .. }
                 | AgentEventPayload::ProjectionDegraded { .. }
-                | AgentEventPayload::SessionObserved { .. } => {}
+                | AgentEventPayload::SessionObserved { .. }
+                | AgentEventPayload::GoalUpdated { .. }
+                | AgentEventPayload::GoalCleared => {}
             }
         }
         Ok(stats)

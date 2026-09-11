@@ -3433,6 +3433,7 @@ mod tests {
             provider_session: None,
             terminal_output: None,
             last_error: None,
+            goal: None,
             unknown_event_count: 0,
             updated_at: Utc::now(),
         }

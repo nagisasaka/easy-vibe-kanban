@@ -43,6 +43,25 @@ pub(crate) fn encode_control(control: DirectControl) -> Result<Vec<u8>, serde_js
             "method":"turn/steer",
             "params":{"threadId":"<active-thread>","expectedTurnId":"<active-turn>","input":[{"type":"text","text":text}]}
         }),
+        DirectControl::UpdatePlanGoalDraft { objective } => serde_json::json!({
+            "jsonrpc":"2.0", "id": Uuid::new_v4().to_string(),
+            "method":"easy-vibe/plan-goal-draft/update",
+            "params":{"objective":objective}
+        }),
+        DirectControl::GoalUpdate {
+            objective,
+            status,
+            token_budget,
+        } => serde_json::json!({
+            "jsonrpc":"2.0", "id": Uuid::new_v4().to_string(),
+            "method":"thread/goal/set",
+            "params":{"threadId":"<active-thread>","objective":objective,"status":status,"tokenBudget":token_budget}
+        }),
+        DirectControl::GoalClear => serde_json::json!({
+            "jsonrpc":"2.0", "id": Uuid::new_v4().to_string(),
+            "method":"thread/goal/clear",
+            "params":{"threadId":"<active-thread>"}
+        }),
         DirectControl::Approve { .. } | DirectControl::Input { .. } => {
             return Err(serde_json::Error::io(std::io::Error::new(
                 std::io::ErrorKind::Unsupported,

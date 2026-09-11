@@ -16,6 +16,7 @@ export type CanonicalAgentTimelineItemKind =
   | 'approval'
   | 'input'
   | 'usage'
+  | 'goal'
   | 'status'
   | 'session'
   | 'error'
@@ -105,6 +106,13 @@ function itemFromEvent(event: AgentEventEnvelope): CanonicalAgentTimelineItem {
       break;
     case 'token_usage':
       kind = 'usage';
+      break;
+    case 'goal_updated':
+      kind = 'goal';
+      content = payload.data.goal.objective;
+      break;
+    case 'goal_cleared':
+      kind = 'goal';
       break;
     case 'lifecycle_changed':
       kind = 'status';

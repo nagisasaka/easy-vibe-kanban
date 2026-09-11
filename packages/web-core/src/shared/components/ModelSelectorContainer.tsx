@@ -7,10 +7,11 @@ import {
   HandIcon,
   ListBulletsIcon,
   SlidersHorizontalIcon,
+  TargetIcon,
   type Icon,
 } from '@phosphor-icons/react';
-import type { BaseCodingAgent, ExecutorConfig, ModelInfo } from 'shared/types';
-import { PermissionPolicy } from 'shared/types';
+import type { ExecutorConfig, ModelInfo } from 'shared/types';
+import { BaseCodingAgent, ExecutionMode, PermissionPolicy } from 'shared/types';
 import { toPrettyCase } from '@/shared/lib/string';
 import {
   getModelKey,
@@ -427,6 +428,45 @@ export function ModelSelectorContainer({
     ? (permissionMetaByPolicy[permissionPolicy] ?? null)
     : null;
   const permissionIcon = permissionMeta?.icon ?? HandIcon;
+  const isCodex = agent === BaseCodingAgent.CODEX;
+  const executionMode =
+    executorConfig?.execution_mode ??
+    presetOptions?.execution_mode ??
+    (permissionPolicy === PermissionPolicy.PLAN
+      ? ExecutionMode.plan
+      : ExecutionMode.code);
+  const isGoalMode =
+    executionMode === ExecutionMode.goal ||
+    executionMode === ExecutionMode.plan_with_goal;
+  const parallelAgentLimit = executorConfig?.goal_max_concurrent_agents ?? 0;
+  const executionModeOptions = [
+    { value: ExecutionMode.code, label: 'Code' },
+    { value: ExecutionMode.plan, label: 'Plan' },
+    { value: ExecutionMode.goal, label: 'Goal' },
+    { value: ExecutionMode.plan_with_goal, label: 'Plan with Goal' },
+  ];
+  const handleExecutionModeChange = (nextMode: ExecutionMode) => {
+    const usesGoalOptions =
+      nextMode === ExecutionMode.goal ||
+      nextMode === ExecutionMode.plan_with_goal;
+    onOverrideChange({
+      execution_mode: nextMode,
+      ...(permissionPolicy === PermissionPolicy.PLAN
+        ? { permission_policy: PermissionPolicy.SUPERVISED }
+        : {}),
+      ...(!usesGoalOptions
+        ? {
+            goal_token_budget: null,
+            goal_max_concurrent_agents: null,
+          }
+        : {}),
+    });
+  };
+  const parsePositiveInteger = (value: string): number | null => {
+    if (!value.trim()) return null;
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  };
 
   return (
     <>
@@ -493,6 +533,113 @@ export function ModelSelectorContainer({
         />
       )}
 
+      {isCodex && (
+        <DropdownMenu>
+          <DropdownMenuTriggerButton
+            size="sm"
+            icon={
+              isGoalMode
+                ? TargetIcon
+                : executionMode === ExecutionMode.plan
+                  ? ListBulletsIcon
+                  : FastForwardIcon
+            }
+            label={
+              executionModeOptions.find(({ value }) => value === executionMode)
+                ?.label ?? 'Code'
+            }
+          />
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>Execution mode</DropdownMenuLabel>
+            {executionModeOptions.map(({ value, label }) => (
+              <DropdownMenuItem
+                key={value}
+                icon={executionMode === value ? CheckIcon : undefined}
+                onClick={() => handleExecutionModeChange(value)}
+              >
+                {label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+
+      {isCodex && isGoalMode && (
+        <DropdownMenu>
+          <DropdownMenuTriggerButton
+            size="sm"
+            icon={TargetIcon}
+            label="Goal settings"
+          />
+          <DropdownMenuContent align="start" className="w-72">
+            <DropdownMenuLabel>Goal settings</DropdownMenuLabel>
+            <div className="space-y-base px-base py-base">
+              <label className="block space-y-half text-sm text-normal">
+                <span>Token budget</span>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={executorConfig?.goal_token_budget ?? ''}
+                  placeholder="Auto"
+                  onChange={(event) =>
+                    onOverrideChange({
+                      goal_token_budget: parsePositiveInteger(
+                        event.currentTarget.value
+                      ),
+                    })
+                  }
+                  className="border-border bg-primary text-normal w-full rounded-sm border px-base py-half"
+                />
+              </label>
+              <label className="block space-y-half text-sm text-normal">
+                <span>Parallel agents</span>
+                <div className="flex gap-half">
+                  <button
+                    type="button"
+                    className="border-border hover:bg-secondary rounded-sm border px-base py-half"
+                    onClick={() =>
+                      onOverrideChange({ goal_max_concurrent_agents: null })
+                    }
+                  >
+                    Auto
+                  </button>
+                  <button
+                    type="button"
+                    className="border-border hover:bg-secondary rounded-sm border px-base py-half"
+                    onClick={() =>
+                      onOverrideChange({ goal_max_concurrent_agents: 0 })
+                    }
+                  >
+                    Off
+                  </button>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={parallelAgentLimit > 0 ? parallelAgentLimit : ''}
+                    placeholder="Max"
+                    aria-label="Parallel agent limit"
+                    onChange={(event) =>
+                      onOverrideChange({
+                        goal_max_concurrent_agents: parsePositiveInteger(
+                          event.currentTarget.value
+                        ),
+                      })
+                    }
+                    className="border-border bg-primary text-normal min-w-0 flex-1 rounded-sm border px-base py-half"
+                  />
+                </div>
+              </label>
+              <p className="text-xs text-low">
+                Parallel agents is a maximum for subagents, excluding the main
+                agent.
+              </p>
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+
       {permissionPolicy && config.permissions.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTriggerButton
@@ -504,18 +651,20 @@ export function ModelSelectorContainer({
             <DropdownMenuLabel>
               {t('modelSelector.permissions')}
             </DropdownMenuLabel>
-            {config.permissions.map((policy) => {
-              const meta = permissionMetaByPolicy[policy];
-              return (
-                <DropdownMenuItem
-                  key={policy}
-                  icon={meta?.icon ?? HandIcon}
-                  onClick={() => handlePermissionPolicyChange(policy)}
-                >
-                  {meta?.label ?? toPrettyCase(policy)}
-                </DropdownMenuItem>
-              );
-            })}
+            {config.permissions
+              .filter((policy) => !isCodex || policy !== PermissionPolicy.PLAN)
+              .map((policy) => {
+                const meta = permissionMetaByPolicy[policy];
+                return (
+                  <DropdownMenuItem
+                    key={policy}
+                    icon={meta?.icon ?? HandIcon}
+                    onClick={() => handlePermissionPolicyChange(policy)}
+                  >
+                    {meta?.label ?? toPrettyCase(policy)}
+                  </DropdownMenuItem>
+                );
+              })}
           </DropdownMenuContent>
         </DropdownMenu>
       )}
