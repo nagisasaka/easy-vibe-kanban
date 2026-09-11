@@ -7,7 +7,7 @@ pub const VIBE_ATTACHMENTS_DIR: &str = ".vibe-attachments";
 
 /// Directories that should always be skipped regardless of gitignore.
 /// .git is not in .gitignore but should never be watched.
-pub const ALWAYS_SKIP_DIRS: &[&str] = &[".git", "node_modules"];
+pub const ALWAYS_SKIP_DIRS: &[&str] = &[".git", "node_modules", ".evk-shared"];
 
 /// Convert absolute paths to relative paths based on worktree path
 /// This is a robust implementation that handles symlinks and edge cases
@@ -133,6 +133,30 @@ pub fn pipelines_dir() -> PathBuf {
     asset_dir().join("pipelines")
 }
 
+/// Shared local resources live outside the worktree cleanup tree, even when
+/// the workspace directory is overridden. Use the immutable registered repo
+/// name, not its editable display name. The full ID keeps names unambiguous.
+pub fn shared_resources_dir(repo_name: &str, repo_id: uuid::Uuid) -> PathBuf {
+    // Keep this a single portable path component and leave room for the UUID
+    // within common filesystem component limits (48 UTF-8 chars <= 192 bytes).
+    let name: String = repo_name
+        .chars()
+        .take(48)
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '-' | '_' | '.') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let name = name.trim_matches(['.', '-', '_']);
+    let name = if name.is_empty() { "repository" } else { name };
+    get_vibe_kanban_temp_dir()
+        .join("shared")
+        .join(format!("{name}-{repo_id}"))
+}
+
 /// Application-managed Codex skills bundled with LLM Wiki.
 pub fn llm_wiki_skills_dir() -> PathBuf {
     asset_dir().join("skills").join("llm-wiki")
@@ -146,6 +170,50 @@ pub fn expand_tilde(path_str: &str) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_resources_name_is_readable_and_uses_the_full_repo_id() {
+        let id = uuid::Uuid::parse_str("12b6186f-0781-4e73-a844-178dd9646aa1").unwrap();
+        let path = shared_resources_dir("easy-vibe-kanban", id);
+        assert_eq!(
+            path,
+            get_vibe_kanban_temp_dir()
+                .join("shared/easy-vibe-kanban-12b6186f-0781-4e73-a844-178dd9646aa1")
+        );
+        assert_ne!(
+            path,
+            shared_resources_dir("easy-vibe-kanban", uuid::Uuid::nil())
+        );
+    }
+
+    #[test]
+    fn shared_resources_name_cannot_escape_storage_or_exceed_component_limits() {
+        let id = uuid::Uuid::nil();
+        let parent = get_vibe_kanban_temp_dir().join("shared");
+        for name in [
+            "../../another/repo",
+            "C:\\repo\\name",
+            "repo name:*?",
+            "...",
+            "",
+            &"日".repeat(300),
+        ] {
+            let path = shared_resources_dir(name, id);
+            assert_eq!(path.parent(), Some(parent.as_path()));
+            assert!(path.file_name().unwrap().len() <= 255);
+            assert!(
+                path.file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .ends_with(&id.to_string())
+            );
+        }
+        assert_eq!(
+            shared_resources_dir("", id).file_name().unwrap(),
+            format!("repository-{id}").as_str()
+        );
+    }
 
     #[test]
     fn test_make_path_relative() {

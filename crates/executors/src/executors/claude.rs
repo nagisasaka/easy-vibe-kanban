@@ -754,6 +754,10 @@ impl ClaudeCode {
             .env("NPM_CONFIG_LOGLEVEL", "error")
             .args(&args);
 
+        for root in env.shared_resource_roots() {
+            command.arg("--add-dir").arg(root);
+        }
+
         env.clone()
             .with_profile(&self.cmd)
             .apply_to_command(&mut command);

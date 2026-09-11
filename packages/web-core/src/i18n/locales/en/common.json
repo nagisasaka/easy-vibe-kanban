@@ -1,4 +1,13 @@
 {
+  "cardContext": {
+    "title": "Card context",
+    "sharedDirectories": "Shared directories",
+    "none": "None",
+    "description": "Selected presets are included in the initial request when creating a workspace. Existing sessions are not updated. The instructions below are read-only; write task-specific instructions in the description.",
+    "preview": "Card context instructions",
+    "loadFailed": "Unable to load presets",
+    "retry": "Retry"
+  },
   "editorNames": {
     "custom": "Custom"
   },

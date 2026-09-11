@@ -938,6 +938,25 @@ impl LocalContainerService {
         Ok(())
     }
 
+    async fn prepare_shared_resources(
+        workspace_dir: &Path,
+        repos: &[Repo],
+    ) -> Result<(), ContainerError> {
+        let roots: Vec<_> = repos
+            .iter()
+            .map(|repo| (workspace_dir.join(&repo.name), repo.name.clone(), repo.id))
+            .collect();
+        tokio::task::spawn_blocking(move || {
+            for (root, name, id) in roots {
+                workspace_manager::shared_resources::ensure(&root, &name, id)?;
+            }
+            Ok::<_, std::io::Error>(())
+        })
+        .await
+        .map_err(|error| ContainerError::Other(anyhow!(error)))??;
+        Ok(())
+    }
+
     /// Create workspace-level CLAUDE.md and AGENTS.md files that import from each repo.
     /// Uses the @import syntax to reference each repo's config files.
     /// Skips creating files if they already exist or if no repos have the source file.
@@ -1270,6 +1289,7 @@ impl ContainerService for LocalContainerService {
 
         Self::create_workspace_config_files(&created_workspace.workspace_dir, &repositories)
             .await?;
+        Self::prepare_shared_resources(&created_workspace.workspace_dir, &repositories).await?;
 
         Workspace::update_container_ref(
             &self.db.pool,
@@ -1358,6 +1378,7 @@ impl ContainerService for LocalContainerService {
             .await?;
 
         Self::create_workspace_config_files(&workspace_dir, &repositories).await?;
+        Self::prepare_shared_resources(&workspace_dir, &repositories).await?;
 
         Ok(workspace_dir.to_string_lossy().to_string())
     }
@@ -1442,6 +1463,18 @@ impl ContainerService for LocalContainerService {
         // Always inject workspace/session context
         env.insert("VK_WORKSPACE_ID", workspace.id.to_string());
         env.insert("VK_WORKSPACE_BRANCH", &workspace.branch);
+        env.insert(
+            "EVK_SHARED_RESOURCE_ROOTS",
+            serde_json::to_string(
+                &repos
+                    .iter()
+                    .flat_map(|repo| {
+                        workspace_manager::shared_resources::writable_roots(&repo.name, repo.id)
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .map_err(|error| ContainerError::Other(anyhow!(error)))?,
+        );
 
         // Create the child and stream, add to execution tracker with timeout
         let spawn_result = tokio::time::timeout(

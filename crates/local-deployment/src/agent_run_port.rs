@@ -829,6 +829,12 @@ impl LocalAgentRunPort {
         let repos = WorkspaceRepo::find_repos_for_workspace(&self.db.pool, workspace.id)
             .await
             .map_err(port_database)?;
+        let shared_roots: Vec<_> = repos
+            .iter()
+            .flat_map(|repo| {
+                workspace_manager::shared_resources::writable_roots(&repo.name, repo.id)
+            })
+            .collect();
         let repo_names = repos.into_iter().map(|repo| repo.name).collect();
         let mut env = ExecutionEnv::new(
             RepoContext::new(PathBuf::from(&request.workspace.path), repo_names),
@@ -839,6 +845,11 @@ impl LocalAgentRunPort {
         env.insert("VK_WORKSPACE_BRANCH", &workspace.branch);
         env.insert("VK_AGENT_RUN_ID", request.agent_run_id.to_string());
         env.insert("VK_RUN_ATTEMPT_ID", attempt.run_attempt_id.to_string());
+        env.insert(
+            "EVK_SHARED_RESOURCE_ROOTS",
+            serde_json::to_string(&shared_roots)
+                .map_err(|error| AgentRunPortError::Rejected(error.to_string()))?,
+        );
         Ok(env)
     }
 

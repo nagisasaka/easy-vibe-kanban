@@ -73,6 +73,43 @@ npx easy-vibe-kanban
 
 ## Development
 
+### Card context and shared local files
+
+New cards enable the **LLM Wiki** and **Shared directories** context presets by
+default. Expand **Card context** to toggle presets and read their instructions;
+write task-specific requests in the description. Existing cards retain their
+saved instructions. Context is included with the card's initial workspace
+request, not injected into every chat message or retroactively into existing
+sessions. LLM Wiki execution is unchanged.
+
+Each repository in an EVK-managed Git workspace gets two Git-ignored links:
+
+- `.evk-shared/persistent/`: local files you maintain across workspaces.
+- `.evk-shared/cache/`: reproducible outputs and caches you may clear when unused.
+
+Both point to `<EVK workspace storage>/shared/<repository-name>-<full UUID>/` (the default
+storage base, even if you override the worktree location). You can put files
+through these links without configuring absolute paths. Workspaces of the same
+registered repository share the contents; workspace deletion removes only the
+links. EVK does not automatically clear either directory. Back up important
+files: this is local storage, not a backup service, and operating-system cleanup
+of temporary storage can still apply.
+
+The prefix uses the repository name recorded at registration, sanitised and
+length-limited for filesystem safety. Changing its display name does not move
+the shared directory. The full UUID distinguishes repositories with the same
+name. Old `.evk/` links and UUID-only storage are not migrated automatically.
+For cards saved with the old paths, turn the Shared directories preset off and
+on to refresh the instructions for subsequent workspace requests. Existing
+agent sessions need to be told about the new paths separately.
+
+There is no tool-specific configuration or concurrency protection for the
+contents: configure your tools to use these paths and avoid conflicting writes.
+Disabling the context preset removes the agent's instructions, not the shared
+files or links. EVK refuses to overwrite existing conflicting `.evk-shared` paths.
+Direct-folder workspaces do not receive these links. On Windows, directory
+symlinks require Developer Mode or the corresponding privileges.
+
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) (latest stable)

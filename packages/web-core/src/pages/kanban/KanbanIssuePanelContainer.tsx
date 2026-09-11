@@ -8,6 +8,13 @@ import {
 } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
+import { pipelinesApi } from '@/shared/lib/api';
+import {
+  defaultCardContext,
+  replaceCardDescription,
+  splitCardContext,
+} from '@/features/pipeline/model/cardContext';
 import type { OrganizationMemberWithProfile } from 'shared/types';
 import type { IssuePriority } from 'shared/remote-types';
 import { useDebouncedCallback } from '@/shared/hooks/useDebouncedCallback';
@@ -57,7 +64,7 @@ import {
 import { ConfirmDialog } from '@vibe/ui/components/ConfirmDialog';
 import { useAppNavigation } from '@/shared/hooks/useAppNavigation';
 import { useCurrentKanbanRouteState } from '@/shared/hooks/useCurrentKanbanRouteState';
-import { PipelineSection } from '@/features/pipeline/ui/PipelineSection';
+import { CardContextSection } from '@/features/pipeline/ui/CardContextSection';
 import {
   buildKanbanIssueComposerKey,
   closeKanbanIssueComposer,
@@ -252,6 +259,11 @@ export function KanbanIssuePanelContainer({
 
   // Determine mode from composer state (create) or issue route (edit).
   const mode = kanbanCreateMode ? 'create' : 'edit';
+  const contextPresets = useQuery({
+    queryKey: ['card-context-presets', routeState.hostId],
+    queryFn: () => pipelinesApi.list(),
+    staleTime: 60_000,
+  });
 
   // Sort statuses by sort_order
   const sortedStatuses = useMemo(
@@ -325,7 +337,7 @@ export function KanbanIssuePanelContainer({
   // - Create mode: createFormData is the single source of truth.
   // - Edit mode: text fields come from explicit local edit state, dropdown fields from server.
   const displayData = useMemo((): IssueFormData => {
-    return selectDisplayData({
+    const data = selectDisplayData({
       state: formState,
       mode,
       createModeDefaults,
@@ -333,6 +345,15 @@ export function KanbanIssuePanelContainer({
       currentAssigneeIds,
       currentTagIds,
     });
+    return mode === 'create' && contextPresets.data
+      ? {
+          ...data,
+          description: defaultCardContext(
+            data.description ?? '',
+            contextPresets.data
+          ),
+        }
+      : data;
   }, [
     formState,
     mode,
@@ -340,6 +361,7 @@ export function KanbanIssuePanelContainer({
     selectedIssue,
     currentAssigneeIds,
     currentTagIds,
+    contextPresets.data,
   ]);
   const latestDescriptionRef = useRef<string | null>(
     displayData.description ?? null
@@ -827,6 +849,7 @@ export function KanbanIssuePanelContainer({
   // Submit handler
   const handleSubmit = useCallback(async () => {
     if (!displayData.title.trim() || hasPendingAttachments) return;
+    if (mode === 'create' && !contextPresets.data) return;
 
     setSubmitError(null);
     setIsSubmitting(true);
@@ -963,6 +986,7 @@ export function KanbanIssuePanelContainer({
   }, [
     mode,
     displayData,
+    contextPresets.data,
     projectId,
     issues,
     insertIssue,
@@ -1063,9 +1087,23 @@ export function KanbanIssuePanelContainer({
     <KanbanIssuePanel
       mode={mode}
       displayId={displayId}
-      formData={displayData}
+      formData={{
+        ...displayData,
+        description: splitCardContext(displayData.description ?? '')
+          .description,
+      }}
       assigneeUsers={displayAssigneeUsers}
-      onFormChange={handlePropertyChange}
+      onFormChange={(field, value) => {
+        if (field === 'description') {
+          const full = replaceCardDescription(
+            latestDescriptionRef.current ?? '',
+            (value as string | null) ?? ''
+          );
+          latestDescriptionRef.current = full;
+          return handlePropertyChange('description', full || null);
+        }
+        return handlePropertyChange(field, value);
+      }}
       statuses={sortedStatuses}
       tags={tags}
       issueId={selectedKanbanIssueId}
@@ -1097,7 +1135,7 @@ export function KanbanIssuePanelContainer({
           trigger={trigger}
         />
       )}
-      isSubmitting={isSubmitting}
+      isSubmitting={isSubmitting || (mode === 'create' && !contextPresets.data)}
       submitError={submitError}
       onDismissSubmitError={() => setSubmitError(null)}
       descriptionSaveStatus={
@@ -1120,8 +1158,11 @@ export function KanbanIssuePanelContainer({
         <WYSIWYGEditor {...props} localAttachments={localAttachments} />
       )}
       renderPipelineSection={() => (
-        <PipelineSection
+        <CardContextSection
           description={displayData.description ?? ''}
+          pipelines={contextPresets.data ?? []}
+          error={contextPresets.error?.message}
+          onRetry={() => void contextPresets.refetch()}
           disabled={isSubmitting}
           onDescriptionChange={(description) =>
             void handlePropertyChange('description', description || null)
