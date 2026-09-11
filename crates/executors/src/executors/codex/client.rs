@@ -150,6 +150,42 @@ impl AppServerClient {
         self.execution_mode
     }
 
+    fn observes_goal_lifecycle(&self) -> bool {
+        matches!(
+            self.execution_mode,
+            ExecutionMode::Goal | ExecutionMode::PlanWithGoal
+        )
+    }
+
+    fn observe_goal_updated(&self, status: &str) -> Option<ExecutorExitResult> {
+        if !self.observes_goal_lifecycle() {
+            return None;
+        }
+
+        let active = matches!(
+            status,
+            "active"
+                | "paused"
+                | "blocked"
+                | "usageLimited"
+                | "usage_limited"
+                | "budgetLimited"
+                | "budget_limited"
+        );
+        let was_active = self.goal_active.swap(active, Ordering::SeqCst);
+        (status == "complete" && was_active).then_some(ExecutorExitResult::Success)
+    }
+
+    fn observe_goal_cleared(&self) -> Option<ExecutorExitResult> {
+        if !self.observes_goal_lifecycle() {
+            return None;
+        }
+
+        self.goal_active
+            .swap(false, Ordering::SeqCst)
+            .then_some(ExecutorExitResult::Success)
+    }
+
     pub async fn initialize(&self) -> Result<(), ExecutorError> {
         let request = ClientRequest::Initialize {
             request_id: self.next_request_id(),
@@ -1342,26 +1378,15 @@ impl JsonRpcCallbacks for AppServerClient {
                 .as_ref()
                 .and_then(|params| params.pointer("/goal/status"))
                 .and_then(Value::as_str)
+            && let Some(result) = self.observe_goal_updated(status)
         {
-            let active = matches!(
-                status,
-                "active"
-                    | "paused"
-                    | "blocked"
-                    | "usageLimited"
-                    | "usage_limited"
-                    | "budgetLimited"
-                    | "budget_limited"
-            );
-            self.goal_active.store(active, Ordering::SeqCst);
-            if status == "complete" {
-                return Ok(JsonRpcControlFlow::Exit(ExecutorExitResult::Success));
-            }
+            return Ok(JsonRpcControlFlow::Exit(result));
         }
 
-        if method == "thread/goal/cleared" {
-            self.goal_active.store(false, Ordering::SeqCst);
-            return Ok(JsonRpcControlFlow::Exit(ExecutorExitResult::Success));
+        if method == "thread/goal/cleared"
+            && let Some(result) = self.observe_goal_cleared()
+        {
+            return Ok(JsonRpcControlFlow::Exit(result));
         }
 
         // V2 turn completion detection
@@ -1613,6 +1638,61 @@ mod version_check_tests {
         assert!(matches!(
             turn_completion_control_flow(&TurnStatus::Completed, true),
             JsonRpcControlFlow::Continue
+        ));
+    }
+
+    #[test]
+    fn code_and_plan_ignore_goal_state_replayed_during_thread_resume() {
+        for mode in [ExecutionMode::Code, ExecutionMode::Plan] {
+            let client = AppServerClient::new(
+                LogWriter::new(tokio::io::sink()),
+                None,
+                false,
+                mode == ExecutionMode::Plan,
+                mode,
+                None,
+                None,
+                Default::default(),
+                false,
+                String::new(),
+                CancellationToken::new(),
+            );
+
+            assert!(client.observe_goal_updated("active").is_none());
+            assert!(!client.goal_active.load(std::sync::atomic::Ordering::SeqCst));
+            assert!(client.observe_goal_cleared().is_none());
+        }
+    }
+
+    #[test]
+    fn goal_clear_only_finishes_a_goal_that_was_started_by_this_run() {
+        let client = AppServerClient::new(
+            LogWriter::new(tokio::io::sink()),
+            None,
+            false,
+            false,
+            ExecutionMode::Goal,
+            None,
+            None,
+            Default::default(),
+            false,
+            String::new(),
+            CancellationToken::new(),
+        );
+
+        assert!(client.observe_goal_cleared().is_none());
+        assert!(client.observe_goal_updated("active").is_none());
+        assert!(client.goal_active.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(matches!(
+            client.observe_goal_cleared(),
+            Some(ExecutorExitResult::Success)
+        ));
+        assert!(!client.goal_active.load(std::sync::atomic::Ordering::SeqCst));
+
+        assert!(client.observe_goal_updated("active").is_none());
+        assert!(matches!(
+            client.observe_goal_updated("complete"),
+            Some(ExecutorExitResult::Success)
         ));
     }
 
