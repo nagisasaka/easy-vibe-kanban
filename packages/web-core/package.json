@@ -99,6 +99,7 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
+    "test:llm-wiki": "vitest run src/features/pipeline/model/cardPipeline.test.ts src/features/wiki/model/wikiNavigation.test.ts",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,md}\""
   },
@@ -131,6 +132,6 @@
     "tailwindcss": "^3.4.0",
     "typescript": "^5.9.2",
     "vite": "^7.3.1",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.4"
   }
 }

@@ -57,6 +57,7 @@ import {
 import { ConfirmDialog } from '@vibe/ui/components/ConfirmDialog';
 import { useAppNavigation } from '@/shared/hooks/useAppNavigation';
 import { useCurrentKanbanRouteState } from '@/shared/hooks/useCurrentKanbanRouteState';
+import { PipelineSection } from '@/features/pipeline/ui/PipelineSection';
 import {
   buildKanbanIssueComposerKey,
   closeKanbanIssueComposer,
@@ -1117,6 +1118,15 @@ export function KanbanIssuePanelContainer({
       onDismissAttachmentError={clearUploadError}
       renderDescriptionEditor={(props) => (
         <WYSIWYGEditor {...props} localAttachments={localAttachments} />
+      )}
+      renderPipelineSection={() => (
+        <PipelineSection
+          description={displayData.description ?? ''}
+          disabled={isSubmitting}
+          onDescriptionChange={(description) =>
+            void handlePropertyChange('description', description || null)
+          }
+        />
       )}
       renderProjectWorkspaceContext={
         mode === 'create'
