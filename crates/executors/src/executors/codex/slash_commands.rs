@@ -580,7 +580,7 @@ impl Codex {
         let command_parts = self.build_command_builder()?.build_initial()?;
         let session_id = session_id.map(|s| s.to_string());
         let (_, session_fast) = resolve_model(self.model.as_deref());
-        let thread_start_params = self.build_thread_start_params(current_dir);
+        let thread_start_params = self.build_thread_start_params_with_resources(current_dir, env);
         let current_dir_path = current_dir.to_path_buf();
 
         self.spawn_app_server(

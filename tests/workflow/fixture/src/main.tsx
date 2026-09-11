@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { ReactFlowProvider } from '@xyflow/react';
 import '../../../../packages/web-core/src/i18n/config';
 import './style.css';
+import { CardContextHarness } from './CardContextHarness';
 import {
   WORKFLOW_GRAPH_VERSION,
   createDefaultWorkflowGraph,
@@ -536,7 +537,9 @@ function TaskAttemptsHarness() {
 const mode = new URLSearchParams(window.location.search).get('mode');
 
 createRoot(document.getElementById('root')!).render(
-  mode === 'entry' ? (
+  mode === 'card-context' ? (
+    <CardContextHarness />
+  ) : mode === 'entry' ? (
     <WorkflowEntryHarness />
   ) : mode === 'task-attempts' ? (
     <TaskAttemptsHarness />

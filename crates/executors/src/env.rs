@@ -84,6 +84,15 @@ pub struct ExecutionEnv {
 }
 
 impl ExecutionEnv {
+    /// Host-provided repository-scoped directories. Passed through process-host
+    /// as regular environment metadata, without changing user configuration.
+    pub fn shared_resource_roots(&self) -> Vec<PathBuf> {
+        self.vars
+            .get("EVK_SHARED_RESOURCE_ROOTS")
+            .and_then(|value| serde_json::from_str(value).ok())
+            .unwrap_or_default()
+    }
+
     pub fn new(
         repo_context: RepoContext,
         commit_reminder: bool,

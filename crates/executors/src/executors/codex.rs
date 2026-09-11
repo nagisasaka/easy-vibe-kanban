@@ -865,6 +865,24 @@ impl Codex {
         result
     }
 
+    fn build_thread_start_params_with_resources(
+        &self,
+        cwd: &Path,
+        env: &ExecutionEnv,
+    ) -> ThreadStartParams {
+        let mut params = self.build_thread_start_params(cwd);
+        let roots = env.shared_resource_roots();
+        if !roots.is_empty() {
+            params.runtime_workspace_roots = Some(
+                std::iter::once(cwd.to_path_buf())
+                    .chain(roots)
+                    .filter_map(|path| path.try_into().ok())
+                    .collect(),
+            );
+        }
+        params
+    }
+
     fn build_thread_start_params(&self, cwd: &Path) -> ThreadStartParams {
         let sandbox = match self.sandbox.as_ref() {
             None | Some(SandboxMode::Auto) => Some(V2SandboxMode::WorkspaceWrite), // match the Auto preset in codex
@@ -983,7 +1001,7 @@ impl Codex {
         resume_session: Option<&str>,
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
-        let params = self.build_thread_start_params(current_dir);
+        let params = self.build_thread_start_params_with_resources(current_dir, env);
         let resume_session = resume_session.map(|s| s.to_string());
 
         self.spawn_app_server(
@@ -1618,6 +1636,39 @@ mod tests {
 
         assert!(params.history_mode.is_none());
         assert!(!params.allow_provider_model_fallback);
+    }
+
+    #[test]
+    fn shared_resources_are_thread_scoped_and_preserved_on_resume() {
+        use crate::env::{ExecutionEnv, RepoContext};
+
+        let cwd = std::env::current_dir().unwrap();
+        let shared = cwd.join("shared-test/persistent");
+        let mut env = ExecutionEnv::new(RepoContext::default(), false, String::new());
+        let mut executor = test_executor();
+        assert!(
+            executor
+                .build_thread_start_params_with_resources(&cwd, &env)
+                .runtime_workspace_roots
+                .is_none()
+        );
+        env.insert(
+            "EVK_SHARED_RESOURCE_ROOTS",
+            serde_json::to_string(&vec![&shared]).unwrap(),
+        );
+        executor.sandbox = Some(super::SandboxMode::ReadOnly);
+        let params = executor.build_thread_start_params_with_resources(&cwd, &env);
+        let json = serde_json::to_value(&params).unwrap();
+        assert_eq!(json["runtimeWorkspaceRoots"], json!([cwd, shared]));
+        assert_eq!(json["sandbox"], "read-only");
+        assert!(params.developer_instructions.is_none());
+        let resume =
+            serde_json::to_value(resume_params_from("thread-shared".into(), params)).unwrap();
+        assert_eq!(
+            resume["runtimeWorkspaceRoots"],
+            json["runtimeWorkspaceRoots"]
+        );
+        assert_eq!(resume["sandbox"], "read-only");
     }
 
     #[test]
