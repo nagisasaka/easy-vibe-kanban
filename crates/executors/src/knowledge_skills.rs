@@ -8,7 +8,7 @@ const START: &str = "<!-- vk:pipeline:start -->";
 const END: &str = "<!-- vk:pipeline:end -->";
 const HEADING: &str = "## Pipeline: LLM Wiki";
 
-fn contains_wikillm_block(prompt: &str) -> bool {
+pub fn contains_wikillm_block(prompt: &str) -> bool {
     let lines = prompt.lines().collect::<Vec<_>>();
     lines.iter().enumerate().rev().any(|(start, line)| {
         if line.trim_end_matches('\r') != START {

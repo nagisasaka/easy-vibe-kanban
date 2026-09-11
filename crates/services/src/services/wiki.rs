@@ -60,6 +60,8 @@ pub enum WikiError {
     InvalidConfig(String),
     #[error("invalid Wiki page {path}: {message}")]
     InvalidPage { path: String, message: String },
+    #[error("invalid Wiki layout: {0}")]
+    InvalidLayout(String),
     #[error("Wiki path is unsafe: {0}")]
     UnsafePath(String),
 }
@@ -191,40 +193,45 @@ pub fn load_snapshot(repo_root: &Path) -> Result<WikiSnapshot, WikiError> {
     }
 
     let config_path = wiki_root.join("config.toml");
-    let config = if config_path.exists() {
-        let config_path = canonical_child(&wiki_root, &config_path)?;
-        Some(parse_config(&fs::read_to_string(config_path)?)?)
-    } else {
-        None
-    };
+    if !config_path.exists() {
+        return Err(WikiError::InvalidLayout(
+            ".llm-wiki/config.toml is required".to_string(),
+        ));
+    }
+    let config_path = canonical_child(&wiki_root, &config_path)?;
+    let config = Some(parse_config(&fs::read_to_string(config_path)?)?);
     let index_path = wiki_root.join("index.md");
-    let index = if index_path.exists() {
-        Some(read_markdown(&wiki_root, &index_path, "index.md")?)
-    } else {
-        None
-    };
+    if !index_path.exists() {
+        return Err(WikiError::InvalidLayout(
+            ".llm-wiki/index.md is required".to_string(),
+        ));
+    }
+    let index = Some(read_markdown(&wiki_root, &index_path, "index.md")?);
 
     let mut pages = Vec::new();
     let pages_path = wiki_root.join("pages");
-    if pages_path.exists() {
-        let pages_root = canonical_child(&wiki_root, &pages_path)?;
-        if !pages_root.is_dir() {
-            return Err(WikiError::UnsafePath(pages_path.display().to_string()));
+    if !pages_path.exists() {
+        return Err(WikiError::InvalidLayout(
+            ".llm-wiki/pages is required".to_string(),
+        ));
+    }
+    let pages_root = canonical_child(&wiki_root, &pages_path)?;
+    if !pages_root.is_dir() {
+        return Err(WikiError::UnsafePath(pages_path.display().to_string()));
+    }
+    for entry in fs::read_dir(&pages_root)? {
+        if pages.len() >= MAX_PAGES {
+            break;
         }
-        for entry in fs::read_dir(&pages_root)? {
-            if pages.len() >= MAX_PAGES {
-                break;
-            }
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().and_then(|value| value.to_str()) != Some("md") {
-                continue;
-            }
-            let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
-                continue;
-            };
-            pages.push(read_markdown(&pages_root, &path, &format!("pages/{name}"))?);
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("md") {
+            continue;
         }
+        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        pages.push(read_markdown(&pages_root, &path, &format!("pages/{name}"))?);
     }
     pages.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(WikiSnapshot {
@@ -243,7 +250,7 @@ fn ensure_plain_directory(parent_root: &Path, path: &Path) -> Result<PathBuf, Wi
     canonical_child(parent_root, path)
 }
 
-pub fn initialise_or_update(repo_root: &Path, output_language: &str) -> Result<(), WikiError> {
+fn initialise(repo_root: &Path, output_language: &str) -> Result<(), WikiError> {
     let config = serialize_config(output_language)?;
     let repo_root = fs::canonicalize(repo_root)?;
     let wiki_root = ensure_plain_directory(&repo_root, &repo_root.join(WIKI_DIR))?;
@@ -254,6 +261,7 @@ pub fn initialise_or_update(repo_root: &Path, output_language: &str) -> Result<(
     if !pages.is_dir() {
         return Err(WikiError::UnsafePath(pages.display().to_string()));
     }
+    fs::write(pages.join(".gitkeep"), "")?;
 
     let index_path = wiki_root.join("index.md");
     if index_path.exists() {
@@ -277,6 +285,46 @@ pub fn initialise_or_update(repo_root: &Path, output_language: &str) -> Result<(
     if !index_path.exists() {
         fs::write(index_path, "# LLM Wiki\n")?;
     }
+    Ok(())
+}
+
+/// Initialise a repository-local Wiki exactly once, or validate the existing
+/// Wiki without modifying it. Existing incomplete or invalid data is never
+/// repaired implicitly.
+pub fn initialise_if_missing(repo_root: &Path, output_language: &str) -> Result<bool, WikiError> {
+    let repo_root = fs::canonicalize(repo_root)?;
+    if repo_root.join(WIKI_DIR).exists() {
+        load_snapshot(&repo_root)?;
+        return Ok(false);
+    }
+
+    initialise(&repo_root, output_language)?;
+    load_snapshot(&repo_root)?;
+    Ok(true)
+}
+
+/// Update the language of an already valid Wiki. This deliberately does not
+/// double as an initialisation or repair endpoint.
+pub fn update_config(repo_root: &Path, output_language: &str) -> Result<(), WikiError> {
+    let config = serialize_config(output_language)?;
+    let repo_root = fs::canonicalize(repo_root)?;
+    let snapshot = load_snapshot(&repo_root)?;
+    if !snapshot.exists {
+        return Err(WikiError::InvalidLayout(
+            ".llm-wiki has not been initialised".to_string(),
+        ));
+    }
+    let wiki_root = canonical_child(&repo_root, &repo_root.join(WIKI_DIR))?;
+    let config_path = canonical_child(&wiki_root, &wiki_root.join("config.toml"))?;
+    let temp_path = wiki_root.join(".config.toml.tmp");
+    if temp_path.exists() {
+        let metadata = fs::symlink_metadata(&temp_path)?;
+        if metadata.file_type().is_symlink() {
+            return Err(WikiError::UnsafePath(temp_path.display().to_string()));
+        }
+    }
+    fs::write(&temp_path, config)?;
+    fs::rename(temp_path, config_path)?;
     Ok(())
 }
 
@@ -358,14 +406,47 @@ mod tests {
     }
 
     #[test]
-    fn initialises_deterministically_and_preserves_pages() {
+    fn initialises_deterministically_and_is_idempotent() {
         let temp = tempdir().unwrap();
-        initialise_or_update(temp.path(), DEFAULT_OUTPUT_LANGUAGE).unwrap();
-        initialise_or_update(temp.path(), DEFAULT_OUTPUT_LANGUAGE).unwrap();
+        assert!(initialise_if_missing(temp.path(), DEFAULT_OUTPUT_LANGUAGE).unwrap());
+        assert!(!initialise_if_missing(temp.path(), "ja").unwrap());
         let snapshot = load_snapshot(temp.path()).unwrap();
         assert!(snapshot.exists);
         assert_eq!(snapshot.config.unwrap().output_language, "en");
         assert_eq!(snapshot.index.unwrap().content, "# LLM Wiki\n");
+        assert!(temp.path().join(WIKI_DIR).join("pages/.gitkeep").exists());
+    }
+
+    #[test]
+    fn refuses_to_repair_an_incomplete_existing_wiki() {
+        let temp = tempdir().unwrap();
+        fs::create_dir(temp.path().join(WIKI_DIR)).unwrap();
+
+        assert!(matches!(
+            initialise_if_missing(temp.path(), DEFAULT_OUTPUT_LANGUAGE),
+            Err(WikiError::InvalidLayout(_))
+        ));
+        assert!(!temp.path().join(WIKI_DIR).join("config.toml").exists());
+    }
+
+    #[test]
+    fn config_update_requires_a_valid_existing_wiki() {
+        let temp = tempdir().unwrap();
+        assert!(matches!(
+            update_config(temp.path(), "ja"),
+            Err(WikiError::InvalidLayout(_))
+        ));
+
+        initialise_if_missing(temp.path(), DEFAULT_OUTPUT_LANGUAGE).unwrap();
+        update_config(temp.path(), "ja").unwrap();
+        assert_eq!(
+            load_snapshot(temp.path())
+                .unwrap()
+                .config
+                .unwrap()
+                .output_language,
+            "ja"
+        );
     }
 
     #[test]
@@ -401,7 +482,7 @@ mod tests {
                 Err(WikiError::UnsafePath(_))
             ));
             assert!(matches!(
-                initialise_or_update(temp.path(), "en"),
+                initialise_if_missing(temp.path(), "en"),
                 Err(WikiError::UnsafePath(_))
             ));
         }

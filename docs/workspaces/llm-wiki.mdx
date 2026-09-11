@@ -22,15 +22,25 @@ the end of the task description. Editing the selection replaces only that
 generated block and preserves the rest of the description.
 
 <Note>
-The Pipeline is agent guidance, not a server-side workflow or stage scheduler.
-It works in a normal Workspace, does not create extra Workspaces, and does not
-require `/goal`.
+  The Pipeline is agent guidance, not a server-side workflow or stage scheduler.
+  It works in a normal Workspace, does not create extra Workspaces, and does not
+  require `/goal`.
 </Note>
 
 For Codex sessions, easy-vibe-kanban makes the bundled `knowledge-recall` and
 `knowledge-enrich` skills available whenever a complete LLM Wiki Pipeline
 block is in the current prompt. The agent may still skip Recall when there is
 no relevant knowledge and skip Enrich when nothing durable was learned.
+
+Before the agent run starts, easy-vibe-kanban initialises `.llm-wiki` in every
+repository attached to the Workspace. This also runs when you send an LLM
+Wiki-enabled task to an existing Workspace. Repeated runs validate the existing
+Wiki without rewriting it. A missing Wiki uses the deterministic default
+language `en`; you can change it in the Viewer after initialisation.
+
+If an existing Wiki is incomplete or invalid, the run fails before the agent
+starts. The application reports the validation error but does not overwrite or
+repair Git-managed Wiki files automatically.
 
 ## Repository format
 
@@ -41,6 +51,7 @@ Each repository in a Workspace has its own Wiki:
 ├── config.toml
 ├── index.md
 └── pages/
+    ├── .gitkeep
     └── topic.md
 ```
 
@@ -83,16 +94,16 @@ Open a Workspace's right sidebar and expand **LLM Wiki**. The source label is
 worktree.
 
 - Select the repository when the Workspace contains more than one.
-- Choose or enter an output-language tag and select **Initialise** to create an
-  empty Wiki, or **Save** to update the setting.
+- After automatic initialisation, choose or enter an output-language tag and
+  select **Save** to update the setting.
 - Open `index.md` or a topic page from the page list.
 - Search paths, titles, summaries, tags, sources and full page text.
 - Follow ordinary relative Markdown links or `[[wikilinks]]` within the Wiki.
 - Use reload after an agent or Git operation changes the files.
 
-The Viewer is read-only. Edit Wiki files through normal Git editing or ask the
-agent to update them. Mermaid code blocks use the same renderer as other
-Markdown previews.
+The Viewer does not offer a manual initialisation or repair action. Edit Wiki
+files through normal Git editing or ask the agent to update them. Mermaid code
+blocks use the same renderer as other Markdown previews.
 
 ## Trust and safety
 

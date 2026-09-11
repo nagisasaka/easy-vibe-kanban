@@ -185,7 +185,7 @@ pub async fn update_config(
     let root = resolved.root.clone();
     let output_language = body.output_language.trim().to_string();
     let wiki = tokio::task::spawn_blocking(move || {
-        wiki::initialise_or_update(&root, &output_language)?;
+        wiki::update_config(&root, &output_language)?;
         wiki::load_snapshot(&root)
     })
     .await

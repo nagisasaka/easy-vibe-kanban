@@ -20,8 +20,8 @@ or claims not verified against the final code and tests.
    from the current workspace roots. Refuse parent traversal and absolute page
    paths. Do not follow a `.llm-wiki` or `pages` symlink, and never read or
    write outside the selected repository's `.llm-wiki`.
-3. If the Wiki is absent, initialise this exact structure in the selected
-   repository:
+3. The application initialises the Wiki before an LLM Wiki-enabled agent run.
+   Require this exact structure in the selected repository:
 
    ```text
    .llm-wiki/config.toml
@@ -29,9 +29,10 @@ or claims not verified against the final code and tests.
    .llm-wiki/pages/
    ```
 
-   Persist schema version 1 and a deterministic BCP 47 `output_language`. Use
-   an already selected task/repository language when explicit; otherwise use
-   `en`. Do not switch language based on the conversation from run to run.
+   If it is absent, incomplete, or invalid, report the problem and skip
+   enrichment. Do not create or repair the layout or `config.toml`. Read the
+   schema version 1 BCP 47 `output_language` already persisted by the
+   application, and do not switch language based on the conversation.
 4. Search existing index, titles, summaries, tags and bodies for a near
    duplicate. Update the closest page instead of creating overlapping pages.
 5. Page files must be lowercase ASCII slugs ending in `.md`, inside `pages/`,

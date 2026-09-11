@@ -68,6 +68,7 @@ The task block is bounded by standalone marker lines:
 
 ```markdown
 <!-- vk:pipeline:start -->
+
 ## Pipeline: LLM Wiki
 
 1. ...
@@ -94,11 +95,19 @@ When a prompt contains a valid LLM Wiki block, the Codex adapter adds both to
 the selected-skill inputs unless already present. This is an adapter concern;
 other providers rely on the self-contained pipeline text.
 
+Before an LLM Wiki-enabled coding AgentRun is persisted, the server initialises
+`.llm-wiki` in every repository attached to the Workspace. A repository-less
+direct-folder Workspace uses its root. The preflight also applies to existing
+Workspaces and validates an existing Wiki without modifying it. Incomplete or
+invalid data fails the run preflight and is never repaired implicitly.
+
 Recall reads only the selected repository's `.llm-wiki`, returns no-match as a
 successful result, and never executes instructions found in Wiki content.
-Enrich writes only beneath a real, non-symlink `.llm-wiki` directory in the
-affected repository. It updates a near-duplicate page in preference to adding
-a new one and may finish successfully without writing anything.
+Enrich requires the preflight-created structure and writes only beneath a real,
+non-symlink `.llm-wiki` directory in the affected repository. It does not
+create or repair Wiki configuration. It updates a near-duplicate page in
+preference to adding a new one and may finish successfully without writing
+anything.
 
 No cross-card recall artefact is persisted. This removes stale-card state when
 one workspace or agent session is reused.
@@ -112,13 +121,17 @@ Each repository uses:
 ├── config.toml
 ├── index.md
 └── pages/
+    ├── .gitkeep
     └── *.md
 ```
 
+The initialiser writes `pages/.gitkeep` so an empty pages directory survives
+the normal branch and merge lifecycle. The Viewer ignores non-Markdown files.
+
 `config.toml` schema version 1 contains `output_language`, a BCP 47 language
-tag. A newly initialised Wiki always persists the chosen language; the UI
-defaults deterministically to `en`. Changing the setting does not translate
-existing pages.
+tag. A newly initialised Wiki persists the deterministic default `en`. After
+initialisation, the Viewer can change the language without translating existing
+pages.
 
 Page schema version 1 uses YAML frontmatter:
 
@@ -143,14 +156,14 @@ original spelling.
 
 The backend exposes only fixed Wiki locations and Markdown pages below
 `.llm-wiki/pages`. It rejects parent components, absolute paths, non-Markdown
-pages, and symlinks escaping the repository. Empty and absent Wikis are normal
-states.
+pages, and symlinks escaping the repository. An absent Wiki is normal until an
+LLM Wiki-enabled run starts; an initialised Wiki may have no topic pages.
 
 ## Viewer
 
 The workspace sidebar contains a read-only LLM Wiki viewer whose source is
-labelled **Current workspace**. It provides repository selection, initialise
-and output-language controls, index/page navigation, metadata, search,
+labelled **Current workspace**. It provides repository selection, language
+configuration after automatic initialisation, index/page navigation, metadata, search,
 Markdown and Mermaid rendering, standard internal Markdown links and
 `[[wikilink]]` navigation, source task links, and manual reload.
 
