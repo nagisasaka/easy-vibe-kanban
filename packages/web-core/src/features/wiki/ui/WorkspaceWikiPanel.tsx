@@ -73,6 +73,7 @@ export function WorkspaceWikiPanel({
     }
     setLoading(true);
     setError(null);
+    setSnapshot(null);
     try {
       const next = await workspacesApi.wiki.snapshot(workspace.id, repoId);
       setSnapshot(next);
@@ -112,7 +113,7 @@ export function WorkspaceWikiPanel({
     allPages.find((page) => page.path === selectedPath) ?? null;
 
   const saveLanguage = async () => {
-    if (!repoId) return;
+    if (!repoId || !snapshot?.wiki.exists) return;
     setSaving(true);
     setError(null);
     try {
@@ -167,8 +168,10 @@ export function WorkspaceWikiPanel({
           value={repoId}
           onChange={(event) => {
             setRepoId(event.target.value);
+            setSnapshot(null);
             setSelectedPath('index.md');
             setQuery('');
+            setError(null);
           }}
           className="w-full rounded border bg-primary px-half py-half text-high"
         >
@@ -178,51 +181,56 @@ export function WorkspaceWikiPanel({
             </option>
           ))}
         </select>
-        <div className="flex gap-half">
-          <input
-            list="llm-wiki-language-options"
-            aria-label="Wiki output language"
-            value={language}
-            onChange={(event) => setLanguage(event.target.value)}
-            placeholder="BCP 47 language tag"
-            className="min-w-0 flex-1 rounded border bg-primary px-half py-half text-high"
-          />
-          <datalist id="llm-wiki-language-options">
-            {LANGUAGE_OPTIONS.map(([code, label]) => (
-              <option key={code} value={code} label={label} />
-            ))}
-          </datalist>
-          <button
-            type="button"
-            disabled={saving || !repoId || !language.trim()}
-            onClick={() => void saveLanguage()}
-            className="rounded bg-brand px-base py-half text-white disabled:opacity-50"
-          >
-            {snapshot?.wiki.exists ? 'Save' : 'Initialise'}
-          </button>
-        </div>
-        <p className="text-xs text-low">
-          Titles and prose use this language. Existing pages are not translated.
-        </p>
         {snapshot?.wiki.exists && (
-          <input
-            type="search"
-            aria-label="Search Wiki"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search Wiki"
-            className="w-full rounded border bg-primary px-half py-half text-high"
-          />
+          <>
+            <div className="flex gap-half">
+              <input
+                list="llm-wiki-language-options"
+                aria-label="Wiki output language"
+                value={language}
+                onChange={(event) => setLanguage(event.target.value)}
+                placeholder="BCP 47 language tag"
+                className="min-w-0 flex-1 rounded border bg-primary px-half py-half text-high"
+              />
+              <datalist id="llm-wiki-language-options">
+                {LANGUAGE_OPTIONS.map(([code, label]) => (
+                  <option key={code} value={code} label={label} />
+                ))}
+              </datalist>
+              <button
+                type="button"
+                disabled={saving || !language.trim()}
+                onClick={() => void saveLanguage()}
+                className="rounded bg-brand px-base py-half text-white disabled:opacity-50"
+              >
+                Save
+              </button>
+            </div>
+            <p className="text-xs text-low">
+              Titles and prose use this language. Existing pages are not
+              translated.
+            </p>
+            <input
+              type="search"
+              aria-label="Search Wiki"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search Wiki"
+              className="w-full rounded border bg-primary px-half py-half text-high"
+            />
+          </>
         )}
         {error && <p className="text-xs text-error">{error}</p>}
       </div>
 
-      {!repoId ? (
+      {error ? (
+        <EmptyState text="The repository's .llm-wiki files are invalid or unavailable. Fix the files in the workspace before starting another LLM Wiki task." />
+      ) : !repoId ? (
         <EmptyState text="This workspace has no repositories." />
       ) : loading && !snapshot ? (
         <EmptyState text="Loading Wiki…" />
       ) : snapshot && !snapshot.wiki.exists ? (
-        <EmptyState text="No .llm-wiki exists in this repository. Choose an output language and initialise it." />
+        <EmptyState text="No .llm-wiki exists in this repository. It will be initialised automatically before an LLM Wiki-enabled agent run starts." />
       ) : (
         <div className="grid min-h-[320px] flex-1 grid-cols-[minmax(110px,0.34fr)_minmax(0,1fr)] overflow-hidden">
           <nav
