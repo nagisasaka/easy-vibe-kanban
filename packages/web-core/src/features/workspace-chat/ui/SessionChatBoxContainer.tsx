@@ -1363,7 +1363,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
   );
 
   return (
-    <div className="w-full">
+    <div className="flex w-chat max-w-full flex-col">
       {planGoalApprovalNode}
       {goalProgressNode}
       <SessionChatBox<BaseCodingAgent>
