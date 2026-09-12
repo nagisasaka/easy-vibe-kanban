@@ -62,6 +62,42 @@ const event = (
 });
 
 describe('mergeCanonicalAgentTimeline', () => {
+  it('repairs completed commentary even when it is not the final answer', () => {
+    const live: AgentLiveEvent = {
+      schema_version: 1,
+      event_id: 'live',
+      session_id: 'session',
+      agent_run_id: 'run',
+      turn_id: 'turn',
+      run_attempt_id: 'attempt',
+      run_attempt_number: 1,
+      native_sequence: 1,
+      timestamp: '2026-09-12T00:00:00Z',
+      payload: {
+        type: 'message_delta',
+        data: {
+          message_id: 'commentary',
+          provider_item_id: 'c',
+          role: 'assistant',
+          delta: 'world',
+        },
+      },
+    };
+    const complete = event(2, 'commentary');
+    if (complete.payload.type !== 'message') throw new Error('fixture');
+    complete.payload.data.final_output = false;
+    complete.payload.data.message.content = 'Hello world';
+    const streamed = mergeAgentLiveEvent(emptyCanonicalAgentTimeline(), live);
+    const repaired = mergeCanonicalAgentTimeline(streamed, [complete]);
+    expect(repaired.transientEvents).toEqual([]);
+    expect(
+      mergeAgentLiveEvent(repaired, {
+        ...live,
+        event_id: 'late',
+        native_sequence: 3,
+      })
+    ).toBe(repaired);
+  });
   it('buffers ordered live deltas without advancing the durable cursor and repairs on completion', () => {
     const live = (sequence: number, delta: string): AgentLiveEvent => ({
       schema_version: 1,

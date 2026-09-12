@@ -141,7 +141,8 @@ pub fn reduce_agent_event(
             state.projection_status = ProjectionStatus::ProjectionDegraded;
             ReducerApply::AppliedDegraded
         }
-        AgentEventPayload::Thinking { .. }
+        AgentEventPayload::AgentActivity { .. }
+        | AgentEventPayload::Thinking { .. }
         | AgentEventPayload::ToolCall { .. }
         | AgentEventPayload::ApprovalRequested { .. }
         | AgentEventPayload::ApprovalResolved { .. }
@@ -272,6 +273,28 @@ mod tests {
             ReducerApply::Duplicate
         );
         assert_eq!(state.status, AgentRunStatus::Running);
+    }
+
+    #[test]
+    fn delegated_completion_never_sets_parent_output_or_status() {
+        let request = request();
+        let mut state = RunState::pending(&request);
+        let activity = super::super::AgentActivity {
+            thread_id: "child".into(),
+            parent_thread_id: Some("parent".into()),
+            agent_path: None,
+            kind: "completed".into(),
+            content: Some("child answer".into()),
+        };
+        let payload = AgentEventPayload::AgentActivity { activity };
+        let restored =
+            AgentEventPayload::upcast(1, serde_json::to_value(&payload).unwrap()).unwrap();
+        assert_eq!(payload, restored);
+        reduce_agent_event(&mut state, &event(&request, Uuid::new_v4(), 1, 1, restored)).unwrap();
+        assert_eq!(state.status, AgentRunStatus::Pending);
+        assert!(state.terminal_output.is_none());
+        assert!(state.goal.is_none());
+        assert_eq!(state.projection_status, ProjectionStatus::Current);
     }
 
     #[test]

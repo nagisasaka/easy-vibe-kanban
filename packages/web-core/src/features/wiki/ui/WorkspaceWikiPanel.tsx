@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type MouseEvent,
 } from 'react';
@@ -13,6 +14,7 @@ import type {
 } from 'shared/types';
 import { ArrowClockwiseIcon, BookOpenIcon } from '@phosphor-icons/react';
 import { workspacesApi } from '@/shared/lib/api';
+import { WikiBootstrapDialog } from './WikiBootstrapDialog';
 import { MarkdownPreview } from '@/shared/components/MarkdownPreview';
 import { getResolvedTheme, useTheme } from '@/shared/hooks/useTheme';
 import {
@@ -58,6 +60,8 @@ export function WorkspaceWikiPanel({
   const [language, setLanguage] = useState('en');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [bootstrapOpen, setBootstrapOpen] = useState(false);
+  const loadSequence = useRef(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,6 +71,7 @@ export function WorkspaceWikiPanel({
   }, [repoId, repositoryOptions]);
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     if (!repoId) {
       setSnapshot(null);
       return;
@@ -76,6 +81,7 @@ export function WorkspaceWikiPanel({
     setSnapshot(null);
     try {
       const next = await workspacesApi.wiki.snapshot(workspace.id, repoId);
+      if (sequence !== loadSequence.current) return;
       setSnapshot(next);
       setLanguage(next.wiki.config?.output_language ?? 'en');
       const paths = new Set(allWikiPages(next.wiki).map((page) => page.path));
@@ -85,16 +91,20 @@ export function WorkspaceWikiPanel({
           : (next.wiki.index?.path ?? next.wiki.pages[0]?.path ?? 'index.md')
       );
     } catch (reason) {
+      if (sequence !== loadSequence.current) return;
       setError(
         reason instanceof Error ? reason.message : 'Unable to load Wiki'
       );
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   }, [repoId, workspace.id]);
 
   useEffect(() => {
     void load();
+    return () => {
+      loadSequence.current += 1;
+    };
   }, [load]);
 
   const pages = useMemo(
@@ -168,6 +178,8 @@ export function WorkspaceWikiPanel({
           value={repoId}
           onChange={(event) => {
             setRepoId(event.target.value);
+            loadSequence.current += 1;
+            setBootstrapOpen(false);
             setSnapshot(null);
             setSelectedPath('index.md');
             setQuery('');
@@ -181,6 +193,30 @@ export function WorkspaceWikiPanel({
             </option>
           ))}
         </select>
+        {snapshot && !error && repoId && (
+          <button
+            type="button"
+            className="rounded border px-base py-half text-high hover:bg-panel"
+            onClick={() => setBootstrapOpen(true)}
+          >
+            {snapshot.wiki.pages.length
+              ? 'Supplement Wiki from code'
+              : 'Create Wiki from existing code'}
+          </button>
+        )}
+        {bootstrapOpen && snapshot && !error && (
+          <WikiBootstrapDialog
+            key={`${workspace.id}:${repoId}`}
+            workspaceId={workspace.id}
+            repository={
+              repos.find((repo) => repo.id === repoId)?.name ??
+              workspace.container_ref ??
+              'Current direct-folder workspace'
+            }
+            initialLanguage={snapshot.wiki.config?.output_language ?? 'en'}
+            onClose={() => setBootstrapOpen(false)}
+          />
+        )}
         {snapshot?.wiki.exists && (
           <>
             <div className="flex gap-half">

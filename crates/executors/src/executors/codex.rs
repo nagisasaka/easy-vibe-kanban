@@ -1,4 +1,47 @@
 pub mod client;
+pub const GOAL_OBJECTIVE_MAX_CHARS: usize = 4000;
+
+pub fn goal_concurrency_constraint(limit: Option<u16>) -> String {
+    match limit {
+        Some(0) => {
+            "\n\nExecution constraint: do not spawn or delegate to subagents for this goal.".into()
+        }
+        Some(limit) => format!(
+            "\n\nExecution constraint: when work can be divided safely, use at most {limit} concurrent spawned subagents (excluding the primary agent). Avoid concurrent writes to the same files."
+        ),
+        None => String::new(),
+    }
+}
+
+pub fn validate_goal_objective(objective: &str) -> Result<(), ExecutorError> {
+    let count = objective.chars().count();
+    if count > GOAL_OBJECTIVE_MAX_CHARS {
+        return Err(ExecutorError::Io(std::io::Error::other(format!(
+            "Codex Goal objective is {count} characters; maximum is {GOAL_OBJECTIVE_MAX_CHARS}. Shorten the instructions."
+        ))));
+    }
+    Ok(())
+}
+
+fn add_goal_skill_context(params: &mut ThreadStartParams, skills: &[SelectedSkill]) {
+    if skills.is_empty() {
+        return;
+    }
+    // Goal activation has no UserInput array. Make the same skill references
+    // available before activation, without starting an extra turn or inflating
+    // the persistent 4,000-character objective. References are data, not commands.
+    let references = serde_json::to_string(skills).expect("skill references serialize");
+    let context = format!(
+        "Available selected skills (JSON name/path references): {references}\nRead the referenced SKILL.md before using a relevant skill. Choose skills according to the current task; availability does not require invoking a skill."
+    );
+    params.developer_instructions = Some(match params.developer_instructions.take() {
+        Some(existing) => format!("{existing}\n\n{context}"),
+        None => context,
+    });
+}
+pub mod agent_scope;
+mod goal_lifecycle;
+
 pub mod jsonrpc;
 pub mod normalize_logs;
 pub mod review;
@@ -555,15 +598,10 @@ impl Codex {
     }
 
     pub(crate) fn prepare_execution_prompt(&self, prompt: String) -> String {
-        let prompt = match self.goal_max_concurrent_agents {
-            Some(0) => format!(
-                "{prompt}\n\nExecution constraint: do not spawn or delegate to subagents for this goal."
-            ),
-            Some(limit) => format!(
-                "{prompt}\n\nExecution constraint: when work can be divided safely, use at most {limit} concurrent spawned subagents (excluding the primary agent). Avoid concurrent writes to the same files."
-            ),
-            None => prompt,
-        };
+        let prompt = format!(
+            "{prompt}{}",
+            goal_concurrency_constraint(self.goal_max_concurrent_agents)
+        );
         if self.effective_execution_mode() == ExecutionMode::PlanWithGoal {
             format!(
                 "{prompt}\n\nProduce an approval-ready goal contract as the final plan, with sections named Outcome, Constraints, Implementation Plan, and Verification and Completion Criteria. The approved text will become the persistent Goal objective, so make it self-contained and include measurable completion conditions."
@@ -1033,12 +1071,19 @@ impl Codex {
     }
 
     async fn launch_codex_agent(
-        thread_start_params: ThreadStartParams,
+        mut thread_start_params: ThreadStartParams,
         resume_session: Option<String>,
         combined_prompt: String,
         selected_skills: Vec<SelectedSkill>,
         client: Arc<AppServerClient>,
     ) -> Result<(), ExecutorError> {
+        if client.execution_mode() == ExecutionMode::Goal {
+            let skills = crate::knowledge_skills::augment_for_wikillm(
+                &combined_prompt,
+                selected_skills.clone(),
+            );
+            add_goal_skill_context(&mut thread_start_params, &skills);
+        }
         let account = client.get_account().await?;
         if account.requires_openai_auth && account.account.is_none() {
             return Err(ExecutorError::AuthRequired(
@@ -1178,7 +1223,7 @@ impl Codex {
                 exit_signal_tx.clone(),
                 cancel_for_task,
             );
-            client.connect(rpc_peer);
+            client.connect(rpc_peer.clone());
             // Do not expose the control peer until it owns a connected RPC
             // transport.  The process host can send cancellation immediately
             // after launch, before the initialization request has completed.
@@ -1195,7 +1240,8 @@ impl Codex {
                     ExecutorError::Io(io_err)
                         if io_err.kind() == std::io::ErrorKind::BrokenPipe =>
                     {
-                        // Broken pipe likely means the parent process exited, so we can ignore it
+                        // Transport failure cannot be treated as successful startup.
+                        rpc_peer.request_exit(ExecutorExitResult::Failure);
                         return;
                     }
                     ExecutorError::AuthRequired(message) => {
@@ -1203,9 +1249,7 @@ impl Codex {
                             .log_raw(&Error::auth_required(message.clone()).raw())
                             .await
                             .ok();
-                        exit_signal_tx
-                            .send_exit_signal(ExecutorExitResult::Failure)
-                            .await;
+                        rpc_peer.request_exit(ExecutorExitResult::Failure);
                         return;
                     }
                     _ => {
@@ -1217,9 +1261,7 @@ impl Codex {
                             .ok();
                     }
                 }
-                exit_signal_tx
-                    .send_exit_signal(ExecutorExitResult::Failure)
-                    .await;
+                rpc_peer.request_exit(ExecutorExitResult::Failure);
             }
         });
 
@@ -1377,6 +1419,16 @@ fn fallback_models() -> Vec<ModelInfo> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn goal_length_counts_unicode_characters_not_utf8_bytes() {
+        assert!(super::validate_goal_objective(&"😀".repeat(4000)).is_ok());
+        assert!(
+            super::validate_goal_objective(&"あ".repeat(4001))
+                .unwrap_err()
+                .to_string()
+                .contains("4001")
+        );
+    }
     use std::path::{Path, PathBuf};
 
     use codex_app_server_protocol::{Model, ModelListResponse, ReasoningEffortOption, UserInput};
@@ -1848,5 +1900,35 @@ mod tests {
             UserInput::Skill { name, .. } if name == "knowledge-enrich"
         ));
         assert!(matches!(&input[2], UserInput::Text { text, .. } if text == prompt));
+    }
+}
+
+#[cfg(test)]
+mod goal_skill_tests {
+    use super::*;
+
+    #[test]
+    fn goal_skills_are_available_before_initial_or_resumed_activation() {
+        let mut params = ThreadStartParams {
+            developer_instructions: Some("existing rules".into()),
+            ..Default::default()
+        };
+        let selected = vec![SelectedSkill {
+            name: "knowledge-recall".into(),
+            path: PathBuf::from("/skills/knowledge-recall/SKILL.md"),
+        }];
+        add_goal_skill_context(&mut params, &selected);
+        let instructions = params.developer_instructions.as_deref().unwrap();
+        assert!(instructions.starts_with("existing rules"));
+        assert!(instructions.contains("knowledge-recall/SKILL.md"));
+        assert!(instructions.contains("does not require invoking"));
+        let resumed = resume_params_from("existing-thread".into(), params.clone());
+        assert_eq!(
+            params.developer_instructions,
+            resumed.developer_instructions
+        );
+        let mut none = ThreadStartParams::default();
+        add_goal_skill_context(&mut none, &[]);
+        assert!(none.developer_instructions.is_none());
     }
 }

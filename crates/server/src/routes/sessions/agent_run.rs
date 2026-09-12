@@ -446,6 +446,20 @@ pub(super) async fn create_agent_run(
     let capability_snapshot =
         direct_provider_capability_snapshot(provider, runtime_profile_id.clone());
     validate_execution_config(&launch.executor_config, &capability_snapshot)?;
+    if provider == DirectProvider::Codex
+        && launch.executor_config.execution_mode == Some(ExecutionMode::Goal)
+        && !launch.prompt.trim_start().starts_with('/')
+    {
+        let objective = format!(
+            "{}{}",
+            launch.prompt,
+            executors::executors::codex::goal_concurrency_constraint(
+                launch.executor_config.goal_max_concurrent_agents
+            )
+        );
+        executors::executors::codex::validate_goal_objective(&objective)
+            .map_err(|error| ApiError::BadRequest(error.to_string()))?;
+    }
     validate_required_capabilities(
         launch.intent,
         launch.provider_session.is_some(),

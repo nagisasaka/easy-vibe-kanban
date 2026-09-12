@@ -622,6 +622,8 @@ fn spawn_stdout_reader(
     notices: mpsc::UnboundedSender<OutputNotice>,
 ) {
     tokio::spawn(async move {
+        let mut agent_scope =
+            executors::executors::provider_adapter::ProviderStreamScope::new(provider);
         let mut reader = BufReader::new(stdout);
         loop {
             let mut bytes = Vec::new();
@@ -648,13 +650,14 @@ fn spawn_stdout_reader(
                             }
                         }
                     };
-                    let decoded = match provider.classify_native_frame(&frame) {
+                    let mut decoded = match provider.classify_native_frame(&frame) {
                         ProviderFrameClassification::Event { event, .. } => *event,
                         ProviderFrameClassification::UnsupportedRequired { error } => {
                             let _ = notices.send(OutputNotice::ProtocolFailure(error.to_string()));
                             break;
                         }
                     };
+                    agent_scope.apply(&mut decoded);
                     let projection = match provider.project_provider_event(&decoded, &manifest) {
                         Ok(projection) => projection,
                         Err(error) => {
@@ -741,6 +744,7 @@ async fn monitor_process(
 ) {
     let mut stdout_closed = false;
     let mut stderr_closed = false;
+    let mut provider_error = None;
     let mut cancel_result = None;
     let mut cancellation_requested = false;
     let mut exit_signal: Pin<
@@ -776,6 +780,7 @@ async fn monitor_process(
                     Some(OutputNotice::StdoutClosed) => stdout_closed = true,
                     Some(OutputNotice::StderrClosed) => stderr_closed = true,
                     Some(OutputNotice::Projected { durable_events, live_events, native_ref }) => {
+                        remember_provider_error(&durable_events, &mut provider_error);
                         host.append_event(HostEventPayload::Projected {
                             durable_events,
                             live_events,
@@ -891,6 +896,7 @@ async fn monitor_process(
                     live_events,
                     native_ref,
                 }) => {
+                    remember_provider_error(&durable_events, &mut provider_error);
                     host.append_event(HostEventPayload::Projected {
                         durable_events,
                         live_events,
@@ -921,7 +927,7 @@ async fn monitor_process(
         }
     }
 
-    let (status, error, exit_code) = terminal_from_exit(cause, provider);
+    let (status, error, exit_code) = terminal_from_exit(cause, provider, provider_error);
     let cancel_error = error.as_ref().map(|error| error.message.clone());
     let manifest = {
         let mut writer = writer.lock().await;
@@ -975,9 +981,18 @@ async fn monitor_process(
     }
 }
 
+fn remember_provider_error(events: &[AgentEventEnvelope], latest: &mut Option<AgentRuntimeError>) {
+    for event in events {
+        if let executors::runtime::AgentEventPayload::Error { error } = &event.payload {
+            *latest = Some(error.clone());
+        }
+    }
+}
+
 fn terminal_from_exit(
     cause: ExitCause,
     provider: DirectProvider,
+    provider_error: Option<AgentRuntimeError>,
 ) -> (AgentRunStatus, Option<AgentRuntimeError>, Option<i64>) {
     let runtime_error = |kind, message: String| {
         Some(AgentRuntimeError::new(kind, message).with_provider(Some(provider.id())))
@@ -988,10 +1003,12 @@ fn terminal_from_exit(
         }
         ExitCause::Executor(ExecutorExitResult::Failure) => (
             AgentRunStatus::Failed,
-            runtime_error(
-                AgentRuntimeErrorKind::Unknown,
-                "provider executor reported failure".to_string(),
-            ),
+            provider_error.or_else(|| {
+                runtime_error(
+                    AgentRuntimeErrorKind::Unknown,
+                    "provider executor reported failure".to_string(),
+                )
+            }),
             Some(1),
         ),
         ExitCause::ExecutorChannelClosed => (
@@ -1101,6 +1118,26 @@ async fn send_host_command_with_timeout(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn terminal_failure_retains_provider_reason_but_cancel_does_not() {
+        let error = executors::runtime::AgentRuntimeError::new(
+            executors::runtime::AgentRuntimeErrorKind::Unknown,
+            "goal objective must be at most 4000 characters",
+        );
+        let (status, detail, _) = super::terminal_from_exit(
+            super::ExitCause::Executor(executors::executors::ExecutorExitResult::Failure),
+            executors::executors::provider_adapter::DirectProvider::Codex,
+            Some(error.clone()),
+        );
+        assert_eq!(status, executors::runtime::AgentRunStatus::Failed);
+        assert_eq!(detail.unwrap().message, error.message);
+        let (_, detail, _) = super::terminal_from_exit(
+            super::ExitCause::Cancelled,
+            executors::executors::provider_adapter::DirectProvider::Codex,
+            Some(error),
+        );
+        assert!(detail.is_none());
+    }
     use super::*;
 
     #[tokio::test]

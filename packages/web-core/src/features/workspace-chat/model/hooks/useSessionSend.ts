@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import type { ExecutorConfig, SelectedSkill } from 'shared/types';
 import { sessionsApi } from '@/shared/lib/api';
 import { useCreateSession } from './useCreateSession';
+import { goalPromptError } from '../goalValidation';
 
 interface UseSessionSendOptions {
   /** Session ID for existing sessions */
@@ -24,6 +25,7 @@ interface UseSessionSendResult {
     options?: {
       resumeSessionId?: string | null;
       resumeScopePath?: string | null;
+      executorConfig?: ExecutorConfig;
     }
   ) => Promise<boolean>;
   /** Whether a send operation is in progress */
@@ -62,16 +64,23 @@ export function useSessionSend({
       options: {
         resumeSessionId?: string | null;
         resumeScopePath?: string | null;
+        executorConfig?: ExecutorConfig;
       } = {}
     ): Promise<boolean> => {
       const trimmed = message.trim();
+      const effectiveConfig = options.executorConfig ?? executorConfig;
       if (!trimmed) return false;
-      if (!executorConfig) {
+      if (!effectiveConfig) {
         setError('No executor selected');
         return false;
       }
 
       setError(null);
+      const validationError = goalPromptError(trimmed, effectiveConfig);
+      if (validationError) {
+        setError(validationError);
+        return false;
+      }
 
       if (isNewSessionMode) {
         // New session flow
@@ -84,7 +93,7 @@ export function useSessionSend({
             workspaceId,
             prompt: trimmed,
             selectedSkills,
-            executorConfig,
+            executorConfig: effectiveConfig,
             resumeSessionId: options.resumeSessionId,
             resumeScopePath: options.resumeScopePath,
           });
@@ -105,7 +114,7 @@ export function useSessionSend({
           await sessionsApi.followUp(sessionId, {
             prompt: trimmed,
             selected_skills: selectedSkills,
-            executor_config: executorConfig,
+            executor_config: effectiveConfig,
             resume_session_id: options.resumeSessionId || undefined,
             resume_scope_path: options.resumeScopePath || undefined,
           });

@@ -662,7 +662,7 @@ export const workspacesApi = {
     ): Promise<WorkspaceWikiSnapshot> => {
       const query = new URLSearchParams({ repo_id: repoId });
       const response = await makeRequest(
-        `/api/workspaces/${workspaceId}/wiki/?${query.toString()}`
+        `/api/workspaces/${workspaceId}/wiki?${query.toString()}`
       );
       return handleApiResponse<WorkspaceWikiSnapshot>(response);
     },

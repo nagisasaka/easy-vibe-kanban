@@ -24,7 +24,7 @@ use serde_json::Value;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::{ChildStdin, ChildStdout},
-    sync::{Mutex, oneshot},
+    sync::{Mutex, mpsc, oneshot},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -67,6 +67,7 @@ pub struct JsonRpcPeer {
     stdin: Arc<Mutex<ChildStdin>>,
     pending: Arc<Mutex<HashMap<RequestId, oneshot::Sender<PendingResponse>>>>,
     id_counter: Arc<AtomicI64>,
+    exit_requests: mpsc::UnboundedSender<ExecutorExitResult>,
 }
 
 impl JsonRpcPeer {
@@ -77,10 +78,12 @@ impl JsonRpcPeer {
         exit_tx: ExitSignalSender,
         cancel: CancellationToken,
     ) -> Self {
+        let (exit_requests, mut exit_requests_rx) = mpsc::unbounded_channel();
         let peer = Self {
             stdin: Arc::new(Mutex::new(stdin)),
             pending: Arc::new(Mutex::new(HashMap::new())),
             id_counter: Arc::new(AtomicI64::new(1)),
+            exit_requests,
         };
 
         let reader_peer = peer.clone();
@@ -88,23 +91,38 @@ impl JsonRpcPeer {
 
         tokio::spawn(async move {
             let mut reader = BufReader::new(stdout);
-            let mut buffer = String::new();
+            let mut buffer = Vec::new();
+            let mut deferred_success = false;
 
             let exit_result = loop {
-                buffer.clear();
+                // An idle completion must not shut down outstanding control RPCs.
+                // All response errors are observed before a successful close.
+                if deferred_success && reader_peer.pending.lock().await.is_empty() {
+                    break ExecutorExitResult::Success;
+                }
                 tokio::select! {
                     _ = cancel.cancelled() => {
                         tracing::debug!("Codex executor cancelled");
                         break ExecutorExitResult::Failure;
                     }
-                    read_result = reader.read_line(&mut buffer) => {
+                    Some(result) = exit_requests_rx.recv() => {
+                        match result {
+                            ExecutorExitResult::Failure => break ExecutorExitResult::Failure,
+                            ExecutorExitResult::Success => { deferred_success = true; continue; }
+                        }
+                    }
+                    // read_until is cancellation-safe when an exit request wins
+                    // select; preserve a partially received frame across iterations.
+                    read_result = reader.read_until(b'\n', &mut buffer) => {
                         match read_result {
                             Ok(0) => {
                                 tracing::warn!("Codex app-server stdout closed before completion");
                                 break ExecutorExitResult::Failure;
                             }
                             Ok(_) => {
-                                let line = buffer.trim_end_matches(['\n', '\r']);
+                                let bytes = std::mem::take(&mut buffer);
+                                let raw = String::from_utf8_lossy(&bytes);
+                                let line = raw.trim_end_matches(['\n', '\r']);
                                 if line.is_empty() {
                                     continue;
                                 }
@@ -126,16 +144,17 @@ impl JsonRpcPeer {
                                     }
                                     Ok(JSONRPCMessage::Error(error)) => {
                                         let request_id = error.id.clone();
-                                        if let Err(err) = callbacks
+                                        let callback_result = callbacks
                                             .on_error(&reader_peer, line, &error)
-                                            .await
-                                        {
-                                            tracing::warn!("Codex error callback failed: {err}");
-                                            break ExecutorExitResult::Failure;
-                                        }
+                                            .await;
                                         reader_peer
                                             .resolve(request_id, PendingResponse::Error(error))
                                             .await;
+                                        if let Err(err) = callback_result {
+                                            tracing::warn!("Codex error callback failed: {err}");
+                                            break ExecutorExitResult::Failure;
+                                        }
+                                        if deferred_success { break ExecutorExitResult::Failure; }
                                     }
                                     Ok(JSONRPCMessage::Request(request)) => {
                                         if let Err(err) = callbacks
@@ -151,7 +170,8 @@ impl JsonRpcPeer {
                                             .on_notification(&reader_peer, line, notification)
                                             .await
                                         {
-                                            Ok(JsonRpcControlFlow::Exit(result)) => break result,
+                                            Ok(JsonRpcControlFlow::Exit(ExecutorExitResult::Failure)) => break ExecutorExitResult::Failure,
+                                            Ok(JsonRpcControlFlow::Exit(ExecutorExitResult::Success)) => deferred_success = true,
                                             Ok(JsonRpcControlFlow::Continue) => {}
                                             Err(err) => {
                                                 tracing::warn!("Codex notification callback failed: {err}");
@@ -177,6 +197,8 @@ impl JsonRpcPeer {
             };
 
             let _ = reader_peer.shutdown().await;
+            // Release background approval/plan tasks on every terminal path.
+            cancel.cancel();
             exit_tx.send_exit_signal(exit_result).await;
         });
 
@@ -185,6 +207,10 @@ impl JsonRpcPeer {
 
     pub fn next_request_id(&self) -> RequestId {
         RequestId::Integer(self.id_counter.fetch_add(1, Ordering::Relaxed))
+    }
+
+    pub fn request_exit(&self, result: ExecutorExitResult) {
+        let _ = self.exit_requests.send(result);
     }
 
     pub async fn register(&self, request_id: RequestId) -> PendingReceiver {
@@ -252,12 +278,33 @@ impl JsonRpcPeer {
         R: DeserializeOwned + Debug,
         T: Serialize + Sync,
     {
-        let receiver = self.register(request_id).await;
         let mut raw = serde_json::to_vec(message)
             .map_err(|err| ExecutorError::Io(io::Error::other(err.to_string())))?;
         raw.push(b'\n');
-        self.send_raw(&raw).await?;
-        let response = await_response(receiver, label, cancel).await?;
+        let receiver = self.register(request_id.clone()).await;
+        if let Err(error) = self.send_raw(&raw).await {
+            self.pending.lock().await.remove(&request_id);
+            self.request_exit(ExecutorExitResult::Failure);
+            return Err(error);
+        }
+        // This bounds RPC acknowledgements, never model execution or approval waits.
+        let response = match tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            await_response(receiver, label, cancel),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => {
+                self.request_exit(ExecutorExitResult::Failure);
+                Err(ExecutorError::Io(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    format!("{label} acknowledgement timed out"),
+                )))
+            }
+        };
+        self.pending.lock().await.remove(&request_id);
+        let response = response?;
         Ok((response, raw))
     }
 
@@ -280,12 +327,15 @@ where
     R: DeserializeOwned + Debug,
 {
     let response = tokio::select! {
+        // A response already read from the wire remains authoritative even if
+        // the run completed and cancelled background work before this task woke.
+        biased;
+        result = receiver => result,
         _ = cancel.cancelled() => {
             return Err(ExecutorError::Io(io::Error::other(format!(
                 "{label} request cancelled",
             ))));
         }
-        result = receiver => result,
     };
 
     match response {
@@ -338,4 +388,27 @@ pub trait JsonRpcCallbacks: Send + Sync {
     ) -> Result<JsonRpcControlFlow, ExecutorError>;
 
     async fn on_non_json(&self, _raw: &str) -> Result<(), ExecutorError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn received_response_wins_over_later_shutdown_cancellation() {
+        let (tx, rx) = oneshot::channel();
+        tx.send(PendingResponse::Result(serde_json::json!(42)))
+            .unwrap();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        assert_eq!(await_response::<u32>(rx, "test", cancel).await.unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn unacknowledged_request_is_cancelled_not_succeeded() {
+        let (_tx, rx) = oneshot::channel();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        assert!(await_response::<u32>(rx, "test", cancel).await.is_err());
+    }
 }

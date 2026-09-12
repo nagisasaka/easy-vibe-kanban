@@ -440,6 +440,7 @@ fn generate_types_content() -> String {
         executors::runtime::RunAttemptRequest::decl(),
         executors::runtime::NativeAuditReference::decl(),
         executors::runtime::AgentEventPayload::decl(),
+        executors::runtime::AgentActivity::decl(),
         executors::runtime::AgentEventEnvelope::decl(),
         executors::runtime::AgentLiveEventPayload::decl(),
         executors::runtime::AgentLiveEvent::decl(),

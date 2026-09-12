@@ -35,6 +35,7 @@ import { useExecutorConfig } from '@/shared/hooks/useExecutorConfig';
 import { useSessionMessageEditor } from '../model/hooks/useSessionMessageEditor';
 import { useSessionQueueInteraction } from '../model/hooks/useSessionQueueInteraction';
 import { useSessionSend } from '../model/hooks/useSessionSend';
+import { resumeGoalRequest } from '../model/resumeGoal';
 import { useSessionAttachments } from '../model/hooks/useSessionAttachments';
 import { useMessageEditRetry } from '../model/hooks/useMessageEditRetry';
 import { useAgentProviderPolicy } from '@/shared/hooks/useAgentProviderPolicy';
@@ -63,6 +64,10 @@ import {
   RIGHT_MAIN_PANEL_MODES,
 } from '@/shared/stores/useUiPreferencesStore';
 import { useInspectModeStore } from '../model/store/useInspectModeStore';
+import {
+  registerWikiComposer,
+  wikiChatDraft,
+} from '@/features/wiki/model/wikiBootstrap';
 import { Actions } from '@/shared/actions';
 import {
   isSpecialIcon,
@@ -777,6 +782,66 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
     ]
   );
 
+  // Wiki requests are staged in the current idle composer, never auto-sent.
+  useEffect(() => {
+    if (!workspaceId) return;
+    return registerWikiComposer(workspaceId, (prompt, replace) => {
+      if (
+        isScratchLoading ||
+        !hasInitialValue ||
+        !executorConfig ||
+        isAgentRunActive ||
+        isSending ||
+        isStopping ||
+        isQueued ||
+        pendingApproval ||
+        isInEditMode ||
+        isInFeedbackMode ||
+        hasReviewComments ||
+        localAttachments.length > 0
+      )
+        return 'unavailable';
+      if (localMessage.trim() && !replace) return 'occupied';
+      const { goal, text, overrides } = wikiChatDraft(
+        prompt,
+        executorConfig.executor,
+        executorConfig.permission_policy
+      );
+      localMessageRef.current = text;
+      cancelDebouncedSave();
+      setLocalMessage(text);
+      if (goal) {
+        setExecutorOverrides(overrides);
+      } else {
+        void saveToScratch(text, executorConfig);
+      }
+      onScrollToBottom('auto');
+      return goal ? 'goal' : 'plain';
+    });
+  }, [
+    workspaceId,
+    sessionId,
+    isScratchLoading,
+    hasInitialValue,
+    executorConfig,
+    isAgentRunActive,
+    isSending,
+    isStopping,
+    isQueued,
+    pendingApproval,
+    isInEditMode,
+    isInFeedbackMode,
+    hasReviewComments,
+    localAttachments.length,
+    localMessage,
+    effectiveExecutor,
+    cancelDebouncedSave,
+    setLocalMessage,
+    saveToScratch,
+    setExecutorOverrides,
+    onScrollToBottom,
+  ]);
+
   // Handle feedback submission
   const handleSubmitFeedback = useCallback(async () => {
     if (!feedbackContext || !localMessage.trim()) return;
@@ -1314,10 +1379,53 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
 
   const goalProgressNode = displayedGoal && latestAgentRun && (
     <GoalProgressCard
+      key={
+        activeGoal && activeAgentRun
+          ? activeAgentRun.summary.agent_run_id
+          : latestAgentRun.summary.agent_run_id
+      }
       goal={displayedGoal}
+      isRunActive={Boolean(activeGoal && activeAgentRun)}
       controllable={Boolean(activeAgentRun)}
-      busy={goalControlMutation.isPending}
-      error={goalControlMutation.error?.message ?? steerMutation.error?.message}
+      busy={goalControlMutation.isPending || isSending}
+      error={
+        goalControlMutation.error?.message ??
+        steerMutation.error?.message ??
+        sendError
+      }
+      onResumeSaved={
+        !isNewSessionMode && sessionId && session?.executor === 'CODEX'
+          ? () => {
+              if (
+                !executorConfig ||
+                isAgentRunActive ||
+                isSending ||
+                isStopping
+              )
+                return;
+              const request = resumeGoalRequest(executorConfig);
+              // Keep drafts, attachments and skill selection untouched. The session API
+              // creates a new AgentRun bound to this session's existing provider thread.
+              void send(request.prompt, [], {
+                executorConfig: request.executorConfig,
+              });
+            }
+          : undefined
+      }
+      resumeSavedDisabled={
+        !executorConfig ||
+        executorConfig.executor !== 'CODEX' ||
+        isAgentRunActive ||
+        isStopping ||
+        isQueued ||
+        Boolean(pendingApproval) ||
+        isInEditMode ||
+        isInFeedbackMode ||
+        hasReviewComments ||
+        localAttachments.length > 0 ||
+        Boolean(stagedResumeSession) ||
+        latestAgentRunState?.projection_status !== 'current'
+      }
       onPause={() =>
         goalControlMutation.mutate({
           type: 'update',

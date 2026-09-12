@@ -11,6 +11,7 @@ import { buildCanonicalAgentSessionTimeline } from './canonicalAgentSessionTimel
 import {
   emptyCanonicalAgentTimeline,
   mergeCanonicalAgentTimeline,
+  mergeAgentLiveEvent,
 } from './canonicalAgentTimeline';
 
 const SESSION_ID = 'session-1';
@@ -94,6 +95,170 @@ function projectRuns(
 }
 
 describe('projectCanonicalAgentConversation', () => {
+  it('does not let a generic completion hide a failed child turn; a new turn can recover', () => {
+    const child = (sequence: number, kind: string) =>
+      event('r', sequence, {
+        type: 'agent_activity',
+        data: {
+          activity: {
+            thread_id: 'c',
+            parent_thread_id: 'p',
+            agent_path: '/root/c',
+            kind,
+            content: null,
+          },
+        },
+      });
+    const events = [
+      child(1, 'running'),
+      child(2, 'failed'),
+      child(3, 'completed'),
+    ];
+    const status = (events: AgentEventEnvelope[]) => {
+      const entry = projectRuns([{ runId: 'r', status: 'running', events }])
+        .entries[0];
+      if (
+        entry.type !== 'NORMALIZED_ENTRY' ||
+        entry.content.entry_type.type !== 'tool_use'
+      )
+        throw new Error('missing card');
+      return entry.content.entry_type.status.status;
+    };
+    expect(status(events)).toBe('failed');
+    expect(
+      status([...events, child(4, 'running'), child(5, 'completed')])
+    ).toBe('success');
+  });
+
+  it('keeps repeated parent live chunks together across child activity', () => {
+    const runId = 'r';
+    const runState = state(runId, 'running');
+    let timeline = mergeCanonicalAgentTimeline(
+      emptyCanonicalAgentTimeline(),
+      [
+        event(runId, 2, {
+          type: 'agent_activity',
+          data: {
+            activity: {
+              thread_id: 'child',
+              parent_thread_id: 'parent',
+              agent_path: null,
+              kind: 'running',
+              content: null,
+            },
+          },
+        }),
+      ],
+      runState
+    );
+    for (const native_sequence of [1, 3]) {
+      timeline = mergeAgentLiveEvent(timeline, {
+        schema_version: 1,
+        event_id: `live-${native_sequence}`,
+        session_id: SESSION_ID,
+        agent_run_id: runId,
+        turn_id: `turn-${runId}`,
+        run_attempt_id: `attempt-${runId}`,
+        run_attempt_number: 1,
+        native_sequence,
+        timestamp: runState.updated_at,
+        payload: {
+          type: 'message_delta',
+          data: {
+            message_id: 'parent',
+            provider_item_id: 'p',
+            role: 'assistant',
+            delta: 'ha',
+          },
+        },
+      });
+    }
+    const projection = projectCanonicalAgentConversation(
+      buildCanonicalAgentSessionTimeline(
+        SESSION_ID,
+        [
+          {
+            agent_run_id: runId,
+            session_id: SESSION_ID,
+            turn_id: `turn-${runId}`,
+            state: runState,
+            created_at: runState.updated_at,
+            updated_at: runState.updated_at,
+          },
+        ],
+        new Map([[runId, timeline]])
+      )
+    );
+    const messages = projection.entries.filter(
+      (e) =>
+        e.type === 'NORMALIZED_ENTRY' &&
+        e.content.entry_type.type === 'assistant_message'
+    );
+    expect(messages).toHaveLength(1);
+    if (messages[0].type !== 'NORMALIZED_ENTRY')
+      throw new Error('missing message');
+    expect(messages[0].content.content).toBe('haha');
+  });
+  it('groups child answers and follow-ups separately from parent messages on replay', () => {
+    const runId = 'agents';
+    const child = (sequence: number, kind: string, content: string | null) =>
+      event(runId, sequence, {
+        type: 'agent_activity',
+        data: {
+          activity: {
+            thread_id: 'child',
+            parent_thread_id: 'parent',
+            agent_path: '/root/research',
+            kind,
+            content,
+          },
+        },
+      });
+    const input = [
+      {
+        runId,
+        status: 'succeeded' as const,
+        events: [
+          child(1, 'started', null),
+          child(2, 'answer', 'Child findings'),
+          child(3, 'completed', null),
+          child(4, 'running', null),
+          child(5, 'answer', 'Child re-review'),
+          child(6, 'completed', null),
+          event(runId, 7, {
+            type: 'message',
+            data: {
+              message: {
+                message_id: 'parent',
+                role: 'assistant',
+                content: 'Parent conclusion',
+              },
+              final_output: true,
+            },
+          }),
+        ],
+      },
+    ];
+    const projection = projectRuns(input);
+    const entries = projection.entries.filter(
+      (e) => e.type === 'NORMALIZED_ENTRY'
+    );
+    expect(entries).toHaveLength(2);
+    const first = entries[0];
+    expect(first.type).toBe('NORMALIZED_ENTRY');
+    if (
+      first.type !== 'NORMALIZED_ENTRY' ||
+      first.content.entry_type.type !== 'tool_use'
+    )
+      throw new Error('missing child card');
+    const action = first.content.entry_type.action_type;
+    if (action.action !== 'task_create') throw new Error('wrong card');
+    expect(action.description).toContain('parent → /root/research');
+    expect(action.result?.value).toContain('Child findings');
+    expect(action.result?.value).toContain('Child re-review');
+    expect(first.content.entry_type.status.status).toBe('success');
+    expect(projectRuns(input)).toEqual(projection);
+  });
   it('projects canonical messages without inventing execution-process identity', () => {
     const runId = 'run-message';
     const projection = projectRuns([
