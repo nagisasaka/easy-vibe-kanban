@@ -213,15 +213,6 @@
     },
     "loadingEarlierMessages": "Loading earlier messages"
   },
-  "folderPicker": {
-    "legend": "Click folder names to navigate • Use action buttons to select",
-    "manualPathLabel": "Enter path manually:",
-    "go": "Go",
-    "searchLabel": "Search current directory:",
-    "selectCurrent": "Select Current",
-    "gitRepo": "git repo",
-    "selectPath": "Select Path"
-  },
   "branchSelector": {
     "placeholder": "Select a branch",
     "searchPlaceholder": "Search branches...",

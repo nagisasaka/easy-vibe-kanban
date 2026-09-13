@@ -149,7 +149,7 @@ describe('workflow runtime view', () => {
     });
   });
 
-  it('marks running nodes without canonical identity as starting and unknown', () => {
+  it('keeps runtime health unknown without canonical identity even before the slow threshold', () => {
     const starting = {
       ...node('exec-1', 'starting', 'agent', 'running'),
       started_at: '2026-06-25T00:09:30Z',
@@ -174,7 +174,7 @@ describe('workflow runtime view', () => {
       getWorkflowNodeRuntimeSummary(getWorkflowNodeWork(view, 'starting')!)
     ).toMatchObject({
       status: 'starting',
-      runtimeHealth: 'starting',
+      runtimeHealth: 'unknown',
       activeSlow: false,
       startingChildCount: 1,
     });

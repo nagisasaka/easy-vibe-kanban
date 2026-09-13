@@ -3033,19 +3033,18 @@ pub fn spawn_workflow_completion_watcher(deployment: DeploymentImpl) {
                         // The AgentRun port is the source of truth; without
                         // this bridge, join consumption has no durable source
                         // facts after a restart (and no live fan-in at all).
-                        if let Some(orchestration_run_id) = event.orchestration_run_id {
-                            if let Err(error) = service
+                        if let Some(orchestration_run_id) = event.orchestration_run_id
+                            && let Err(error) = service
                                 .ingest_agent_event(orchestration_run_id, &event)
                                 .await
-                            {
-                                tracing::warn!(
-                                    %run_id,
-                                    %agent_run_id,
-                                    %orchestration_run_id,
-                                    "workflow watcher: canonical event ingestion failed: {error}"
-                                );
-                                continue;
-                            }
+                        {
+                            tracing::warn!(
+                                %run_id,
+                                %agent_run_id,
+                                %orchestration_run_id,
+                                "workflow watcher: canonical event ingestion failed: {error}"
+                            );
+                            continue;
                         }
                         if let Some(orchestration_run_id) = event.orchestration_run_id {
                             // Reconcile the canonical child projection before

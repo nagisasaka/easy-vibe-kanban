@@ -88,7 +88,13 @@ pub enum ApiError {
     #[error(transparent)]
     Pty(#[from] PtyError),
     #[error(transparent)]
-    WebRtc(#[from] WebRtcError),
+    WebRtc(Box<WebRtcError>),
+}
+
+impl From<WebRtcError> for ApiError {
+    fn from(error: WebRtcError) -> Self {
+        Self::WebRtc(Box::new(error))
+    }
 }
 
 impl From<&'static str> for ApiError {
@@ -502,7 +508,7 @@ impl IntoResponse for ApiError {
             ),
             ApiError::Config(_) => ErrorInfo::internal("ConfigError"),
             ApiError::Io(_) => ErrorInfo::internal("IoError"),
-            ApiError::WebRtc(err) => match err {
+            ApiError::WebRtc(err) => match err.as_ref() {
                 WebRtcError::SessionNotFound { .. } => {
                     ErrorInfo::not_found("WebRtcError", err.to_string())
                 }
@@ -622,6 +628,30 @@ impl From<RelayApiError> for ApiError {
     }
 }
 
+impl From<RelayPairingClientError> for ApiError {
+    fn from(err: RelayPairingClientError) -> Self {
+        match err {
+            RelayPairingClientError::NotConfigured => ApiError::BadRequest(err.to_string()),
+            RelayPairingClientError::RemoteClient(ref inner) => {
+                tracing::warn!(%inner, "Relay host pairing authentication failed");
+                ApiError::Unauthorized
+            }
+            RelayPairingClientError::Pairing(ref detail) => {
+                tracing::warn!(%detail, "Relay host pairing failed");
+                ApiError::BadRequest(err.to_string())
+            }
+            RelayPairingClientError::StoreSerialization(ref detail) => {
+                tracing::error!(%detail, "Failed to serialize relay host credentials");
+                ApiError::BadGateway(err.to_string())
+            }
+            RelayPairingClientError::Store(ref detail) => {
+                tracing::error!(%detail, "Failed to persist paired relay host credentials");
+                ApiError::BadGateway(err.to_string())
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use axum::{http::StatusCode, response::IntoResponse};
@@ -644,29 +674,5 @@ mod tests {
                 .into_response();
 
         assert_eq!(response.status(), StatusCode::CONFLICT);
-    }
-}
-
-impl From<RelayPairingClientError> for ApiError {
-    fn from(err: RelayPairingClientError) -> Self {
-        match err {
-            RelayPairingClientError::NotConfigured => ApiError::BadRequest(err.to_string()),
-            RelayPairingClientError::RemoteClient(ref inner) => {
-                tracing::warn!(%inner, "Relay host pairing authentication failed");
-                ApiError::Unauthorized
-            }
-            RelayPairingClientError::Pairing(ref detail) => {
-                tracing::warn!(%detail, "Relay host pairing failed");
-                ApiError::BadRequest(err.to_string())
-            }
-            RelayPairingClientError::StoreSerialization(ref detail) => {
-                tracing::error!(%detail, "Failed to serialize relay host credentials");
-                ApiError::BadGateway(err.to_string())
-            }
-            RelayPairingClientError::Store(ref detail) => {
-                tracing::error!(%detail, "Failed to persist paired relay host credentials");
-                ApiError::BadGateway(err.to_string())
-            }
-        }
     }
 }

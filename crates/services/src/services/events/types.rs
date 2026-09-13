@@ -32,7 +32,7 @@ pub enum HookTables {
 pub enum RecordTypes {
     Workspace(Workspace),
     ExecutionProcess(ExecutionProcess),
-    Scratch(Scratch),
+    Scratch(Box<Scratch>),
     DeletedWorkspace {
         rowid: i64,
     },

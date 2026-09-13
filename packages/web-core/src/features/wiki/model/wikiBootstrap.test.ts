@@ -103,6 +103,37 @@ describe('Wiki bootstrap composer handoff', () => {
     expect(prompt).toContain('not quality targets');
     expect(prompt).toContain('Keep progress/review transcripts out of Wiki');
   });
+  it('requires repository-wide inventory before selecting research topics', () => {
+    const prompt = buildWikiBootstrapPrompt({
+      repository: 'repo',
+      language: 'ja',
+      instructions: '',
+    });
+    expect(prompt).toContain('BEFORE drafting or delegating topics');
+    expect(prompt).toContain('inventory tracked docs');
+    expect(prompt).toContain('not just recent changes or existing Wiki topics');
+    expect(prompt).toContain('Read document headings and relevant bodies');
+    expect(prompt).toContain('Reconcile documented intent with code');
+    expect(prompt).toContain('coverage matrix');
+    expect(prompt).toContain('normal user-to-data flows');
+    expect(prompt).toContain('include a concise coverage map');
+  });
+
+  it('requires independent coverage review and blocks completion on core gaps', () => {
+    const prompt = buildWikiBootstrapPrompt({
+      repository: 'repo',
+      language: 'ja',
+      instructions: '',
+    });
+    expect(prompt).toContain('independently inspect the repo/doc inventory');
+    expect(prompt).toContain('not only drafted pages');
+    expect(prompt).toContain('challenge missing areas and exclusions');
+    expect(prompt).toContain('from that inventory, not just the Wiki');
+    expect(prompt).toContain('Uninvestigated core areas block completion');
+    expect(prompt).toContain('disclaimers do not replace research');
+    expect(prompt).toContain('without page quotas');
+  });
+
   it('leaves room for executor constraints within the native Goal limit', () => {
     const prompt = buildWikiBootstrapPrompt({
       repository: 'easy-vibe-kanban',

@@ -204,6 +204,13 @@ pub struct NativeAuditStreamRecord {
 }
 
 impl AgentRunRecord {
+    pub async fn find(pool: &SqlitePool, agent_run_id: Uuid) -> Result<Option<Self>, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM agent_runs WHERE id = ?")
+            .bind(agent_run_id)
+            .fetch_optional(pool)
+            .await
+    }
+
     /// Quarantine one non-retryable host observation and advance its cursor in
     /// the same transaction. This is only called after batch fallback isolates
     /// the exact failing host event; later observations may continue while the
@@ -1345,21 +1352,20 @@ impl AgentProviderSessionRecord {
         .fetch_optional(&mut *connection)
         .await?;
 
-        if let Some(existing) = &existing {
-            if existing.provider_id != reference.provider_id
+        if let Some(existing) = &existing
+            && (existing.provider_id != reference.provider_id
                 || existing.provider_session_id != reference.provider_session_id
-                || existing.runtime_profile_id != reference.runtime_profile_id
-            {
-                return Err(AgentRuntimePersistenceError::IdentityConflict {
-                    entity: "provider session",
-                    key: format!(
-                        "{}:{}:{}",
-                        reference.provider_id,
-                        reference.runtime_profile_id,
-                        reference.provider_session_id
-                    ),
-                });
-            }
+                || existing.runtime_profile_id != reference.runtime_profile_id)
+        {
+            return Err(AgentRuntimePersistenceError::IdentityConflict {
+                entity: "provider session",
+                key: format!(
+                    "{}:{}:{}",
+                    reference.provider_id,
+                    reference.runtime_profile_id,
+                    reference.provider_session_id
+                ),
+            });
         }
 
         let mut stored_reference = reference.clone();
@@ -2419,7 +2425,7 @@ mod tests {
             .unwrap();
         let locked = AgentEventRecord::append_and_project_host_batch(
             &pool,
-            &[event.clone()],
+            std::slice::from_ref(&event),
             &[],
             &[],
             attempt.run_attempt_id,
@@ -3121,13 +3127,14 @@ mod tests {
             .await
             .expect("finalize audit stream");
 
-        let finalized: (
+        type FinalizedAudit = (
             Option<i64>,
             Option<i64>,
             Option<String>,
             String,
             Option<DateTime<Utc>>,
-        ) = sqlx::query_as(
+        );
+        let finalized: FinalizedAudit = sqlx::query_as(
             r#"
                 SELECT first_sequence, last_sequence, final_checksum,
                        integrity_status, closed_at

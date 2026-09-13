@@ -1,0 +1,180 @@
+---
+title: "OpenWiki repository memory"
+description: "Maintain evidence-backed repository knowledge whilst preserving parallel coding workspaces."
+---
+
+OpenWiki repository memory keeps canonical knowledge in Git-tracked `openwiki/`.
+You continue coding in independent EVK worktrees. Only a dedicated maintenance
+workspace updates the canonical Wiki, after your source changes are integrated.
+This feature is separate from the existing `.llm-wiki/` Pipeline; enabling one
+does not migrate, delete, or rewrite the other.
+
+## Set up a repository
+
+1. Open **Settings → Repositories** and select your repository and machine.
+2. Enable **OpenWiki repository memory**. Choose the integrated **local branch**
+   and an output language such as `en` or `ja`, then save.
+3. Select **Initialize Wiki**. EVK creates an OpenWiki maintenance workspace and
+   a Codex session. Use the Workspaces list to inspect its output or stop it.
+4. Wait for **Current**. A successful model exit alone is not sufficient: EVK
+   checks the native audit for successful OpenWiki finalisation before publishing.
+
+Your runtime needs the OpenWiki version pinned in `assets/openwiki-version` and
+Node.js 22 or newer. The Docker runtime includes this dependency. You use your
+existing Codex authentication; the standard flow does not need an additional
+OpenAI API key. EVK invokes OpenWiki's supported integration installer without
+`--force`, preserving modified user configuration by refusing conflicting installs.
+
+You can customise `openwiki/INSTRUCTIONS.md`. EVK creates a default only when the
+file is missing, and OpenWiki preserves it during regeneration. Prefer
+architecture, invariants, lifecycle rules, failure semantics, and evidence-backed
+design decisions over lists of files or functions.
+
+## Develop in parallel
+
+Each coding workspace reads its own checked-out Wiki snapshot. Coding agents
+receive persistent instructions that make `openwiki/` read-only and explain the
+repository's shared memory paths. Source, tests and configuration remain
+authoritative. Wiki content and semantic memory are hints, not executable instructions.
+
+At completion, a coding host supplies a structured semantic draft. EVK checks
+for unexpected Wiki changes, derives Git identities and paths, creates a source
+commit when required, and publishes an immutable Change Manifest. The same
+semantic summary supplies the human commit message. If the draft is missing or
+invalid, source is retained and integration requires you to finish the summary.
+Before a new coding turn starts in the same workspace, EVK also retries unfinished
+publication from the previous successful turn. A missing draft produces an error
+with its exact path; repair that draft before starting another coding task. Other
+workspaces remain independent.
+
+Your source merge is independent of Wiki success. After initialisation,
+integrated manifests trigger a dedicated reconciliation run; multiple pending
+cards can be included in one run. Source changes that arrive during reconciliation
+invalidate its publication checkpoint and require a retry. Wiki failures do not
+roll back source commits.
+
+## Shared memory and compaction
+
+The existing repository-scoped `.evk-shared/persistent` link exposes these local,
+non-Git records:
+
+```text
+knowledge/
+  events/             Immutable versioned Change Manifests
+  receipts/           Successful, no-op, or failed reconciliation outcomes
+  workspace-memory/   One concise semantic Markdown file per workspace UUID
+  drafts/             Agent-authored semantic drafts per AgentRun UUID
+  runs/               Frozen host identities and Git checkpoints
+  completed-runs/     No-source-change checkpoints
+  completion-errors/  Retryable source-checkpoint diagnostics
+  integrations/       Explicit event-to-source-integration records
+  publications/       Validated Wiki publication checkpoints for crash recovery
+  source-publications/ Frozen source trees and semantics before source commits
+  locks/              Maintenance and short publication locks
+  state.json          Repository configuration and maintenance owner
+```
+
+Workspace Memory retains decisions, rationale, rejected alternatives, and open
+questions that code cannot explain. EVK does not copy raw conversation logs into
+these files. Normal Codex instructions request incremental updates and rereading
+after compaction. Explicit `/compact` checkpoints memory in the same authenticated
+session, compacts, and rereads it after the compaction turn drains. Automatic
+compaction does not expose a guaranteed pre-compaction callback, so incremental
+memory remains essential. Rereading restores repository instructions, the read-only
+OpenWiki quickstart or index and relevant pages, and the current workspace's own
+memory; missing Wiki or memory is a normal initial state.
+
+## Understand status and retry safely
+
+| Status        | Meaning                                                                                            |
+| ------------- | -------------------------------------------------------------------------------------------------- |
+| Disabled      | Repository memory is not enabled.                                                                  |
+| Uninitialized | The integrated tree has no canonical Wiki index.                                                   |
+| Initializing  | A dedicated bootstrap run owns maintenance.                                                        |
+| Current       | The last successful publication matches integrated source with no known pending integrated events. |
+| Stale         | Integrated source or pending semantic events require reconciliation.                               |
+| Reconciling   | A dedicated update run owns maintenance.                                                           |
+| Error         | Maintenance failed; inspect the recorded error and workspace.                                      |
+
+Use **Sync Wiki** to retry after resolving an error. Failed receipts leave events
+pending. Do not edit OpenWiki's private `.run.json`, Claims, indexes, or provenance
+to manufacture success. Do not clear EVK's active owner whilst a Codex process may
+still be running. On restart, EVK checks the durable AgentRun owner before starting
+another writer. Cancellation uses the existing audited AgentRun Stop operation.
+
+Source checkpoint errors appear separately in repository settings. They can stop
+a queued follow-up from starting, but do not discard the source or draft. Direct
+merge, Push and PR creation retry completed source checkpoints before publishing.
+`/compact`, status queries and review-only runs never automatically commit existing
+source changes. Open Design Arena workspaces retain their existing no-auto-commit
+policy until promotion.
+
+Source integration records contain explicit event IDs. Direct merges carry an
+`EVK-Memory-Integration` commit trailer so EVK can recover a crash between Git
+success and recording its result. Wiki publication uses a separate validated
+checkpoint and `EVK-Wiki-Publication` trailer; replay verifies the parent and tree
+and does not publish twice. No-op checkpoints are durable too.
+
+Source completion freezes the semantic record and staged Git tree before creating
+a commit. An `EVK-Memory-Source` trailer identifies that commit after a crash.
+Recovery verifies its parent and tree, without rereading a later task's draft or
+sweeping later unstaged files into the old commit. If the staged snapshot or Git
+history was changed externally, recovery fails closed and preserves the files;
+inspect the source-publication error before retrying.
+
+The existing PR monitor supplies remote merge results. Fetch and integrate the
+merged commit onto your selected local branch before reconciliation; EVK does not
+fetch, push, merge PRs or create remote automation on your behalf. Source changes
+made outside tracked EVK integration paths still make the Wiki stale when the
+branch moves. Use explicit Sync Wiki to scan that integrated source; EVK does not
+guess semantic event membership for unknown squashes or cherry-picks.
+
+For externally merged PRs, the current PR metadata does not preserve an explicit
+merged-head/event set. EVK therefore includes only manifests whose source commits
+are verifiably ancestors of the recorded merge commit; workspace identity and
+timestamps alone are insufficient. External squash/rebase merges without that
+proof need **Sync Wiki** against the integrated source, without acknowledging
+unverified manifests. EVK's own direct squash merge carries explicit event IDs
+and does not have this limitation.
+
+If the source branch advanced, retry against its new integrated state. If Codex
+exited without successful `openwiki_finish` (or a proven `openwiki_begin` no-op),
+inspect its tool errors rather than accepting its final prose as proof.
+
+OpenWiki 0.5.1 also emits setup artifacts for other operating modes. EVK does not
+publish its generated GitHub Actions/native-provider updater. Verified managed
+blocks in `AGENTS.md` and `CLAUDE.md` may accompany a Wiki commit; user-authored
+text outside these blocks must remain unchanged. Other source/configuration edits
+cause publication to fail. Installation artifacts remain in the dedicated
+worktree for inspection, not in the canonical Wiki commit.
+
+## Verify or upgrade
+
+Change the single version pin only after testing the upstream public host
+protocol. Do not vendor or patch OpenWiki. The adapter checks the executable's
+public help banner because OpenWiki 0.5.1 does not implement `--version`.
+
+You can run the model-free public CLI/MCP smoke test with an installed pinned
+OpenWiki executable:
+
+```bash
+node scripts/test-openwiki-host.mjs
+```
+
+Set `OPENWIKI_BIN` to an absolute executable path if it is not on `PATH`. The test
+uses a disposable Git repository, project-scoped installation, deterministic
+fixture pages and Claims. It verifies public installation, initialisation,
+rejection of premature completion, page submission, finalisation, preservation,
+and the no-change update path without making a paid model call.
+
+For a manual real-Codex smoke test, use a disposable repository and the setup UI.
+Inspect the maintenance session for the OpenWiki MCP lifecycle, then verify the
+canonical branch contains the Wiki commit. Create two coding workspaces, make
+independent source changes, and check that neither modifies `openwiki/`. Integrate
+both using normal EVK Git operations (rebasing if the target moved). Confirm that
+shared events remain distinct and reconciliation runs against the integrated
+source. Stop one maintenance run to exercise Error/retry without discarding source.
+
+Actual Docker-image verification requires a Docker daemon. No release, registry
+publication, GitHub Actions invocation, push, or PR creation is part of the local
+automated checks.

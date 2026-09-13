@@ -22,16 +22,16 @@ use db::{
         workspace_repo::WorkspaceRepo,
     },
 };
-#[cfg(not(feature = "qa-mode"))]
-use executors::profile::ExecutorConfigs;
 use executors::{
     actions::{
         ExecutorAction, ExecutorActionType,
         script::{ScriptContext, ScriptRequest, ScriptRequestLanguage},
     },
-    executors::{ExecutorError, StandardCodingAgentExecutor},
+    executors::ExecutorError,
     profile::ExecutorProfileId,
 };
+#[cfg(not(feature = "qa-mode"))]
+use executors::{executors::StandardCodingAgentExecutor, profile::ExecutorConfigs};
 use futures::{StreamExt, future, stream::BoxStream};
 use git::{GitService, GitServiceError};
 use json_patch::Patch;

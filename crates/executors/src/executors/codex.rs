@@ -909,6 +909,33 @@ impl Codex {
         env: &ExecutionEnv,
     ) -> ThreadStartParams {
         let mut params = self.build_thread_start_params(cwd);
+        if env
+            .get("EVK_OPENWIKI_MAINTENANCE")
+            .is_some_and(|value| value == "1")
+        {
+            // Public Codex MCP configuration, scoped to this maintenance
+            // thread. This also works with custom CODEX_HOME and a parent
+            // workspace cwd, where project-level discovery alone is insufficient.
+            let config = params.config.get_or_insert_with(HashMap::new);
+            config.insert(
+                "mcp_servers.openwiki.command".into(),
+                Value::String("openwiki".into()),
+            );
+            config.insert(
+                "mcp_servers.openwiki.args".into(),
+                serde_json::json!(["mcp", "--host", "codex"]),
+            );
+            config.insert(
+                "mcp_servers.openwiki.env".into(),
+                serde_json::json!({"OPENWIKI_TELEMETRY_DISABLED":"1"}),
+            );
+        }
+        if let Some(memory) = env.get("EVK_REPOSITORY_MEMORY_INSTRUCTIONS") {
+            params.developer_instructions = Some(match params.developer_instructions.take() {
+                Some(existing) => format!("{existing}\n\n{memory}"),
+                None => memory.clone(),
+            });
+        }
         let roots = env.shared_resource_roots();
         if !roots.is_empty() {
             params.runtime_workspace_roots = Some(
@@ -1906,6 +1933,39 @@ mod tests {
 #[cfg(test)]
 mod goal_skill_tests {
     use super::*;
+
+    #[test]
+    fn repository_memory_is_persistent_for_initial_and_resumed_threads() {
+        let codex: Codex = serde_json::from_value(serde_json::json!({})).unwrap();
+        let mut env = ExecutionEnv::new(RepoContext::default(), false, String::new());
+        env.insert("EVK_REPOSITORY_MEMORY_INSTRUCTIONS", "Read the workspace-specific memory after context compaction. Canonical openwiki/ is read-only.");
+        let params = codex.build_thread_start_params_with_resources(Path::new("/workspace"), &env);
+        assert!(
+            params
+                .developer_instructions
+                .as_deref()
+                .unwrap()
+                .contains("after context compaction")
+        );
+        let resumed = resume_params_from("existing".into(), params.clone());
+        assert_eq!(
+            params.developer_instructions,
+            resumed.developer_instructions
+        );
+        assert!(
+            !params
+                .config
+                .as_ref()
+                .is_some_and(|config| config.contains_key("mcp_servers.openwiki.command"))
+        );
+        env.insert("EVK_OPENWIKI_MAINTENANCE", "1");
+        let maintenance =
+            codex.build_thread_start_params_with_resources(Path::new("/workspace"), &env);
+        assert_eq!(
+            maintenance.config.unwrap()["mcp_servers.openwiki.args"],
+            serde_json::json!(["mcp", "--host", "codex"])
+        );
+    }
 
     #[test]
     fn goal_skills_are_available_before_initial_or_resumed_activation() {

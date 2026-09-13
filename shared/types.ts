@@ -6,6 +6,28 @@
 
 export type Repo = { id: string, path: string, name: string, display_name: string, setup_script: string | null, cleanup_script: string | null, archive_script: string | null, copy_files: string | null, parallel_setup_script: boolean, dev_server_script: string | null, default_target_branch: string | null, default_working_dir: string | null, created_at: Date, updated_at: Date, };
 
+export type RepositoryMemoryState = { version: number, enabled: boolean, status: RepositoryWikiStatus, target_branch: string | null, source_commit: string | null, wiki_commit: string | null, last_success: string | null, active_run_id: string | null, maintenance_workspace_id: string | null, maintenance_session_id: string | null, error: string | null, output_language: string, active_source_commit: string | null, active_event_ids: Array<string>, coding_errors: Array<string>, };
+
+export type RepositoryWikiStatus = "disabled" | "uninitialized" | "initializing" | "current" | "stale" | "reconciling" | "error";
+
+export type SemanticChanges = { goal: string, summary: string, behavioral_changes: Array<string>, architectural_changes: Array<string>, invariants_affected: Array<string>, decisions: Array<MemoryDecision>, rejected_alternatives: Array<RejectedAlternative>, unresolved_questions: Array<string>, tests: Array<MemoryTest>, };
+
+export type MemoryDecision = { decision: string, rationale: string | null, };
+
+export type RejectedAlternative = { alternative: string, reason: string | null, };
+
+export type MemoryTest = { command: string | null, result: MemoryTestResult, summary: string | null, };
+
+export type MemoryTestResult = "passed" | "failed" | "not-run";
+
+export type ChangeManifest = { version: number, event_id: string, repository_id: string, workspace_id: string, task_id: string | null, created_at: string, base_commit: string, source_commit: string, target_branch: string | null, changed_paths: Array<string>, goal: string, summary: string, behavioral_changes: Array<string>, architectural_changes: Array<string>, invariants_affected: Array<string>, decisions: Array<MemoryDecision>, rejected_alternatives: Array<RejectedAlternative>, unresolved_questions: Array<string>, tests: Array<MemoryTest>, };
+
+export type WikiReconciliationReceipt = { event_id: string, reconciled_at: string, target_commit: string, wiki_commit: string | null, result: ReconciliationResult, error: string | null, };
+
+export type ReconciliationResult = "updated" | "no_op" | "failed";
+
+export type ConfigureRepositoryMemory = { enabled: boolean, target_branch: string, output_language: string, };
+
 export type Project = { id: string, name: string, default_agent_working_dir: string | null, remote_project_id: string | null, created_at: Date, updated_at: Date, };
 
 export type UpdateRepo = { display_name?: string | null, setup_script?: string | null, cleanup_script?: string | null, archive_script?: string | null, copy_files?: string | null, parallel_setup_script?: boolean | null, dev_server_script?: string | null, default_target_branch?: string | null, default_working_dir?: string | null, };

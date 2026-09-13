@@ -595,6 +595,7 @@ impl Codex {
         let (_, session_fast) = resolve_model(self.model.as_deref());
         let thread_start_params = self.build_thread_start_params_with_resources(current_dir, env);
         let current_dir_path = current_dir.to_path_buf();
+        let checkpoint_memory = env.get("EVK_REPOSITORY_MEMORY_INSTRUCTIONS").is_some();
 
         self.spawn_app_server(
             current_dir,
@@ -616,7 +617,11 @@ impl Codex {
                             .await?;
                         let thread_id = resume_response.thread.id;
                         tracing::debug!("resumed thread for compact, thread_id={thread_id}");
-                        client.thread_compact_start(thread_id).await?;
+                        if checkpoint_memory {
+                            client.compact_with_memory_checkpoint(thread_id).await?;
+                        } else {
+                            client.thread_compact_start(thread_id).await?;
+                        }
                     }
                     CodexSlashCommand::Review { .. } => {
                         return Err(ExecutorError::Io(std::io::Error::other(

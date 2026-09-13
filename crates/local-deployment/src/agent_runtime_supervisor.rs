@@ -1,14 +1,16 @@
 use std::process::ExitStatus;
 
 use db::models::execution_process::ExecutionProcessStatus;
+#[cfg(test)]
+use executors::runtime::AgentRunStatus;
 use executors::{
     approvals::ExecutorApprovalError,
     executors::{ExecutorError, ExecutorExitResult},
     runtime::{
-        AgentRunLifecycle, AgentRunStatus, AgentRuntimeError, AgentRuntimeErrorKind,
-        AgentRuntimeLaunchPhase,
+        AgentRunLifecycle, AgentRuntimeError, AgentRuntimeErrorKind, AgentRuntimeLaunchPhase,
     },
 };
+#[cfg(test)]
 use uuid::Uuid;
 
 const EXECUTOR_SIGNAL_SUCCESS_EXIT_CODE: i64 = 0;
@@ -18,6 +20,7 @@ const EXECUTOR_SIGNAL_FAILURE_EXIT_CODE: i64 = 1;
 /// It remains stable when a supervisor is restarted or a RunAttempt is
 /// re-attached by another service instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
 pub(crate) struct AgentRuntimeIdentity {
     pub session_id: Uuid,
     pub agent_run_id: Uuid,
@@ -27,6 +30,7 @@ pub(crate) struct AgentRuntimeIdentity {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub(crate) struct AgentRuntimeCoreState {
     pub identity: AgentRuntimeIdentity,
     pub lifecycle: AgentRunLifecycle,
@@ -34,6 +38,7 @@ pub(crate) struct AgentRuntimeCoreState {
     pub terminal_decision: Option<TerminalDecision>,
 }
 
+#[cfg(test)]
 impl AgentRuntimeCoreState {
     pub(crate) fn new(identity: AgentRuntimeIdentity) -> Self {
         Self {
@@ -55,9 +60,9 @@ pub(crate) enum TerminalDecision {
     Failed,
     Cancelled,
     Crashed,
-    AuditFailed,
 }
 
+#[cfg(test)]
 impl TerminalDecision {
     pub(crate) fn status(self) -> AgentRunStatus {
         match self {
@@ -65,7 +70,6 @@ impl TerminalDecision {
             Self::Failed => AgentRunStatus::Failed,
             Self::Cancelled => AgentRunStatus::Cancelled,
             Self::Crashed => AgentRunStatus::Crashed,
-            Self::AuditFailed => AgentRunStatus::AuditFailed,
         }
     }
 }

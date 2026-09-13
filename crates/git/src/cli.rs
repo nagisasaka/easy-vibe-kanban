@@ -414,6 +414,11 @@ impl GitCli {
         self.git(worktree_path, ["commit", "-m", message])?;
         Ok(())
     }
+
+    /// Resolve the exact index tree without changing HEAD or the worktree.
+    pub fn write_tree(&self, worktree_path: &Path) -> Result<String, GitCliError> {
+        Ok(self.git(worktree_path, ["write-tree"])?.trim().to_string())
+    }
     /// Fetch a branch to the given remote using native git authentication.
     pub fn fetch_with_refspec(
         &self,

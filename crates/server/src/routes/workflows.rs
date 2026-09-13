@@ -566,7 +566,6 @@ pub async fn list_project_workflows(
             OR project_id =
         "#,
     );
-    drop(separated);
     query.push_bind(project_id);
     query.push(
         r#"
@@ -1238,7 +1237,6 @@ async fn list_all_workflows(pool: &SqlitePool) -> Result<Vec<WorkflowTemplateRes
             created_at ASC
         "#,
     );
-    drop(separated);
 
     let rows = query.build().fetch_all(pool).await?;
 
@@ -1353,7 +1351,6 @@ async fn prune_removed_system_workflows(
           AND id NOT IN (SELECT workflow_id FROM workflow_runs)
         "#,
     );
-    drop(separated);
 
     query.build().execute(pool).await?;
     Ok(())

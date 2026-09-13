@@ -52,6 +52,7 @@
           "workspaces/sessions",
           "workspaces/chat-interface",
           "workspaces/llm-wiki",
+          "workspaces/openwiki",
           "workspaces/slash-commands",
           "workspaces/interface",
           "workspaces/command-bar",

@@ -218,6 +218,8 @@ fn generate_mock_logs(prompt: &str) -> Vec<String> {
             slash_commands: vec![],
             plugins: vec![],
             agents: vec![],
+            skills: vec![],
+            extra: Default::default(),
             task_id: None,
             tool_use_id: None,
             description: None,

@@ -3,11 +3,15 @@
 //! A transport owns bytes and connection state only. It does not classify
 //! retryability, choose a terminal AgentRun state, or terminate a process.
 
+#[cfg(test)]
 use std::fmt;
 
+#[cfg(test)]
 use async_trait::async_trait;
+#[cfg(test)]
 pub(crate) use executors::runtime::AgentTransportKind as TransportKind;
 
+#[cfg(test)]
 pub(crate) const SUPPORTED_TRANSPORTS: [TransportKind; 6] = [
     TransportKind::StdioCli,
     TransportKind::StdioRpc,
@@ -18,10 +22,12 @@ pub(crate) const SUPPORTED_TRANSPORTS: [TransportKind; 6] = [
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
 pub(crate) struct TransportDescriptor {
     pub kind: TransportKind,
 }
 
+#[cfg(test)]
 impl TransportDescriptor {
     pub(crate) const fn new(kind: TransportKind) -> Self {
         Self { kind }
@@ -31,8 +37,8 @@ impl TransportDescriptor {
         !matches!(self.kind, TransportKind::InProcess)
     }
 }
-use tokio::sync::mpsc;
-use uuid::Uuid;
+#[cfg(test)]
+use {tokio::sync::mpsc, uuid::Uuid};
 
 const MAX_FRAME_BYTES: usize = 64 * 1024 * 1024;
 
@@ -94,6 +100,7 @@ where
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(test)]
 pub(crate) struct TransportFrame {
     pub correlation_id: Uuid,
     pub sequence: u64,
@@ -101,6 +108,7 @@ pub(crate) struct TransportFrame {
     pub payload: Vec<u8>,
 }
 
+#[cfg(test)]
 impl TransportFrame {
     pub(crate) fn new(correlation_id: Uuid, sequence: u64, payload: Vec<u8>) -> Self {
         Self {
@@ -113,7 +121,7 @@ impl TransportFrame {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum TransportError {
+pub enum TransportError {
     #[error("transport is temporarily unavailable: {0}")]
     TemporarilyUnavailable(String),
     #[error("transport is closed")]
@@ -125,14 +133,15 @@ pub(crate) enum TransportError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
 pub(crate) enum TransportAvailability {
     Available,
-    TemporarilyUnavailable,
     Closed,
 }
 
 /// The protocol channel exposed by a provider adapter.
 #[async_trait]
+#[cfg(test)]
 pub(crate) trait AgentTransport: Send + Sync {
     fn kind(&self) -> TransportKind;
 
@@ -150,12 +159,14 @@ pub(crate) trait AgentTransport: Send + Sync {
 /// An in-process transport is useful for adapters implemented in Rust and for
 /// deterministic tests. The two endpoints share no process lifecycle policy:
 /// dropping an endpoint only makes the peer observe `Closed`.
+#[cfg(test)]
 pub(crate) struct InProcessTransport {
     inbound: tokio::sync::Mutex<mpsc::Receiver<TransportFrame>>,
     outbound: mpsc::Sender<TransportFrame>,
     closed: std::sync::atomic::AtomicBool,
 }
 
+#[cfg(test)]
 impl fmt::Debug for InProcessTransport {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -168,6 +179,7 @@ impl fmt::Debug for InProcessTransport {
     }
 }
 
+#[cfg(test)]
 impl InProcessTransport {
     pub(crate) fn pair(capacity: usize) -> (Self, Self) {
         let (left_tx, left_rx) = mpsc::channel(capacity);
@@ -188,6 +200,7 @@ impl InProcessTransport {
 }
 
 #[async_trait]
+#[cfg(test)]
 impl AgentTransport for InProcessTransport {
     fn kind(&self) -> TransportKind {
         TransportKind::InProcess
@@ -242,6 +255,9 @@ mod tests {
         left.send(sent.clone()).await.expect("send frame");
         assert_eq!(right.recv().await.expect("receive frame"), sent);
         assert_eq!(left.kind(), TransportKind::InProcess);
+        left.close().await.expect("close local endpoint");
+        assert_eq!(left.availability(), TransportAvailability::Closed);
+        assert_eq!(left.send(sent).await, Err(TransportError::Closed));
     }
 
     #[tokio::test]

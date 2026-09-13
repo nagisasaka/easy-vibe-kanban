@@ -1,8 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    future::Future,
     path::{Path, PathBuf},
-    pin::Pin,
     sync::{Arc, Weak},
     time::Duration,
 };
@@ -13,9 +11,7 @@ use command_group::AsyncGroupChild;
 use db::{
     DBService,
     models::{
-        agent_runtime::{
-            AgentEventRecord, AgentProviderSessionRecord, AgentRunRecord, NativeAuditStreamRecord,
-        },
+        agent_runtime::{AgentEventRecord, AgentRunRecord, NativeAuditStreamRecord},
         session::Session,
         workspace::Workspace,
         workspace_repo::WorkspaceRepo,
@@ -23,14 +19,9 @@ use db::{
 };
 use executors::{
     actions::SelectedSkill,
-    approvals::{ExecutorApprovalService, NoopExecutorApprovalService},
     env::{ExecutionEnv, RepoContext},
-    executors::{
-        CancellationToken, ExecutorExitResult, ExecutorExitSignal,
-        provider_adapter::{
-            DirectControl, DirectIntent, DirectProvider, DirectProviderLaunchRequest,
-            encode_control, require_capability,
-        },
+    executors::provider_adapter::{
+        DirectControl, DirectIntent, DirectProvider, encode_control, require_capability,
     },
     profile::ExecutorConfig,
     runtime::{
@@ -38,10 +29,9 @@ use executors::{
         AgentEventEnvelope, AgentEventPayload, AgentEventStream, AgentLiveEvent, AgentRunIntent,
         AgentRunPort, AgentRunPortCommand, AgentRunPortCommandEnvelope, AgentRunPortError,
         AgentRunPortSnapshot, AgentRunRequestEnvelope, AgentRunStatus, AgentRuntimeError,
-        AgentRuntimeErrorKind, AgentRuntimeMessageRole, CanonicalMessage, NativeAuditChannel,
-        NativeAuditFrame, NativeAuditIntegrityStatus, NativeAuditMetadata, NativeAuditReference,
-        NativeAuditWriter, ProjectionStatus, ProviderSessionReference, RunAttemptMode,
-        RunAttemptRequest,
+        AgentRuntimeErrorKind, AgentRuntimeMessageRole, CanonicalMessage, NativeAuditMetadata,
+        NativeAuditReference, NativeAuditWriter, ProjectionStatus, ProviderSessionReference,
+        RunAttemptMode, RunAttemptRequest,
     },
 };
 use futures::{StreamExt, stream};
@@ -49,9 +39,8 @@ use rand::{RngCore, rngs::OsRng};
 use serde::Serialize;
 use sqlx::types::Json;
 use tokio::{
-    io::{AsyncBufReadExt, BufReader},
     process::Command,
-    sync::{Mutex, RwLock, broadcast, mpsc},
+    sync::{Mutex, RwLock, broadcast},
 };
 use uuid::Uuid;
 
@@ -79,13 +68,6 @@ enum CancellationCleanupPreparation {
 
 type PersistedCancellationProcess = (String, Option<i64>, Option<i64>, Option<String>);
 
-type ExitSignalFuture = Pin<
-    Box<
-        dyn Future<Output = Result<ExecutorExitResult, tokio::sync::oneshot::error::RecvError>>
-            + Send,
-    >,
->;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AgentRunTerminalEvent {
     pub agent_run_id: Uuid,
@@ -98,7 +80,6 @@ pub struct LocalAgentRunPort {
     db: DBService,
     process_registry: AgentProcessRegistry,
     children: Arc<RwLock<HashMap<Uuid, SharedChild>>>,
-    cancellation_tokens: Arc<RwLock<HashMap<Uuid, CancellationToken>>>,
     launching_attempts: Arc<Mutex<HashSet<Uuid>>>,
     audit_writers: Arc<Mutex<HashMap<Uuid, NativeAuditWriter>>>,
     event_senders: Arc<RwLock<HashMap<Uuid, broadcast::Sender<AgentEventEnvelope>>>>,
@@ -109,25 +90,6 @@ pub struct LocalAgentRunPort {
     cancellation_reconciliation_locks: Arc<Mutex<HashMap<Uuid, Weak<Mutex<()>>>>>,
 }
 
-#[derive(Debug)]
-enum OutputNotice {
-    StdoutClosed,
-    StderrClosed,
-    ProviderTerminal(AgentRunStatus),
-    AuditFailure(String),
-    ProtocolFailure(String),
-}
-
-#[derive(Debug)]
-enum AttemptExit {
-    Executor(ExecutorExitResult),
-    ExecutorChannelClosed,
-    ProviderTerminal(AgentRunStatus),
-    Process { success: bool, code: Option<i64> },
-    WatcherFailed(String),
-    OutputFailure(OutputNotice),
-}
-
 struct FrozenDirectProviderLaunchSpec {
     provider: DirectProvider,
     executor_config: ExecutorConfig,
@@ -136,7 +98,6 @@ struct FrozenDirectProviderLaunchSpec {
     provider_session: Option<ProviderSessionReference>,
     reset_to_message_id: Option<String>,
     selected_skills: Vec<SelectedSkill>,
-    approvals: Arc<dyn ExecutorApprovalService>,
     current_dir: PathBuf,
     env: ExecutionEnv,
 }
@@ -176,18 +137,24 @@ impl FrozenDirectProviderLaunchSpec {
             provider,
             executor_config: attempt.executor_config.clone(),
             intent: direct_intent(request.intent, attempt.mode),
-            prompt: request.input.content.clone(),
+            prompt: executors::executors::provider_adapter::prompt_with_repository_memory(
+                provider,
+                &request.input.content,
+                &env,
+            ),
             provider_session: attempt.provider_session.clone(),
             reset_to_message_id: attempt.reset_to_message_id.clone(),
             selected_skills: attempt.selected_skills.clone().unwrap_or_default(),
-            approvals: Arc::new(NoopExecutorApprovalService),
             current_dir: PathBuf::from(&attempt.workspace.path),
             env,
         }
     }
 
-    fn launch_request(&self) -> DirectProviderLaunchRequest<'_> {
-        DirectProviderLaunchRequest {
+    #[cfg(test)]
+    fn launch_request(
+        &self,
+    ) -> executors::executors::provider_adapter::DirectProviderLaunchRequest<'_> {
+        executors::executors::provider_adapter::DirectProviderLaunchRequest {
             provider: self.provider,
             executor_config: &self.executor_config,
             intent: self.intent,
@@ -195,7 +162,7 @@ impl FrozenDirectProviderLaunchSpec {
             provider_session: self.provider_session.as_ref(),
             reset_to_message_id: self.reset_to_message_id.as_deref(),
             selected_skills: &self.selected_skills,
-            approvals: self.approvals.clone(),
+            approvals: Arc::new(executors::approvals::NoopExecutorApprovalService),
             current_dir: &self.current_dir,
             env: &self.env,
         }
@@ -245,7 +212,6 @@ impl LocalAgentRunPort {
             db,
             process_registry: AgentProcessRegistry::default(),
             children: Arc::new(RwLock::new(HashMap::new())),
-            cancellation_tokens: Arc::new(RwLock::new(HashMap::new())),
             launching_attempts: Arc::new(Mutex::new(HashSet::new())),
             audit_writers: Arc::new(Mutex::new(HashMap::new())),
             event_senders: Arc::new(RwLock::new(HashMap::new())),
@@ -390,14 +356,15 @@ impl LocalAgentRunPort {
     /// durable cursor. This is useful to startup orchestration and tests that
     /// need deterministic single-attempt reconstruction.
     pub async fn attach_process_host(&self, run_attempt_id: Uuid) -> Result<(), AgentRunPortError> {
-        let row: Option<(
+        type HostAttachmentRow = (
             Json<AgentRunRequestEnvelope>,
             Json<RunAttemptRequest>,
             String,
             String,
             Option<String>,
             i64,
-        )> = sqlx::query_as(
+        );
+        let row: Option<HostAttachmentRow> = sqlx::query_as(
             r#"
             SELECT ar.request_envelope, ara.request_envelope,
                    apr.host_endpoint, apr.host_token, apr.host_instance_id,
@@ -654,77 +621,6 @@ impl LocalAgentRunPort {
         }
     }
 
-    async fn append_mapped_event(
-        &self,
-        request: &AgentRunRequestEnvelope,
-        attempt: &RunAttemptRequest,
-        mapped: AgentEventEnvelope,
-        native_ref: NativeAuditReference,
-    ) {
-        // Provider session observations are the canonical source used by the
-        // next follow-up launch. Persist them independently from the event
-        // projection so a replay/query can recover the native session even if
-        // the live projection is temporarily degraded.
-        let observed_provider_session = match &mapped.payload {
-            AgentEventPayload::SessionObserved { provider_session } => {
-                Some(provider_session.clone())
-            }
-            _ => None,
-        };
-        if let AgentEventPayload::LifecycleChanged { status } = &mapped.payload {
-            // A failed snapshot read must not drop the audited canonical
-            // lifecycle event.  Persist/reduce it and let the append path
-            // surface projection degradation; only suppress events when a
-            // successful read proves that the run is already terminal (or is
-            // cancelling and this is not the confirming cancellation).
-            if let Ok(snapshot) = self.query(request.agent_run_id).await {
-                if snapshot.state.status.is_terminal()
-                    || (snapshot.state.status == AgentRunStatus::Cancelling
-                        && *status != AgentRunStatus::Cancelled)
-                {
-                    return;
-                }
-            }
-        }
-        self.append_recoverable(
-            request,
-            attempt,
-            mapped.payload,
-            vec![native_ref],
-            mapped.timestamp,
-            Some(mapped.event_id),
-        )
-        .await;
-
-        if let Some(provider_session) = observed_provider_session {
-            if let Err(error) = AgentProviderSessionRecord::upsert(
-                &self.db.pool,
-                Uuid::new_v4(),
-                request.session_id,
-                &provider_session,
-            )
-            .await
-            {
-                tracing::error!(
-                    session_id = %request.session_id,
-                    run_attempt_id = %attempt.run_attempt_id,
-                    %error,
-                    "failed to persist observed provider session"
-                );
-                if let Err(mark_error) =
-                    AgentRunRecord::mark_projection_degraded(&self.db.pool, request.agent_run_id)
-                        .await
-                {
-                    tracing::error!(
-                        agent_run_id = %request.agent_run_id,
-                        error = %mark_error,
-                        "failed to mark AgentRun degraded after provider-session persistence failure"
-                    );
-                }
-            }
-        }
-    }
-
     async fn sender(&self, agent_run_id: Uuid) -> broadcast::Sender<AgentEventEnvelope> {
         let mut senders = self.event_senders.write().await;
         senders
@@ -825,6 +721,7 @@ impl LocalAgentRunPort {
         request: &AgentRunRequestEnvelope,
         attempt: &RunAttemptRequest,
         workspace: &Workspace,
+        provider: DirectProvider,
     ) -> Result<ExecutionEnv, AgentRunPortError> {
         let repos = WorkspaceRepo::find_repos_for_workspace(&self.db.pool, workspace.id)
             .await
@@ -835,6 +732,81 @@ impl LocalAgentRunPort {
                 workspace_manager::shared_resources::writable_roots(&repo.name, repo.id)
             })
             .collect();
+        let mut memory_instructions = Vec::new();
+        let mut openwiki_maintenance = false;
+        let source_completion_allowed =
+            executors::executors::provider_adapter::memory_source_completion_allowed(
+                provider,
+                direct_intent(request.intent, attempt.mode),
+                &request.input.content,
+            );
+        for repo in &repos {
+            if let Some(store) =
+                utils::repository_memory::RepositoryMemoryStore::existing_for_repository(
+                    &repo.name, repo.id,
+                )
+                .map_err(|error| AgentRunPortError::Rejected(error.to_string()))?
+            {
+                let state = store
+                    .state()
+                    .map_err(|error| AgentRunPortError::Rejected(error.to_string()))?;
+                if state.maintenance_workspace_id == Some(workspace.id) {
+                    if state.maintenance_session_id != Some(request.session_id)
+                        || state
+                            .active_run_id
+                            .is_some_and(|id| id != request.agent_run_id)
+                        || !matches!(
+                            state.status,
+                            utils::repository_memory::RepositoryWikiStatus::Initializing
+                                | utils::repository_memory::RepositoryWikiStatus::Reconciling
+                        )
+                    {
+                        return Err(AgentRunPortError::Rejected("This workspace belongs to repository maintenance. Use Sync Wiki to start a fenced maintenance run.".into()));
+                    }
+                    openwiki_maintenance = true;
+                } else if state.enabled
+                    && source_completion_allowed
+                    && !crate::container::should_disable_default_commit_for_workspace(
+                        &self.db.pool,
+                        workspace.id,
+                    )
+                    .await
+                    .map_err(port_database)?
+                {
+                    services::services::repository_memory::complete_previous_coding_runs(
+                        &self.db.pool,
+                        &store,
+                        workspace.id,
+                        request.agent_run_id,
+                    )
+                    .await
+                    .map_err(|error| {
+                        AgentRunPortError::Rejected(format!("Repository memory: {error:#}"))
+                    })?;
+                }
+            }
+            let root = Path::new(&request.workspace.path).join(&repo.name);
+            let membership =
+                WorkspaceRepo::find_by_workspace_and_repo_id(&self.db.pool, workspace.id, repo.id)
+                    .await
+                    .map_err(port_database)?;
+            if let Some(membership) = membership {
+                let context = services::services::repository_memory::begin_coding_run(
+                    repo,
+                    workspace,
+                    request.agent_run_id,
+                    &root,
+                    &membership.target_branch,
+                    source_completion_allowed,
+                )
+                .map_err(|error| {
+                    AgentRunPortError::Rejected(format!("Repository memory: {error:#}"))
+                })?;
+                if let Some(context) = context {
+                    memory_instructions.push(context.instructions());
+                }
+            }
+        }
         let repo_names = repos.into_iter().map(|repo| repo.name).collect();
         let mut env = ExecutionEnv::new(
             RepoContext::new(PathBuf::from(&request.workspace.path), repo_names),
@@ -845,105 +817,22 @@ impl LocalAgentRunPort {
         env.insert("VK_WORKSPACE_BRANCH", &workspace.branch);
         env.insert("VK_AGENT_RUN_ID", request.agent_run_id.to_string());
         env.insert("VK_RUN_ATTEMPT_ID", attempt.run_attempt_id.to_string());
+        env.insert("OPENWIKI_TELEMETRY_DISABLED", "1");
+        if openwiki_maintenance {
+            env.insert("EVK_OPENWIKI_MAINTENANCE", "1");
+        }
+        if !memory_instructions.is_empty() {
+            env.insert(
+                "EVK_REPOSITORY_MEMORY_INSTRUCTIONS",
+                memory_instructions.join("\n\n"),
+            );
+        }
         env.insert(
             "EVK_SHARED_RESOURCE_ROOTS",
             serde_json::to_string(&shared_roots)
                 .map_err(|error| AgentRunPortError::Rejected(error.to_string()))?,
         );
         Ok(env)
-    }
-
-    async fn setup_audit(
-        &self,
-        request: &AgentRunRequestEnvelope,
-        attempt: &RunAttemptRequest,
-        provider: DirectProvider,
-        launch: &FrozenDirectProviderLaunchSpec,
-    ) -> Result<NativeAuditReference, AgentRunPortError> {
-        let versions = provider.versions();
-        let metadata = NativeAuditMetadata {
-            session_id: request.session_id,
-            agent_run_id: request.agent_run_id,
-            turn_id: request.turn_id,
-            run_attempt_id: attempt.run_attempt_id,
-            run_attempt_number: attempt.attempt_number,
-            provider_id: provider.id().to_string(),
-            runtime_profile_id: request.runtime_profile_id.clone(),
-            workspace_path: request.workspace.path.clone(),
-            runtime_version: versions.runtime.map(str::to_owned),
-            protocol_version: versions.protocol.map(str::to_owned),
-            adapter_version: versions.adapter.to_string(),
-            mapper_version: versions.mapper.to_string(),
-            created_at: Utc::now(),
-        };
-        let mut writer = NativeAuditWriter::create(metadata).map_err(port_audit)?;
-        NativeAuditStreamRecord::insert_open(&self.db.pool, writer.manifest())
-            .await
-            .map_err(port_database)?;
-        let canonical_ref =
-            match writer.append_canonical_input(&request.input, request.correlation_id) {
-                Ok(reference) => reference,
-                Err(error) => {
-                    let manifest = writer.fail_closed().ok();
-                    if let Some(manifest) = manifest {
-                        let _ = NativeAuditStreamRecord::finalize(&self.db.pool, &manifest).await;
-                    }
-                    return Err(port_audit(error));
-                }
-            };
-        let native_input = match launch.audit_payload() {
-            Ok(native_input) => native_input,
-            Err(error) => {
-                let manifest = writer.fail_closed().ok();
-                if let Some(manifest) = manifest {
-                    let _ = NativeAuditStreamRecord::finalize(&self.db.pool, &manifest).await;
-                }
-                return Err(AgentRunPortError::Unavailable(error.to_string()));
-            }
-        };
-        if let Err(error) = writer.append_native_input(
-            NativeAuditChannel::NativeInput,
-            "application/vnd.vibe-kanban.direct-provider-launch+json",
-            request.correlation_id,
-            &native_input,
-        ) {
-            let manifest = writer.fail_closed().ok();
-            if let Some(manifest) = manifest {
-                let _ = NativeAuditStreamRecord::finalize(&self.db.pool, &manifest).await;
-            }
-            return Err(port_audit(error));
-        }
-        self.audit_writers
-            .lock()
-            .await
-            .insert(attempt.run_attempt_id, writer);
-        Ok(canonical_ref)
-    }
-
-    async fn append_audit_bytes(
-        &self,
-        attempt: &RunAttemptRequest,
-        channel: NativeAuditChannel,
-        content_type: &str,
-        payload: &[u8],
-    ) -> Result<(NativeAuditFrame, NativeAuditReference), AgentRunPortError> {
-        let mut writers = self.audit_writers.lock().await;
-        let writer = writers.get_mut(&attempt.run_attempt_id).ok_or_else(|| {
-            AgentRunPortError::Unavailable("Native Audit writer is not attached".to_string())
-        })?;
-        let sequence = writer.manifest().last_sequence.unwrap_or(0) + 1;
-        let frame = NativeAuditFrame::from_bytes(
-            sequence,
-            Utc::now(),
-            executors::runtime::NativeAuditDirection::Output,
-            channel,
-            content_type,
-            attempt.correlation_id,
-            payload,
-            None,
-        );
-        let reference = writer.append(frame.clone()).map_err(port_audit)?;
-        Ok((frame, reference))
     }
 
     async fn require_audit_writer(
@@ -961,74 +850,6 @@ impl LocalAgentRunPort {
             Err(AgentRunPortError::Unavailable(
                 "Native Audit writer is not attached".to_string(),
             ))
-        }
-    }
-
-    async fn finalize_audit(&self, attempt: &RunAttemptRequest) -> Result<(), AgentRunPortError> {
-        let Some(mut writer) = self
-            .audit_writers
-            .lock()
-            .await
-            .remove(&attempt.run_attempt_id)
-        else {
-            return Err(AgentRunPortError::Unavailable(
-                "Native Audit writer disappeared before close".to_string(),
-            ));
-        };
-        match writer.close_with_status(NativeAuditIntegrityStatus::Complete) {
-            Ok(manifest) => NativeAuditStreamRecord::finalize(&self.db.pool, &manifest)
-                .await
-                .map_err(port_database),
-            Err(close_error) => {
-                match writer.fail_closed() {
-                    Ok(manifest) => {
-                        if let Err(error) =
-                            NativeAuditStreamRecord::finalize(&self.db.pool, &manifest).await
-                        {
-                            tracing::error!(
-                                run_attempt_id = %attempt.run_attempt_id,
-                                %error,
-                                "failed to persist fail-closed Native Audit manifest"
-                            );
-                        }
-                    }
-                    Err(error) => tracing::error!(
-                        run_attempt_id = %attempt.run_attempt_id,
-                        %error,
-                        "Native Audit close failed and fail-closed manifest could not be written"
-                    ),
-                }
-                Err(port_audit(close_error))
-            }
-        }
-    }
-
-    async fn fail_audit_writer(&self, attempt: &RunAttemptRequest) {
-        let Some(mut writer) = self
-            .audit_writers
-            .lock()
-            .await
-            .remove(&attempt.run_attempt_id)
-        else {
-            return;
-        };
-        match writer.fail_closed() {
-            Ok(manifest) => {
-                if let Err(error) =
-                    NativeAuditStreamRecord::finalize(&self.db.pool, &manifest).await
-                {
-                    tracing::error!(
-                        run_attempt_id = %attempt.run_attempt_id,
-                        %error,
-                        "failed to finalize failed Native Audit index"
-                    );
-                }
-            }
-            Err(error) => tracing::error!(
-                run_attempt_id = %attempt.run_attempt_id,
-                %error,
-                "Native Audit failed closed without a final manifest"
-            ),
         }
     }
 
@@ -1120,7 +941,13 @@ impl LocalAgentRunPort {
                 correlation_id: request.correlation_id,
                 audited_launch_payload,
             };
-            match send_host_command(&endpoint, &token, HostCommand::Launch(launch_request)).await {
+            match send_host_command(
+                &endpoint,
+                &token,
+                HostCommand::Launch(Box::new(launch_request)),
+            )
+            .await
+            {
                 Ok(response) => {
                     if let Some(expected) = host_instance_id
                         && response.host_instance_id.to_string() != expected
@@ -1338,7 +1165,7 @@ impl LocalAgentRunPort {
         let response = send_host_command(
             &ready.endpoint,
             &auth_token,
-            HostCommand::Launch(launch_request),
+            HostCommand::Launch(Box::new(launch_request)),
         )
         .await;
         let response = match response {
@@ -1972,7 +1799,10 @@ impl LocalAgentRunPort {
                 return;
             }
         };
-        let env = match self.execution_env(&request, &attempt, &workspace).await {
+        let env = match self
+            .execution_env(&request, &attempt, &workspace, provider)
+            .await
+        {
             Ok(env) => env,
             Err(error) => {
                 self.terminalize_failure(
@@ -2016,615 +1846,6 @@ impl LocalAgentRunPort {
             )
             .await;
         }
-        /*
-        let mut spawned = match launch_direct_provider(launch.launch_request()).await {
-            Ok(spawned) => spawned,
-            Err(error) => {
-                let runtime_error =
-                    AgentRuntimeError::from_executor_error(&error, Some(provider.id()));
-                if let Err(audit_error) = self.finalize_audit(&attempt).await {
-                    self.terminalize_failure(
-                        &request,
-                        &attempt,
-                        AgentRunStatus::AuditFailed,
-                        AgentRuntimeError::new(
-                            AgentRuntimeErrorKind::Unknown,
-                            audit_error.to_string(),
-                        )
-                        .with_provider(Some(provider.id())),
-                    )
-                    .await;
-                } else {
-                    self.terminalize_failure(
-                        &request,
-                        &attempt,
-                        AgentRunStatus::Failed,
-                        runtime_error,
-                    )
-                    .await;
-                }
-                return;
-            }
-        };
-
-        let Some(pid) = spawned.child.inner().id() else {
-            let _ = utils::process::kill_process_group(&mut spawned.child).await;
-            self.fail_audit_writer(&attempt).await;
-            self.terminalize_failure(
-                &request,
-                &attempt,
-                AgentRunStatus::Crashed,
-                AgentRuntimeError::new(
-                    AgentRuntimeErrorKind::ProcessCrashed,
-                    "spawned AgentRun process has no OS pid",
-                )
-                .with_provider(Some(provider.id())),
-            )
-            .await;
-            return;
-        };
-        let registered = RegisteredAgentProcess::new(
-            attempt.run_attempt_id,
-            Some(request.session_id),
-            Some(request.workspace.workspace_id),
-            Some(provider.id().to_string()),
-            pid,
-            Some(pid),
-            Some(provider.versions().executable.to_string()),
-        );
-        if let Err(error) = self.process_registry.register(registered).await {
-            let _ = utils::process::kill_process_group(&mut spawned.child).await;
-            self.fail_audit_writer(&attempt).await;
-            self.terminalize_failure(
-                &request,
-                &attempt,
-                AgentRunStatus::Failed,
-                AgentRuntimeError::new(AgentRuntimeErrorKind::StartupFailed, error.to_string())
-                    .with_provider(Some(provider.id())),
-            )
-            .await;
-            return;
-        }
-        if let Err(error) = AgentRunRecord::mark_process_started(
-            &self.db.pool,
-            attempt.run_attempt_id,
-            pid,
-            Some(pid),
-            Some(provider.versions().executable),
-            Utc::now(),
-        )
-        .await
-        {
-            let _ = utils::process::kill_process_group(&mut spawned.child).await;
-            let _ = self
-                .process_registry
-                .remove_runtime(attempt.run_attempt_id)
-                .await;
-            self.fail_audit_writer(&attempt).await;
-            self.terminalize_failure(
-                &request,
-                &attempt,
-                AgentRunStatus::Failed,
-                AgentRuntimeError::new(AgentRuntimeErrorKind::StartupFailed, error.to_string())
-                    .with_provider(Some(provider.id())),
-            )
-            .await;
-            return;
-        }
-
-        let Some(stdout) = spawned.child.inner().stdout.take() else {
-            let _ = utils::process::kill_process_group(&mut spawned.child).await;
-            self.fail_started_attempt(
-                &request,
-                &attempt,
-                provider,
-                "process stdout is unavailable",
-            )
-            .await;
-            return;
-        };
-        let Some(stderr) = spawned.child.inner().stderr.take() else {
-            let _ = utils::process::kill_process_group(&mut spawned.child).await;
-            self.fail_started_attempt(
-                &request,
-                &attempt,
-                provider,
-                "process stderr is unavailable",
-            )
-            .await;
-            return;
-        };
-        let child = Arc::new(RwLock::new(spawned.child));
-        self.children
-            .write()
-            .await
-            .insert(attempt.run_attempt_id, child.clone());
-        if let Some(cancel) = spawned.cancel {
-            self.cancellation_tokens
-                .write()
-                .await
-                .insert(attempt.run_attempt_id, cancel);
-        }
-        self.append_recoverable(
-            &request,
-            &attempt,
-            AgentEventPayload::LifecycleChanged {
-                status: AgentRunStatus::Running,
-            },
-            Vec::new(),
-            Utc::now(),
-            None,
-        )
-        .await;
-
-        let (output_tx, output_rx) = mpsc::unbounded_channel();
-        self.spawn_stdout_reader(
-            request.clone(),
-            attempt.clone(),
-            provider,
-            stdout,
-            output_tx.clone(),
-        );
-        self.spawn_stderr_reader(attempt.clone(), stderr, output_tx);
-        self.spawn_attempt_monitor(
-            request,
-            attempt,
-            provider,
-            child,
-            spawned.exit_signal,
-            output_rx,
-        );
-        */
-    }
-
-    async fn fail_started_attempt(
-        &self,
-        request: &AgentRunRequestEnvelope,
-        attempt: &RunAttemptRequest,
-        provider: DirectProvider,
-        message: &str,
-    ) {
-        let _ = AgentRunRecord::mark_process_exited(
-            &self.db.pool,
-            attempt.run_attempt_id,
-            None,
-            Utc::now(),
-        )
-        .await;
-        let _ = self
-            .process_registry
-            .remove_runtime(attempt.run_attempt_id)
-            .await;
-        match self.finalize_audit(attempt).await {
-            Ok(()) => {
-                self.terminalize_failure(
-                    request,
-                    attempt,
-                    AgentRunStatus::Crashed,
-                    AgentRuntimeError::new(AgentRuntimeErrorKind::ProcessCrashed, message)
-                        .with_provider(Some(provider.id())),
-                )
-                .await;
-            }
-            Err(error) => {
-                self.terminalize_failure(
-                    request,
-                    attempt,
-                    AgentRunStatus::AuditFailed,
-                    AgentRuntimeError::new(AgentRuntimeErrorKind::Unknown, error.to_string())
-                        .with_provider(Some(provider.id())),
-                )
-                .await;
-            }
-        }
-    }
-
-    fn spawn_stdout_reader(
-        &self,
-        request: AgentRunRequestEnvelope,
-        attempt: RunAttemptRequest,
-        provider: DirectProvider,
-        stdout: tokio::process::ChildStdout,
-        notices: mpsc::UnboundedSender<OutputNotice>,
-    ) {
-        let port = self.clone();
-        tokio::spawn(async move {
-            let mut reader = BufReader::new(stdout);
-            loop {
-                let mut bytes = Vec::new();
-                match reader.read_until(b'\n', &mut bytes).await {
-                    Ok(0) => break,
-                    Ok(_) => {
-                        let (frame, native_ref) = match port
-                            .append_audit_bytes(
-                                &attempt,
-                                NativeAuditChannel::Stdout,
-                                "application/json",
-                                &bytes,
-                            )
-                            .await
-                        {
-                            Ok(value) => value,
-                            Err(error) => {
-                                let _ = notices.send(OutputNotice::AuditFailure(error.to_string()));
-                                break;
-                            }
-                        };
-                        let decoded = match provider.decode_native_frame(&frame) {
-                            Ok(decoded) => decoded,
-                            Err(error) => {
-                                let _ =
-                                    notices.send(OutputNotice::ProtocolFailure(error.to_string()));
-                                break;
-                            }
-                        };
-                        let mapped = {
-                            let writers = port.audit_writers.lock().await;
-                            let Some(writer) = writers.get(&attempt.run_attempt_id) else {
-                                let _ = notices.send(OutputNotice::AuditFailure(
-                                    "Native Audit writer disappeared during decode".to_string(),
-                                ));
-                                break;
-                            };
-                            provider.map_provider_event(&decoded, writer.manifest())
-                        };
-                        let mapped = match mapped {
-                            Ok(mapped) => mapped,
-                            Err(error) => {
-                                let _ =
-                                    notices.send(OutputNotice::ProtocolFailure(error.to_string()));
-                                break;
-                            }
-                        };
-                        for event in mapped {
-                            let terminal_status = match &event.payload {
-                                AgentEventPayload::LifecycleChanged { status }
-                                    if status.is_terminal() =>
-                                {
-                                    Some(*status)
-                                }
-                                _ => None,
-                            };
-                            port.append_mapped_event(&request, &attempt, event, native_ref.clone())
-                                .await;
-                            if let Some(status) = terminal_status {
-                                let _ = notices.send(OutputNotice::ProviderTerminal(status));
-                                break;
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        let _ = notices.send(OutputNotice::ProtocolFailure(error.to_string()));
-                        break;
-                    }
-                }
-            }
-            let _ = notices.send(OutputNotice::StdoutClosed);
-        });
-    }
-
-    fn spawn_stderr_reader(
-        &self,
-        attempt: RunAttemptRequest,
-        stderr: tokio::process::ChildStderr,
-        notices: mpsc::UnboundedSender<OutputNotice>,
-    ) {
-        let port = self.clone();
-        tokio::spawn(async move {
-            let mut reader = BufReader::new(stderr);
-            loop {
-                let mut bytes = Vec::new();
-                match reader.read_until(b'\n', &mut bytes).await {
-                    Ok(0) => break,
-                    Ok(_) => {
-                        if let Err(error) = port
-                            .append_audit_bytes(
-                                &attempt,
-                                NativeAuditChannel::Stderr,
-                                "text/plain",
-                                &bytes,
-                            )
-                            .await
-                        {
-                            let _ = notices.send(OutputNotice::AuditFailure(error.to_string()));
-                            break;
-                        }
-                    }
-                    Err(error) => {
-                        let _ = notices.send(OutputNotice::ProtocolFailure(error.to_string()));
-                        break;
-                    }
-                }
-            }
-            let _ = notices.send(OutputNotice::StderrClosed);
-        });
-    }
-
-    fn spawn_attempt_monitor(
-        &self,
-        request: AgentRunRequestEnvelope,
-        attempt: RunAttemptRequest,
-        provider: DirectProvider,
-        child: SharedChild,
-        exit_signal: Option<ExecutorExitSignal>,
-        mut output_rx: mpsc::UnboundedReceiver<OutputNotice>,
-    ) {
-        let port = self.clone();
-        tokio::spawn(async move {
-            let mut stdout_closed = false;
-            let mut stderr_closed = false;
-            let mut exit_signal: ExitSignalFuture = match exit_signal {
-                Some(signal) => Box::pin(signal),
-                None => Box::pin(std::future::pending()),
-            };
-            let mut process_exit = Box::pin(wait_for_process_exit(child.clone()));
-            let outcome = loop {
-                tokio::select! {
-                    result = &mut exit_signal => {
-                        break match result {
-                            Ok(result) => AttemptExit::Executor(result),
-                            Err(_) => AttemptExit::ExecutorChannelClosed,
-                        };
-                    }
-                    result = &mut process_exit => {
-                        break match result {
-                            Ok((success, code)) => AttemptExit::Process { success, code },
-                            Err(error) => AttemptExit::WatcherFailed(error.to_string()),
-                        };
-                    }
-                    notice = output_rx.recv(), if !(stdout_closed && stderr_closed) => {
-                        match notice {
-                            Some(OutputNotice::StdoutClosed) => stdout_closed = true,
-                            Some(OutputNotice::StderrClosed) => stderr_closed = true,
-                            Some(OutputNotice::ProviderTerminal(status)) => {
-                                break AttemptExit::ProviderTerminal(status);
-                            }
-                            Some(failure @ (OutputNotice::AuditFailure(_) | OutputNotice::ProtocolFailure(_))) => {
-                                break AttemptExit::OutputFailure(failure);
-                            }
-                            None => {
-                                stdout_closed = true;
-                                stderr_closed = true;
-                            }
-                        }
-                    }
-                }
-            };
-
-            if !matches!(outcome, AttemptExit::Process { .. }) {
-                let mut child = child.write().await;
-                let _ = utils::process::kill_process_group(&mut child).await;
-            }
-            let mut post_exit_failure = None;
-            while !(stdout_closed && stderr_closed) {
-                match output_rx.recv().await {
-                    Some(OutputNotice::StdoutClosed) => stdout_closed = true,
-                    Some(OutputNotice::StderrClosed) => stderr_closed = true,
-                    Some(OutputNotice::ProviderTerminal(_)) => {}
-                    Some(OutputNotice::AuditFailure(error)) => {
-                        post_exit_failure = Some(OutputNotice::AuditFailure(error));
-                    }
-                    Some(OutputNotice::ProtocolFailure(error)) if post_exit_failure.is_none() => {
-                        post_exit_failure = Some(OutputNotice::ProtocolFailure(error));
-                    }
-                    Some(OutputNotice::ProtocolFailure(_)) => {}
-                    None => break,
-                }
-            }
-
-            let exit_code = match &outcome {
-                AttemptExit::Executor(ExecutorExitResult::Success) => Some(0),
-                AttemptExit::Executor(ExecutorExitResult::Failure) => Some(1),
-                AttemptExit::ProviderTerminal(AgentRunStatus::Succeeded) => Some(0),
-                AttemptExit::ProviderTerminal(_) => None,
-                AttemptExit::Process { code, .. } => *code,
-                _ => None,
-            };
-            let audit_result = port.finalize_audit(&attempt).await;
-            let current = port.query(request.agent_run_id).await.ok();
-            if let Err(error) = audit_result {
-                port.terminalize_failure(
-                    &request,
-                    &attempt,
-                    AgentRunStatus::AuditFailed,
-                    AgentRuntimeError::new(AgentRuntimeErrorKind::Unknown, error.to_string())
-                        .with_provider(Some(provider.id())),
-                )
-                .await;
-            } else if let Some(OutputNotice::AuditFailure(error)) = post_exit_failure.as_ref() {
-                port.terminalize_failure(
-                    &request,
-                    &attempt,
-                    AgentRunStatus::AuditFailed,
-                    AgentRuntimeError::new(AgentRuntimeErrorKind::Unknown, error)
-                        .with_provider(Some(provider.id())),
-                )
-                .await;
-            } else if current
-                .as_ref()
-                .is_some_and(|snapshot| snapshot.state.status == AgentRunStatus::Cancelling)
-            {
-                port.append_recoverable(
-                    &request,
-                    &attempt,
-                    AgentEventPayload::LifecycleChanged {
-                        status: AgentRunStatus::Cancelled,
-                    },
-                    Vec::new(),
-                    Utc::now(),
-                    None,
-                )
-                .await;
-            } else if current
-                .as_ref()
-                .is_some_and(|snapshot| snapshot.state.status.is_terminal())
-            {
-                // A provider terminal fact or explicit cancellation is already
-                // canonical. A late OS/adapter observation must not overwrite it.
-            } else {
-                let failure = post_exit_failure.or_else(|| match &outcome {
-                    AttemptExit::OutputFailure(OutputNotice::AuditFailure(error)) => {
-                        Some(OutputNotice::AuditFailure(error.clone()))
-                    }
-                    AttemptExit::OutputFailure(OutputNotice::ProtocolFailure(error)) => {
-                        Some(OutputNotice::ProtocolFailure(error.clone()))
-                    }
-                    _ => None,
-                });
-                match failure {
-                    Some(OutputNotice::AuditFailure(error)) => {
-                        port.terminalize_failure(
-                            &request,
-                            &attempt,
-                            AgentRunStatus::AuditFailed,
-                            AgentRuntimeError::new(AgentRuntimeErrorKind::Unknown, error)
-                                .with_provider(Some(provider.id())),
-                        )
-                        .await;
-                    }
-                    Some(OutputNotice::ProtocolFailure(error)) => {
-                        port.terminalize_failure(
-                            &request,
-                            &attempt,
-                            AgentRunStatus::Failed,
-                            AgentRuntimeError::new(AgentRuntimeErrorKind::OutputParseFailed, error)
-                                .with_provider(Some(provider.id())),
-                        )
-                        .await;
-                    }
-                    _ => match outcome {
-                        AttemptExit::Executor(ExecutorExitResult::Success) => {
-                            port.append_recoverable(
-                                &request,
-                                &attempt,
-                                AgentEventPayload::LifecycleChanged {
-                                    status: AgentRunStatus::Succeeded,
-                                },
-                                Vec::new(),
-                                Utc::now(),
-                                None,
-                            )
-                            .await;
-                        }
-                        AttemptExit::Executor(ExecutorExitResult::Failure) => {
-                            port.terminalize_failure(
-                                &request,
-                                &attempt,
-                                AgentRunStatus::Failed,
-                                AgentRuntimeError::new(
-                                    AgentRuntimeErrorKind::Unknown,
-                                    "provider executor reported failure",
-                                )
-                                .with_provider(Some(provider.id())),
-                            )
-                            .await;
-                        }
-                        AttemptExit::ExecutorChannelClosed => {
-                            port.terminalize_failure(
-                                &request,
-                                &attempt,
-                                AgentRunStatus::Crashed,
-                                AgentRuntimeError::new(
-                                    AgentRuntimeErrorKind::ProcessCrashed,
-                                    "provider exit signal closed without a terminal result",
-                                )
-                                .with_provider(Some(provider.id())),
-                            )
-                            .await;
-                        }
-                        AttemptExit::ProviderTerminal(status) => {
-                            port.append_recoverable(
-                                &request,
-                                &attempt,
-                                AgentEventPayload::LifecycleChanged { status },
-                                Vec::new(),
-                                Utc::now(),
-                                None,
-                            )
-                            .await;
-                        }
-                        AttemptExit::Process {
-                            success: false,
-                            code,
-                        } => {
-                            port.terminalize_failure(
-                                &request,
-                                &attempt,
-                                AgentRunStatus::Failed,
-                                AgentRuntimeError::new(
-                                    AgentRuntimeErrorKind::ProcessCrashed,
-                                    "AgentRun process exited unsuccessfully",
-                                )
-                                .with_provider(Some(provider.id()))
-                                .with_exit_code(code.and_then(|value| i32::try_from(value).ok())),
-                            )
-                            .await;
-                        }
-                        AttemptExit::Process { success: true, .. } => {
-                            // Exit code zero is not proof that a provider task
-                            // completed. Providers without an explicit success
-                            // event or executor signal fail closed.
-                            port.terminalize_failure(
-                                &request,
-                                &attempt,
-                                AgentRunStatus::Crashed,
-                                AgentRuntimeError::new(
-                                    AgentRuntimeErrorKind::ProcessCrashed,
-                                    "process exited without provider success evidence",
-                                )
-                                .with_provider(Some(provider.id())),
-                            )
-                            .await;
-                        }
-                        AttemptExit::WatcherFailed(error) => {
-                            port.terminalize_failure(
-                                &request,
-                                &attempt,
-                                AgentRunStatus::Crashed,
-                                AgentRuntimeError::new(
-                                    AgentRuntimeErrorKind::ProcessCrashed,
-                                    error,
-                                )
-                                .with_provider(Some(provider.id())),
-                            )
-                            .await;
-                        }
-                        AttemptExit::OutputFailure(_) => unreachable!(),
-                    },
-                }
-            }
-
-            if let Err(error) = AgentRunRecord::mark_process_exited(
-                &port.db.pool,
-                attempt.run_attempt_id,
-                exit_code,
-                Utc::now(),
-            )
-            .await
-            {
-                tracing::error!(
-                    run_attempt_id = %attempt.run_attempt_id,
-                    %error,
-                    "failed to mark AgentRun process exited"
-                );
-            }
-            if let Err(error) = port
-                .process_registry
-                .remove_runtime(attempt.run_attempt_id)
-                .await
-            {
-                tracing::warn!(
-                    run_attempt_id = %attempt.run_attempt_id,
-                    %error,
-                    "failed to remove local AgentRun process registry entry"
-                );
-            }
-            port.children.write().await.remove(&attempt.run_attempt_id);
-            port.cancellation_tokens
-                .write()
-                .await
-                .remove(&attempt.run_attempt_id);
-        });
     }
 
     async fn validate_durable_command(
@@ -3465,16 +2686,6 @@ impl AgentRunPort for LocalAgentRunPort {
     }
 }
 
-async fn wait_for_process_exit(child: SharedChild) -> std::io::Result<(bool, Option<i64>)> {
-    loop {
-        let status = child.write().await.try_wait()?;
-        if let Some(status) = status {
-            return Ok((status.success(), status.code().map(i64::from)));
-        }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
-}
-
 fn resolve_process_host_executable() -> Result<PathBuf, AgentRunPortError> {
     if let Some(path) = std::env::var_os("VIBE_KANBAN_AGENT_PROCESS_HOST") {
         let path = PathBuf::from(path);
@@ -3574,10 +2785,6 @@ fn is_non_retryable_projection_error(
             | AgentRuntimePersistenceError::MissingLaunchGate(_)
             | AgentRuntimePersistenceError::InvalidDirectCommand
     )
-}
-
-fn port_audit(error: executors::runtime::NativeAuditError) -> AgentRunPortError {
-    AgentRunPortError::Unavailable(error.to_string())
 }
 
 #[cfg(test)]
@@ -3884,11 +3091,13 @@ mod tests {
         let db = setup_runtime_db().await;
         let port = LocalAgentRunPort::new(db);
         let (request, attempt) = persisted_codex_run(&port.db).await;
-        let cancellation = CancellationToken::new();
-        port.cancellation_tokens
-            .write()
-            .await
-            .insert(attempt.run_attempt_id, cancellation.clone());
+        let process_before: Option<(Option<i64>, String)> = sqlx::query_as(
+            "SELECT pid, registry_status FROM agent_process_registry WHERE run_attempt_id = ?",
+        )
+        .bind(attempt.run_attempt_id)
+        .fetch_optional(&port.db.pool)
+        .await
+        .unwrap();
 
         let error = port
             .cancel_attached_attempt(&request, &attempt)
@@ -3900,10 +3109,18 @@ mod tests {
             port.query(request.agent_run_id).await.unwrap().state.status,
             AgentRunStatus::AuditFailed
         );
-        assert!(
-            !cancellation.is_cancelled(),
-            "audit failure must stop before the provider cancellation token"
+        let process_after: Option<(Option<i64>, String)> = sqlx::query_as(
+            "SELECT pid, registry_status FROM agent_process_registry WHERE run_attempt_id = ?",
+        )
+        .bind(attempt.run_attempt_id)
+        .fetch_optional(&port.db.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            process_after, process_before,
+            "audit failure must not mutate provider process ownership"
         );
+        assert!(port.children.read().await.is_empty());
     }
 
     #[tokio::test]

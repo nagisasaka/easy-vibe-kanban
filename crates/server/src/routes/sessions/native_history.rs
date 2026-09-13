@@ -187,7 +187,7 @@ pub fn get_native_agent_session_preview(
             .title
             .clone()
             .unwrap_or_else(|| "Untitled session".to_string()),
-        last_used_at: draft.last_used_at.clone(),
+        last_used_at: draft.last_used_at,
         entries,
         truncated,
         turn_limit,
@@ -265,11 +265,11 @@ fn read_codex_session_files(root: &Path, drafts: &mut HashMap<String, NativeSess
         let mut title = None;
 
         for value in read_jsonl_values(&path, Some(SESSION_FILE_METADATA_LINES)) {
-            if session_id.is_none() {
-                if let Some(id) = codex_session_id_from_value(&value) {
-                    session_id = Some(id.to_owned());
-                    forked_from_id = codex_forked_from_id_from_value(&value).map(ToOwned::to_owned);
-                }
+            if session_id.is_none()
+                && let Some(id) = codex_session_id_from_value(&value)
+            {
+                session_id = Some(id.to_owned());
+                forked_from_id = codex_forked_from_id_from_value(&value).map(ToOwned::to_owned);
             }
 
             if cwd.is_none() {

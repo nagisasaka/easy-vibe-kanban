@@ -22,6 +22,7 @@ pub mod health;
 pub mod host_relay;
 pub mod local_remote;
 pub mod oauth;
+pub mod openwiki;
 pub mod organizations;
 pub mod pipelines;
 pub mod preview;

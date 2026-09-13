@@ -4,16 +4,6 @@
 //! decision, registry write, or process termination. Those effects belong to
 //! the owning service and explicit control paths.
 
-use std::time::SystemTime;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SupervisedProcess {
-    pub pid: u32,
-    pub process_group_id: Option<u32>,
-    pub started_at: Option<SystemTime>,
-    pub command_preview: Option<String>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProcessObservation {
     Alive,

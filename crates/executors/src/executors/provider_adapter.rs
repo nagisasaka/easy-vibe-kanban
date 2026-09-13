@@ -1039,7 +1039,7 @@ fn classify_payload(
         | "session_observed" => value(&["session_id", "sessionId", "thread_id", "threadId"])
             .and_then(Value::as_str)
             .map(|id| TypedProviderEvent::SessionObserved(id.to_string()))
-            .ok_or_else(|| NativeAuditError::MalformedFrame(event.sequence)),
+            .ok_or(NativeAuditError::MalformedFrame(event.sequence)),
         "thinking" | "reasoning" | "thought" => {
             Ok(TypedProviderEvent::Thinking(text().unwrap_or_default()))
         }
@@ -1837,8 +1837,89 @@ pub fn encode_stdio_rpc(request: &Value) -> Result<Vec<u8>, serde_json::Error> {
     Ok(bytes)
 }
 
+/// Provider-neutral repository memory guidance. Codex receives this through
+/// persistent developer instructions; other providers receive a self-contained
+/// prompt suffix. Do not change slash-command parsing or Codex Goal objectives.
+pub fn prompt_with_repository_memory(
+    provider: DirectProvider,
+    prompt: &str,
+    env: &crate::env::ExecutionEnv,
+) -> String {
+    if provider != DirectProvider::Codex
+        && !prompt.trim_start().starts_with('/')
+        && let Some(instructions) = env.get("EVK_REPOSITORY_MEMORY_INSTRUCTIONS")
+    {
+        return format!("{prompt}\n\n## EVK repository memory context\n{instructions}");
+    }
+    prompt.to_owned()
+}
+
+/// Control-only calls must never sweep pre-existing dirty source into a commit.
+/// Keep provider slash parsing here, not in the repository-memory service.
+pub fn memory_source_completion_allowed(
+    provider: DirectProvider,
+    intent: DirectIntent,
+    prompt: &str,
+) -> bool {
+    if intent == DirectIntent::Review {
+        return false;
+    }
+    if provider == DirectProvider::Codex {
+        use super::codex::slash_commands::{CodexGoalCommand, CodexSlashCommand};
+        return matches!(
+            CodexSlashCommand::parse(prompt),
+            None | Some(CodexSlashCommand::Init)
+                | Some(CodexSlashCommand::Goal(
+                    CodexGoalCommand::Set { .. } | CodexGoalCommand::Resume
+                ))
+        );
+    }
+    !prompt.trim_start().starts_with('/')
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn repository_memory_does_not_commit_on_compaction_review_or_control_commands() {
+        for prompt in [
+            "/compact",
+            "/compact keep design",
+            "/status",
+            "/goal",
+            "/goal pause",
+            "/review",
+        ] {
+            assert!(
+                !memory_source_completion_allowed(
+                    DirectProvider::Codex,
+                    DirectIntent::FollowUp,
+                    prompt
+                ),
+                "{prompt}"
+            );
+        }
+        for prompt in [
+            "implement feature",
+            "/goal implement feature",
+            "/goal resume",
+            "/init",
+        ] {
+            assert!(
+                memory_source_completion_allowed(
+                    DirectProvider::Codex,
+                    DirectIntent::FollowUp,
+                    prompt
+                ),
+                "{prompt}"
+            );
+        }
+        assert!(!memory_source_completion_allowed(
+            DirectProvider::Codex,
+            DirectIntent::Review,
+            "review code"
+        ));
+    }
+
     #[test]
     fn codex_native_and_launch_errors_preserve_actionable_reason() {
         let provider = DirectProvider::Codex;
@@ -1881,8 +1962,8 @@ mod tests {
             "application/json",
             Uuid::from_u128(10),
             serde_json::to_string(&payload).unwrap().as_bytes(),
-            Some(serde_json::json!({ "provider": provider.id() })),
         )
+        .with_metadata(Some(serde_json::json!({ "provider": provider.id() })))
     }
 
     fn launch_env() -> ExecutionEnv {

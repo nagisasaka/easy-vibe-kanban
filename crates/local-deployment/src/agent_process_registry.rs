@@ -14,6 +14,7 @@ use uuid::Uuid;
 const REGISTRY_VERSION: u32 = 1;
 const REGISTRY_FILE_NAME: &str = "agent-process-registry.json";
 const TERMINATION_GRACE_PERIOD: Duration = Duration::from_secs(2);
+#[cfg(windows)]
 const OS_PROCESS_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

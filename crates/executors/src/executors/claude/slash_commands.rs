@@ -26,6 +26,8 @@ use crate::{
 
 const SLASH_COMMANDS_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(120);
 
+type DiscoveredCommands = (Vec<String>, Vec<ClaudePlugin>, Vec<String>, Vec<String>);
+
 #[derive(Clone, Copy)]
 struct ClaudeKnownSlashCommand {
     name: &'static str,
@@ -237,7 +239,7 @@ impl ClaudeCode {
     async fn discover_available_command_and_plugins(
         &self,
         current_dir: &Path,
-    ) -> Result<(Vec<String>, Vec<ClaudePlugin>, Vec<String>, Vec<String>), ExecutorError> {
+    ) -> Result<DiscoveredCommands, ExecutorError> {
         let command_builder = self
             .build_slash_commands_discovery_command_builder()
             .await?;
@@ -268,8 +270,7 @@ impl ClaudeCode {
 
         let mut lines = BufReader::new(stdout).lines();
 
-        let mut discovered: Option<(Vec<String>, Vec<ClaudePlugin>, Vec<String>, Vec<String>)> =
-            None;
+        let mut discovered: Option<DiscoveredCommands> = None;
         let discovery = async {
             while let Some(line) = lines.next_line().await.map_err(ExecutorError::Io)? {
                 if let Ok(json) = serde_json::from_str::<ClaudeJson>(&line)

@@ -199,15 +199,6 @@
     },
     "loadingEarlierMessages": "正在載入先前的訊息"
   },
-  "folderPicker": {
-    "legend": "點擊資料夾名稱進行導覽 • 使用操作按鈕進行選擇",
-    "manualPathLabel": "手動輸入路徑:",
-    "go": "前往",
-    "searchLabel": "搜尋目前目錄:",
-    "selectCurrent": "選取目前",
-    "gitRepo": "Git 儲存庫",
-    "selectPath": "選取路徑"
-  },
   "branchSelector": {
     "placeholder": "選擇分支",
     "searchPlaceholder": "搜尋分支...",

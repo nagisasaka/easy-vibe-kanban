@@ -17,19 +17,43 @@ import {
   getWorkflowRunStatusLabel,
   selectWorkflowRunNode,
 } from './workflowRunView';
+import { getWorkflowRuntimeView } from './workflowRuntimeView';
 
-type NodeExecutionWithProcess = WorkflowNodeExecutionResponse & {
-  execution_process_id?: string | null;
-};
-
-function withExecutionProcess(
+function withAgentRun(
   node: WorkflowNodeExecutionResponse,
-  executionProcessId: string | null
+  agentRunId: string | null
 ): WorkflowNodeExecutionResponse {
   return {
     ...node,
-    execution_process_id: executionProcessId,
-  } as NodeExecutionWithProcess;
+    agent_run_id: agentRunId,
+    orchestration_node_execution_id: `orch-${node.id}`,
+    projection_status: 'current',
+  };
+}
+
+// These tests exercise current backend projections. Legacy node rows alone
+// intentionally remain fail-closed; they cannot identify canonical sessions.
+function canonicalRun(run: WorkflowRunResponse): WorkflowRunResponse {
+  const nodes = run.nodes.map((node) => withAgentRun(node, node.agent_run_id));
+  const view = getWorkflowRuntimeView(run);
+  return {
+    ...run,
+    nodes,
+    runtime_view: {
+      ...view,
+      node_work: view.node_work.map((work) => {
+        const node = nodes.find((node) => node.node_id === work.node_id)!;
+        return {
+          ...work,
+          active_execution_id: node.id,
+          active_session_id: node.session_id,
+          orchestration_node_execution_id: node.orchestration_node_execution_id,
+          active_agent_run_id: node.agent_run_id,
+          projection_status: 'current',
+        };
+      }),
+    },
+  };
 }
 
 const baseRun = {
@@ -184,7 +208,7 @@ describe('workflow run view helpers', () => {
   });
 
   it('summarizes progress, waiting work, and nullable contribution totals', () => {
-    const summary = buildWorkflowRunDashboardSummary({
+    const run = canonicalRun({
       ...baseRun,
       runtime_view: {
         run_id: 'run-1',
@@ -290,7 +314,10 @@ describe('workflow run view helpers', () => {
         },
       ],
     });
-
+    const summary = buildWorkflowRunDashboardSummary(
+      run,
+      getWorkflowRuntimeView(run)
+    );
     expect(summary.totalSteps).toBe(3);
     expect(summary.completedSteps).toBe(1);
     expect(summary.skippedSteps).toBe(0);
@@ -302,7 +329,7 @@ describe('workflow run view helpers', () => {
   });
 
   it('does not count skipped work as succeeded progress', () => {
-    const summary = buildWorkflowRunDashboardSummary({
+    const run = canonicalRun({
       ...baseRun,
       status: 'canceled',
       nodes: [
@@ -322,7 +349,10 @@ describe('workflow run view helpers', () => {
         },
       ],
     });
-
+    const summary = buildWorkflowRunDashboardSummary(
+      run,
+      getWorkflowRuntimeView(run)
+    );
     expect(summary.totalSteps).toBe(3);
     expect(summary.completedSteps).toBe(1);
     expect(summary.skippedSteps).toBe(1);
@@ -411,10 +441,10 @@ describe('workflow run view helpers', () => {
 
   it('builds an Agent Sessions list for the selected node only', () => {
     const rows = buildAgentSessionRows(
-      {
+      canonicalRun({
         ...baseRun,
         nodes: [
-          withExecutionProcess(
+          withAgentRun(
             {
               ...baseRun.nodes[0],
               id: 'node-exec-plan',
@@ -425,9 +455,9 @@ describe('workflow run view helpers', () => {
               started_at: '2026-05-09T00:00:00Z',
               finished_at: '2026-05-09T00:02:05Z',
             },
-            'process-plan'
+            'agent-run-plan'
           ),
-          withExecutionProcess(
+          withAgentRun(
             {
               ...baseRun.nodes[0],
               id: 'node-exec-implement',
@@ -436,11 +466,11 @@ describe('workflow run view helpers', () => {
               session_id: 'session-implement',
               output_text: 'Implementation output',
             },
-            'process-implement'
+            'agent-run-implement'
           ),
           baseRun.nodes[1],
         ],
-      },
+      }),
       'plan'
     );
 
@@ -450,7 +480,9 @@ describe('workflow run view helpers', () => {
         runLabel: 'run-1',
         nodeId: 'plan',
         sessionId: 'session-plan',
-        executionProcessId: 'process-plan',
+        agentRunId: 'agent-run-plan',
+        orchestrationNodeExecutionId: 'orch-node-exec-plan',
+        projectionStatus: 'current',
         statusLabel: 'succeeded',
         startedLabel: '2026-05-09T00:00:00Z',
         durationLabel: '2m 5s',
@@ -481,7 +513,7 @@ describe('workflow run view helpers', () => {
 
   it('builds debug data for a selected run node', () => {
     const debug = buildWorkflowNodeDebugView({
-      run: {
+      run: canonicalRun({
         ...baseRun,
         input_text: 'Build feature',
         nodes: [
@@ -490,7 +522,7 @@ describe('workflow run view helpers', () => {
             node_id: 'plan',
             output_text: 'plan result',
           },
-          withExecutionProcess(
+          withAgentRun(
             {
               ...baseRun.nodes[0],
               id: 'node-exec-review',
@@ -499,10 +531,10 @@ describe('workflow run view helpers', () => {
               output_text: 'review result',
               session_id: 'session-review',
             },
-            'process-review'
+            'agent-run-review'
           ),
         ],
-      },
+      }),
       graph: {
         version: 2,
         nodes: [
@@ -538,7 +570,8 @@ describe('workflow run view helpers', () => {
       rawInput: 'Build feature',
       outputText: 'review result',
       sessionId: 'session-review',
-      executionProcessId: 'process-review',
+      agentRunId: 'agent-run-review',
+      orchestrationNodeExecutionId: 'orch-node-exec-review',
       upstreamOutputs: [{ nodeId: 'plan', outputText: 'plan result' }],
     });
   });

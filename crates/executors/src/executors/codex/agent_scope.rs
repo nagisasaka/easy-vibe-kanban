@@ -178,7 +178,6 @@ mod tests {
             "application/json",
             uuid::Uuid::nil(),
             &serde_json::to_vec(&value).unwrap(),
-            None,
         );
         DirectProvider::Codex.decode_native_frame(&frame).unwrap()
     }

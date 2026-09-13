@@ -101,6 +101,7 @@ async fn main() -> Result<(), VibeKanbanError> {
         "Reconciled durable direct AgentRun commands"
     );
     spawn_setup_launch_gate_watcher(deployment.clone());
+    routes::openwiki::spawn_recovery_monitor(deployment.clone());
     let setup_gate_count = reconcile_setup_launch_gates(&deployment)
         .await
         .map_err(|err| DeploymentError::Other(anyhow::anyhow!(err.to_string())))?;

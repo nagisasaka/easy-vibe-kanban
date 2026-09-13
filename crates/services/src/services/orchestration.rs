@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use chrono::{Duration, Utc};
 use db::models::orchestration::{
-    OrchestrationAgentRunLinkRecord, OrchestrationConsumptionRecord, OrchestrationEventRecord,
-    OrchestrationInboxRecord, OrchestrationLeaseRecord, OrchestrationNodeExecutionRecord,
-    OrchestrationOutboxRecord, OrchestrationPersistenceError, OrchestrationRunRecord,
-    SerialEachQueueItem,
+    OrchestrationAgentRunLinkRecord, OrchestrationConsumptionEffects,
+    OrchestrationConsumptionRecord, OrchestrationEventRecord, OrchestrationInboxRecord,
+    OrchestrationLeaseRecord, OrchestrationNodeExecutionRecord, OrchestrationOutboxRecord,
+    OrchestrationPersistenceError, OrchestrationRunRecord, SerialEachQueueItem,
 };
 use executors::runtime::{
     AgentEventEnvelope, AgentEventPayload, AgentRunPort, AgentRunPortCommand,
@@ -670,13 +670,8 @@ where
         } else {
             0
         };
-        let iteration_u32 = u32::try_from(iteration).map_err(|_| {
-            OrchestrationServiceError::Persistence(
-                OrchestrationPersistenceError::MissingNodeIdentity,
-            )
-        })?;
         let target_id = if target.join == OrchestrationJoinPolicy::Each {
-            stable_node_execution_id(orchestration_run_id, &target.node_key, iteration_u32)
+            stable_node_execution_id(orchestration_run_id, &target.node_key, iteration)
         } else {
             join_node_execution_id
         };
@@ -685,7 +680,7 @@ where
             target_id,
             orchestration_run_id,
             &target.node_key,
-            iteration_u32,
+            iteration,
             target.stable_order,
         )
         .await?;
@@ -1035,9 +1030,11 @@ where
             join_node_execution_id,
             source_node_execution_id,
             target_node_execution_id,
-            &event,
-            command.as_ref().map(|value| (Uuid::new_v4(), value)),
-            Utc::now(),
+            OrchestrationConsumptionEffects {
+                event: &event,
+                follow_up: command.as_ref().map(|value| (Uuid::new_v4(), value)),
+                consumed_at: Utc::now(),
+            },
         )
         .await;
         OrchestrationLeaseRecord::release(&self.pool, "dispatcher", run_id, &self.owner_id).await?;

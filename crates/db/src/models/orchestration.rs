@@ -120,6 +120,14 @@ pub struct OrchestrationConsumptionRecord {
     pub consumed_at: DateTime<Utc>,
 }
 
+/// Effects committed with one durable inbox consumption, sharing its time and
+/// transaction boundary.
+pub struct OrchestrationConsumptionEffects<'a> {
+    pub event: &'a OrchestrationEventEnvelope,
+    pub follow_up: Option<(Uuid, &'a AgentRunPortCommandEnvelope)>,
+    pub consumed_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerialEachQueueItem {
     pub consumption_id: Uuid,
@@ -272,7 +280,7 @@ impl OrchestrationEventRecord {
         event: &OrchestrationEventEnvelope,
     ) -> Result<OrchestrationReducerApply, OrchestrationPersistenceError> {
         let mut transaction = pool.begin().await?;
-        let applied = append_and_project_in_transaction(&mut *transaction, event).await?;
+        let applied = append_and_project_in_transaction(&mut transaction, event).await?;
         transaction.commit().await?;
         Ok(applied)
     }
@@ -494,7 +502,7 @@ impl OrchestrationOutboxRecord {
         command: &AgentRunPortCommandEnvelope,
     ) -> Result<(Uuid, bool), OrchestrationPersistenceError> {
         let mut transaction = pool.begin().await?;
-        let outcome = enqueue_outbox_in_transaction(&mut *transaction, id, command).await?;
+        let outcome = enqueue_outbox_in_transaction(&mut transaction, id, command).await?;
         transaction.commit().await?;
         Ok(outcome)
     }
@@ -939,10 +947,13 @@ impl OrchestrationInboxRecord {
         join_node_execution_id: Uuid,
         source_node_execution_id: Uuid,
         target_node_execution_id: Option<Uuid>,
-        event: &OrchestrationEventEnvelope,
-        follow_up: Option<(Uuid, &AgentRunPortCommandEnvelope)>,
-        consumed_at: DateTime<Utc>,
+        effects: OrchestrationConsumptionEffects<'_>,
     ) -> Result<bool, OrchestrationPersistenceError> {
+        let OrchestrationConsumptionEffects {
+            event,
+            follow_up,
+            consumed_at,
+        } = effects;
         let mut transaction = pool.begin().await?;
         let inbox_run_id: Uuid =
             sqlx::query_scalar("SELECT orchestration_run_id FROM orchestration_inbox WHERE id = ?")
@@ -958,12 +969,11 @@ impl OrchestrationInboxRecord {
         if event.orchestration_run_id != inbox_run_id {
             return Err(OrchestrationPersistenceError::EffectRunMismatch);
         }
-        if let Some((_, command)) = follow_up {
-            if command.orchestration_run_id != Some(inbox_run_id)
-                || command.orchestration_node_execution_id != target_node_execution_id
-            {
-                return Err(OrchestrationPersistenceError::EffectRunMismatch);
-            }
+        if let Some((_, command)) = follow_up
+            && (command.orchestration_run_id != Some(inbox_run_id)
+                || command.orchestration_node_execution_id != target_node_execution_id)
+        {
+            return Err(OrchestrationPersistenceError::EffectRunMismatch);
         }
 
         let inserted = record_consumption_in_transaction(
@@ -989,9 +999,9 @@ impl OrchestrationInboxRecord {
             transaction.commit().await?;
             return Ok(false);
         }
-        append_and_project_in_transaction(&mut *transaction, event).await?;
+        append_and_project_in_transaction(&mut transaction, event).await?;
         if let Some((outbox_id, command)) = follow_up {
-            enqueue_outbox_in_transaction(&mut *transaction, outbox_id, command).await?;
+            enqueue_outbox_in_transaction(&mut transaction, outbox_id, command).await?;
             // A serial queue item is persisted as a pending target before its
             // Create command is known to be dispatchable. Keep that command
             // durable but invisible to the dispatcher until the queue head is

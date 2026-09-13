@@ -48,7 +48,12 @@ function translate(
   fallback: string,
   options?: Record<string, unknown>
 ): string {
-  return t ? t(key, { defaultValue: fallback, ...options }) : fallback;
+  if (t) return t(key, { defaultValue: fallback, ...options });
+  // Optional translators must still produce readable labels, not raw i18n
+  // placeholders in callers using the documented English fallback.
+  return fallback.replace(/\{\{(\w+)\}\}/g, (placeholder, name: string) =>
+    options?.[name] === undefined ? placeholder : String(options[name])
+  );
 }
 
 export interface WorkflowNodeVisual {

@@ -125,7 +125,7 @@ impl HostExecutionEnv {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub(crate) enum HostCommand {
-    Launch(HostLaunchRequest),
+    Launch(Box<HostLaunchRequest>),
     Attach {
         after_sequence: u64,
     },
@@ -537,7 +537,7 @@ async fn handle_connection(
     }
     let mut shutdown = false;
     let response = match request.command {
-        HostCommand::Launch(launch) => match host.launch(launch).await {
+        HostCommand::Launch(launch) => match host.launch(*launch).await {
             Ok(()) => host.response_after(0).await,
             Err(error) => HostResponse {
                 host_instance_id: host.host_instance_id,
@@ -640,7 +640,6 @@ fn spawn_stdout_reader(
                             "application/json",
                             correlation_id,
                             &bytes,
-                            None,
                         );
                         match writer.append(frame.clone()) {
                             Ok(reference) => (frame, reference, writer.manifest().clone()),

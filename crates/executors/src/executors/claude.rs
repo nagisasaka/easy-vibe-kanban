@@ -844,8 +844,6 @@ pub struct ClaudeLogProcessor {
     model_name: Option<String>,
     // Map tool_use_id -> structured info for follow-up ToolResult replacement
     tool_map: HashMap<String, ClaudeToolCallInfo>,
-    // Strategy controlling how to handle history and user messages
-    strategy: HistoryStrategy,
     streaming_messages: HashMap<String, StreamingMessageState>,
     streaming_message_id: Option<String>,
     last_assistant_message: Option<String>,
@@ -862,12 +860,11 @@ impl ClaudeLogProcessor {
         Self::new_with_strategy(HistoryStrategy::Default)
     }
 
-    fn new_with_strategy(strategy: HistoryStrategy) -> Self {
+    fn new_with_strategy(_strategy: HistoryStrategy) -> Self {
         Self {
             model_name: None,
             main_model_name: None,
             tool_map: HashMap::new(),
-            strategy,
             streaming_messages: HashMap::new(),
             streaming_message_id: None,
             last_assistant_message: None,
@@ -1875,7 +1872,6 @@ impl ClaudeLogProcessor {
                 ClaudeStreamEvent::Unknown => {}
             },
             ClaudeJson::Result {
-                is_error,
                 model_usage,
                 subtype,
                 result,
