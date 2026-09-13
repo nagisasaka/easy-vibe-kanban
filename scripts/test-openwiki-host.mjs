@@ -2,24 +2,86 @@
 // Run: OPENWIKI_BIN=/path/to/openwiki node scripts/test-openwiki-host.mjs
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  writeFile,
+  rm,
+  symlink,
+  readlink,
+  lstat,
+} from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { stripVTControlCharacters } from "node:util";
 
 const pin = (
   await readFile(new URL("../assets/openwiki-version", import.meta.url), "utf8")
 ).trim();
 const binary = process.env.OPENWIKI_BIN ?? "openwiki";
-const env = { ...process.env, OPENWIKI_TELEMETRY_DISABLED: "1" };
-const help = spawnSync(binary, ["--help"], { encoding: "utf8", env });
-assert.equal(help.status, 0, "OpenWiki CLI must be installed");
-assert.equal(
-  help.stdout.match(/OpenWiki v(\S+)/)?.[1],
-  pin,
-  "OpenWiki version pin",
-);
+const evkSetup = process.argv.includes("--evk-setup");
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+const env = {
+  ...process.env,
+  OPENWIKI_TELEMETRY_DISABLED: "1",
+  FORCE_COLOR: "0",
+  NO_COLOR: "1",
+};
+// Exercise both EVK's normalised child environment and the colour-forcing
+// environment inherited from concurrently. NO_COLOR alone is insufficient.
+for (const forceColor of ["0", "1"]) {
+  const help = spawnSync(binary, ["--help"], {
+    encoding: "utf8",
+    env: { ...env, FORCE_COLOR: forceColor },
+    timeout: 30000,
+  });
+  assert.equal(help.status, 0, "OpenWiki CLI must be installed");
+  assert.equal(
+    stripVTControlCharacters(help.stdout).match(/OpenWiki v(\S+)/)?.[1],
+    pin,
+    `OpenWiki version pin with FORCE_COLOR=${forceColor}`,
+  );
+}
 const root = await mkdtemp(path.join(tmpdir(), "evk-openwiki-host-"));
+const persistent = evkSetup
+  ? await mkdtemp(path.join(tmpdir(), "evk-openwiki-memory-"))
+  : undefined;
+const originalAgents =
+  "# Fixture repository rules\n\nPreserve these original instructions.\n";
+const instructions =
+  "# User instructions\nPreserve evidence and write concise fixture documentation.\n";
+let workspaceId = randomUUID();
+function evk(operation, source) {
+  if (!evkSetup) return;
+  const result = spawnSync(
+    "cargo",
+    [
+      "run",
+      "--quiet",
+      "-p",
+      "services",
+      "--example",
+      "openwiki_setup_fixture",
+      "--",
+      operation,
+      root,
+      persistent,
+      workspaceId,
+      source,
+    ],
+    {
+      cwd: repoRoot,
+      env,
+      encoding: "utf8",
+      timeout: 300000,
+    },
+  );
+  assert.equal(result.status, 0, `EVK ${operation}: ${result.stderr}`);
+}
 function git(...args) {
   const output = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
   assert.equal(output.status, 0, output.stderr);
@@ -36,9 +98,26 @@ await writeFile(
   path.join(root, "index.js"),
   "export function add(a, b) { return a + b; }\n",
 );
+if (evkSetup) {
+  await writeFile(path.join(root, "AGENTS.md"), originalAgents);
+  await symlink("AGENTS.md", path.join(root, "CLAUDE.md"));
+  await mkdir(path.join(root, "openwiki"));
+  await writeFile(path.join(root, "openwiki/INSTRUCTIONS.md"), instructions);
+}
 git("add", ".");
 git("commit", "-m", "fixture source");
 const head = git("rev-parse", "HEAD");
+evk("prepare", head);
+if (evkSetup) {
+  assert.equal(
+    (await lstat(path.join(root, "CLAUDE.md"))).isSymbolicLink(),
+    false,
+  );
+  assert.equal(
+    await readFile(path.join(root, "AGENTS.md"), "utf8"),
+    originalAgents,
+  );
+}
 const install = () =>
   spawnSync(binary, ["integrations", "install", "codex", "--project", root], {
     encoding: "utf8",
@@ -47,8 +126,6 @@ const install = () =>
 assert.equal(install().status, 0, "Project-scoped public integration install");
 assert.equal(install().status, 0, "Repeated integration install is idempotent");
 await mkdir(path.join(root, "openwiki"), { recursive: true });
-const instructions =
-  "# User instructions\nPreserve evidence and write concise fixture documentation.\n";
 await writeFile(path.join(root, "openwiki/INSTRUCTIONS.md"), instructions);
 const child = spawn(binary, ["mcp", "--host", "codex"], {
   cwd: root,
@@ -165,6 +242,16 @@ try {
   const finished = await tool("openwiki_finish", { runId });
   assert.equal(finished.status, "complete");
   assert.notEqual(finished.sourceChanged, true);
+  evk("restore", head);
+  evk("restore", head);
+  if (evkSetup) {
+    assert.equal(await readlink(path.join(root, "CLAUDE.md")), "AGENTS.md");
+    assert.equal(
+      await readFile(path.join(root, "AGENTS.md"), "utf8"),
+      originalAgents,
+    );
+    assert.equal(git("diff", "--", "AGENTS.md", "CLAUDE.md"), "");
+  }
   assert.equal(
     await readFile(path.join(root, "openwiki/INSTRUCTIONS.md"), "utf8"),
     instructions,
@@ -198,8 +285,21 @@ try {
       `Unexpected upstream setup/source mutation: ${file}`,
     );
   }
-  git("add", "openwiki", "AGENTS.md", "CLAUDE.md");
+  git(
+    "add",
+    ...(evkSetup ? ["openwiki"] : ["openwiki", "AGENTS.md", "CLAUDE.md"]),
+  );
   git("commit", "-m", "fixture wiki publication");
+  if (evkSetup) {
+    assert.ok(
+      git("diff", "--name-only", head, "HEAD")
+        .split("\n")
+        .every((file) => file.startsWith("openwiki/")),
+    );
+  }
+  const updateHead = git("rev-parse", "HEAD");
+  workspaceId = randomUUID();
+  evk("prepare", updateHead);
   const update = await tool("openwiki_begin", {
     root,
     mode: "update",
@@ -218,12 +318,20 @@ try {
       "complete",
     );
   }
+  evk("restore", updateHead);
+  if (evkSetup) {
+    assert.equal(await readlink(path.join(root, "CLAUDE.md")), "AGENTS.md");
+    assert.equal(
+      await readFile(path.join(root, "AGENTS.md"), "utf8"),
+      originalAgents,
+    );
+  }
   assert.equal(
     await readFile(path.join(root, "openwiki/INSTRUCTIONS.md"), "utf8"),
     instructions,
   );
   console.log(
-    `PASS: OpenWiki ${pin}; install/reinstall, host MCP, init, rejected premature finish, plan/page/claims/finalisation, user instructions and source preservation. No model call.`,
+    `PASS: OpenWiki ${pin}; plain/coloured CLI version, install/reinstall, host MCP, init, rejected premature finish, plan/page/claims/finalisation, user instructions and source preservation.${evkSetup ? " EVK production alias isolation, duplicate restoration and Wiki-only publication guards passed." : ""} Update begin status=${update.status}; supported no-change finalisation verified, not a guarantee of begin-noop. No model call.`,
   );
   succeeded = true;
 } finally {
@@ -235,4 +343,7 @@ try {
   });
   if (succeeded) await rm(root, { recursive: true });
   else console.error(`Failed fixture preserved at ${root}`);
+  if (succeeded && persistent) await rm(persistent, { recursive: true });
+  else if (persistent)
+    console.error(`Fixture journal preserved at ${persistent}`);
 }

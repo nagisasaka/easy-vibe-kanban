@@ -263,6 +263,45 @@ pub struct WikiPublication {
     pub no_op: bool,
 }
 
+/// Private filesystem journal, not part of the browser API. Original user text
+/// stays recoverable even if setup or restoration is interrupted by a restart.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WikiSetupCheckpoint {
+    pub version: u32,
+    pub workspace_id: Uuid,
+    pub repository_path: PathBuf,
+    pub source_commit: String,
+    pub phase: WikiSetupPhase,
+    pub files: Vec<WikiSetupEntry>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WikiSetupPhase {
+    Preparing,
+    Prepared,
+    Restoring,
+    Restored,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WikiSetupEntry {
+    pub path: String,
+    pub original: WikiSetupFile,
+    pub prepared: WikiSetupFile,
+    pub restoring_from: Option<WikiSetupFile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum WikiSetupFile {
+    Missing,
+    Regular { content: String, mode: u32 },
+    Symlink { target: PathBuf },
+}
+
 /// Frozen before committing source. The manifest's source_commit is the
 /// pre-publication HEAD until the verified Git result replaces it. Keeping the
 /// semantic draft and expected tree here prevents a retry from attributing a
@@ -373,6 +412,7 @@ impl RepositoryMemoryStore {
             "integrations",
             "publications",
             "source-publications",
+            "wiki-setups",
             "locks",
         ] {
             real_directory(&store.root.join(directory))?;
@@ -384,6 +424,28 @@ impl RepositoryMemoryStore {
         self.root
             .join("workspace-memory")
             .join(format!("{workspace_id}.md"))
+    }
+
+    pub fn wiki_setup(&self, workspace_id: Uuid) -> io::Result<Option<WikiSetupCheckpoint>> {
+        self.read_json(
+            &self
+                .root
+                .join("wiki-setups")
+                .join(format!("{workspace_id}.json")),
+        )
+    }
+
+    /// Caller holds the repository maintenance lock. Unlike semantic events,
+    /// this journal advances through preparation and restoration checkpoints.
+    pub fn save_wiki_setup(&self, checkpoint: &WikiSetupCheckpoint) -> io::Result<()> {
+        self.publish(
+            &self
+                .root
+                .join("wiki-setups")
+                .join(format!("{}.json", checkpoint.workspace_id)),
+            checkpoint,
+            true,
+        )
     }
 
     pub fn draft_path(&self, run_id: Uuid) -> PathBuf {

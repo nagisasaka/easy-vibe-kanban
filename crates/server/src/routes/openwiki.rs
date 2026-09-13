@@ -242,6 +242,7 @@ async fn prepare_run(
         );
     }
     let project_scope = OpenWikiAdapter::requires_project_scope();
+    services::services::openwiki::setup::preflight(&root)?;
     OpenWikiAdapter::default()
         .prepare_codex(&root, project_scope)
         .await?;
@@ -278,6 +279,7 @@ async fn prepare_run(
     let initial = !root.join("openwiki/index.md").exists();
     let prompt =
         OpenWikiAdapter::maintenance_prompt(&root, initial, &state.output_language, &hints);
+    let skill_path = OpenWikiAdapter::installed_skill_path(&root, project_scope)?;
     let session = Session::create(
         &deployment.db().pool,
         &CreateSession {
@@ -295,23 +297,40 @@ async fn prepare_run(
     };
     state.maintenance_workspace_id = Some(workspace.id);
     state.maintenance_session_id = Some(session.id);
-    state.active_source_commit = Some(source);
+    state.active_source_commit = Some(source.clone());
     state.active_event_ids = events.iter().map(|event| event.event_id).collect();
     state.error = None;
     store.save_state(state)?;
+    if let Err(error) =
+        services::services::openwiki::setup::prepare(store, workspace.id, &root, &source)
+    {
+        // No AgentRun has been reserved yet. A partially materialised snapshot
+        // can be restored safely; never do this once a provider may be running.
+        services::services::openwiki::setup::restore(store, workspace.id, &root, &source)
+            .context("OpenWiki pre-launch instruction restoration failed")?;
+        return Err(error);
+    }
     let snapshot = super::sessions::reserve_coding_agent_execution_for_session(
         deployment,
         session,
         prompt,
         Some(vec![executors::actions::SelectedSkill {
             name: "openwiki".into(),
-            path: OpenWikiAdapter::installed_skill_path(&root, project_scope)?,
+            path: skill_path,
         }]),
         ExecutorConfig::new(BaseCodingAgent::Codex),
         None,
         None,
     )
-    .await?;
+    .await;
+    let snapshot = match snapshot {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            services::services::openwiki::setup::restore(store, workspace.id, &root, &source)
+                .context("OpenWiki reservation failed and instructions could not be restored")?;
+            return Err(error.into());
+        }
+    };
     state.active_run_id = Some(snapshot.agent_run_id);
     store.save_state(state)?;
     super::sessions::launch_reserved_coding_agent_execution(deployment, snapshot.agent_run_id)
@@ -490,22 +509,48 @@ async fn finish_run(
     state: &RepositoryMemoryState,
     run: &AgentRunRecord,
 ) -> anyhow::Result<(Option<String>, bool)> {
-    if run.status != AgentRunStatus::Succeeded {
-        bail!(
-            "OpenWiki AgentRun ended {:?}; generated files remain in its workspace for inspection",
-            run.status
-        );
+    if !run.status.is_terminal() {
+        bail!("Cannot restore OpenWiki instructions while its AgentRun is active");
     }
     let root = PathBuf::from(&run.workspace_path).join(&repo.name);
-    // Once validated publication is checkpointed, recovery does not depend on
-    // retaining/re-reading a large native audit stream a second time.
-    if store.publication(run.id)?.is_none() {
-        completion_proof(deployment, run, &root).await?;
-    }
     let source = state
         .active_source_commit
         .as_deref()
         .context("Missing source checkpoint")?;
+    // Wait for the host to exit before changing its fingerprinted source view.
+    // Failed/cancelled hosts get their original instructions back too, but can
+    // never publish their partial Wiki. A durable publication is already clean.
+    if store.publication(run.id)?.is_none() {
+        let completion = if run.status == AgentRunStatus::Succeeded {
+            completion_proof(deployment, run, &root).await.map(|_| ())
+        } else {
+            Err(anyhow::anyhow!(
+                "OpenWiki AgentRun ended {:?}; generated files remain in its workspace for inspection",
+                run.status
+            ))
+        };
+        let provenance = if completion.is_ok() {
+            services::services::openwiki::setup::validate_provenance(
+                store,
+                run.workspace_id,
+                &root,
+                source,
+            )
+        } else {
+            Ok(())
+        };
+        services::services::openwiki::setup::restore(store, run.workspace_id, &root, source)?;
+        completion?;
+        provenance?;
+        services::services::openwiki::setup::validate_provenance(
+            store,
+            run.workspace_id,
+            &root,
+            source,
+        )?;
+    } else if run.status != AgentRunStatus::Succeeded {
+        bail!("A failed AgentRun cannot publish an OpenWiki checkpoint");
+    }
     let branch = state
         .target_branch
         .as_deref()
