@@ -377,6 +377,10 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         )
         .route("/v1/workflow-runs/{run_id}", get(get_workflow_run))
         .route(
+            "/v1/workspaces/{workspace_id}/repository-workflow-run",
+            get(get_workspace_repository_workflow_run),
+        )
+        .route(
             "/v1/workflow-attempts/{attempt_id}",
             get(get_workflow_attempt).delete(delete_workflow_attempt),
         )
@@ -1920,6 +1924,33 @@ async fn trigger_workflow(
     Ok(ResponseJson(MutationResponse { data, txid: txid() }))
 }
 
+// Unlike repository-memory's active bootstrap state, workflow history survives
+// completion and cleanup. Resolve by workspace, never by a guessed Issue.
+async fn repository_workflow_run_id(
+    pool: &SqlitePool,
+    workspace_id: Uuid,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT id FROM workflow_runs WHERE workspace_id = ? AND repository_id IS NOT NULL \
+         ORDER BY created_at DESC, id DESC LIMIT 1",
+    )
+    .bind(workspace_id)
+    .fetch_optional(pool)
+    .await
+}
+
+async fn get_workspace_repository_workflow_run(
+    State(deployment): State<DeploymentImpl>,
+    Path(workspace_id): Path<Uuid>,
+) -> Result<ResponseJson<Option<WorkflowRunResponse>>, ApiError> {
+    let pool = &deployment.db().pool;
+    let run = match repository_workflow_run_id(pool, workspace_id).await? {
+        Some(run_id) => Some(get_workflow_run_response(pool, run_id).await?),
+        None => None,
+    };
+    Ok(ResponseJson(run))
+}
+
 async fn get_workflow_run(
     State(deployment): State<DeploymentImpl>,
     Path(run_id): Path<Uuid>,
@@ -2147,6 +2178,75 @@ fn workflow_event_to_sse_event(event: workflow::WorkflowEvent) -> Event {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn repository_workflow_lookup_retains_terminal_runs_and_isolates_workspaces() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE workflow_runs (id BLOB PRIMARY KEY, workspace_id BLOB, repository_id BLOB, created_at TEXT, status TEXT)")
+            .execute(&pool).await.unwrap();
+        let workspace = Uuid::new_v4();
+        let other_workspace = Uuid::new_v4();
+        let repository = Uuid::new_v4();
+        let old_run = Uuid::new_v4();
+        let failed_run = Uuid::new_v4();
+        for (id, workspace_id, repository_id, date, status) in [
+            (
+                old_run,
+                workspace,
+                Some(repository),
+                "2026-09-13",
+                "succeeded",
+            ),
+            (
+                failed_run,
+                workspace,
+                Some(repository),
+                "2026-09-14",
+                "failed",
+            ),
+            (Uuid::new_v4(), workspace, None, "2026-09-15", "running"),
+            (
+                Uuid::new_v4(),
+                other_workspace,
+                Some(repository),
+                "2026-09-16",
+                "running",
+            ),
+        ] {
+            sqlx::query("INSERT INTO workflow_runs VALUES (?, ?, ?, ?, ?)")
+                .bind(id)
+                .bind(workspace_id)
+                .bind(repository_id)
+                .bind(date)
+                .bind(status)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            repository_workflow_run_id(&pool, workspace).await.unwrap(),
+            Some(failed_run)
+        );
+        assert_eq!(
+            repository_workflow_run_id(&pool, Uuid::new_v4())
+                .await
+                .unwrap(),
+            None
+        );
+        sqlx::query("UPDATE workflow_runs SET status = 'canceled' WHERE id = ?")
+            .bind(failed_run)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            repository_workflow_run_id(&pool, workspace).await.unwrap(),
+            Some(failed_run)
+        );
+    }
 
     fn ts(value: &str) -> DateTime<Utc> {
         DateTime::parse_from_rfc3339(value)

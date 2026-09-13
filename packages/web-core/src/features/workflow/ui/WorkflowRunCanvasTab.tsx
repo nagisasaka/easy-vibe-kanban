@@ -103,7 +103,7 @@ import {
 import { workflowNodeStatusKey } from './workflowI18n';
 
 export interface WorkflowRunCanvasTabProps {
-  projectId: string;
+  projectId?: string;
   run: WorkflowRunResponse;
 }
 
@@ -339,11 +339,13 @@ function getDefaultPositions(graph: WorkflowGraph) {
 }
 
 function buildRunWorkspaceHref(
-  projectId: string,
+  projectId: string | undefined,
   run: WorkflowRunResponse
 ): string | null {
   return run.workspace_id
-    ? `/projects/${projectId}/issues/${run.issue_id}/workspaces/${run.workspace_id}`
+    ? projectId && run.issue_id
+      ? `/projects/${projectId}/issues/${run.issue_id}/workspaces/${run.workspace_id}`
+      : `/workspaces/${run.workspace_id}`
     : null;
 }
 
@@ -558,6 +560,7 @@ export function WorkflowRunCanvasTab({
   );
 
   const handleEditSelectedNodeConfig = useCallback(() => {
+    if (!projectId || run.repository_id) return;
     const nodeId = selectedExecution?.node_id ?? selectedNodeId;
     if (nodeId) {
       queueWorkflowTemplateNodeFocus(run.workflow_id, {
@@ -570,6 +573,7 @@ export function WorkflowRunCanvasTab({
     navigation,
     projectId,
     run.workflow_id,
+    run.repository_id,
     selectedExecution?.node_id,
     selectedNodeId,
   ]);
@@ -750,7 +754,11 @@ export function WorkflowRunCanvasTab({
             selectedWork={selectedWork}
             selectedGraphNode={selectedGraphNode}
             selectedNodeId={selectedNodeId}
-            onEditWorkflowConfig={handleEditSelectedNodeConfig}
+            onEditWorkflowConfig={
+              projectId && !run.repository_id
+                ? handleEditSelectedNodeConfig
+                : undefined
+            }
           />
         </Panel>
       </Group>
@@ -767,13 +775,13 @@ interface NodeDetailPanelProps {
   onApprove: () => void;
   onReject: () => void;
   onSelectConditionBranch: (targetNodeIds: string[]) => void;
-  projectId: string;
+  projectId?: string;
   run: WorkflowRunResponse;
   selectedExecution: WorkflowNodeExecutionResponse | null;
   selectedWork: WorkflowNodeWorkView | null;
   selectedGraphNode: WorkflowNode | null;
   selectedNodeId: string | null;
-  onEditWorkflowConfig: () => void;
+  onEditWorkflowConfig?: () => void;
 }
 
 function NodeDetailPanel({
@@ -1093,7 +1101,7 @@ function NodeDetailsTab({
   graph: WorkflowGraph;
   isSelectingConditionBranch: boolean;
   onSelectConditionBranch: (targetNodeIds: string[]) => void;
-  projectId: string;
+  projectId?: string;
   run: WorkflowRunResponse;
   selectedExecution: WorkflowNodeExecutionResponse;
   selectedWork: WorkflowNodeWorkView | null;
@@ -1189,7 +1197,7 @@ function NodeDetailsTab({
         </div>
       ) : null}
 
-      {actionGate.canSelectArenaWinner && run.issue_id ? (
+      {actionGate.canSelectArenaWinner && run.issue_id && projectId ? (
         <WorkflowArenaWinnerPanel
           arenaGroupId={selectedExecution.arena_group_id}
           issueId={run.issue_id}
@@ -1248,7 +1256,7 @@ function WorkflowNodeConversationPanel({
   workspaceId: string | null;
   sessionHref: string | null;
   workspaceHref: string | null;
-  onEditConfig: () => void;
+  onEditConfig?: () => void;
 }) {
   const { t } = useTranslation('common');
   const supportsConversation =

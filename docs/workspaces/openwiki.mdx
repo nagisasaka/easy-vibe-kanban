@@ -15,8 +15,9 @@ does not migrate, delete, or rewrite the other.
 2. Enable **OpenWiki repository memory**. Choose the integrated **local branch**
    and an output language such as `en` or `ja`, then save.
 3. Select **Initialize Wiki**. EVK creates an OpenWiki maintenance workspace and
-   a repository-scoped system Workflow, without creating an Issue. Use the
-   Workspaces list to inspect its separate phase sessions or stop the active agent.
+   a repository-scoped system Workflow, without creating an Issue. Select
+   **View Workflow** in these settings or above the maintenance workspace's chat
+   to open the existing Workflow **Canvas** and **Dashboard**.
 4. Wait for **Current**. A successful model exit alone is not sufficient: EVK
    checks the native audit for successful OpenWiki finalisation before publishing.
 
@@ -42,14 +43,36 @@ file contents before and after review to detect mutations.
 
 The reviewer returns bounded JSON findings. EVK validates the schema, evidence
 paths and verdict before choosing a branch. Only material findings trigger Refine;
-minor findings do not. Refine uses OpenWiki's `update` mode with `force=true` and
-does not initialise again. There is no second review loop or completeness guarantee.
+minor findings do not. If corrections are needed, Refine uses OpenWiki's `update`
+mode with `force=true` and does not initialise again. It can also refute findings
+or confirm that the existing Wiki already satisfies them, with independent
+evidence. It need not change files or call OpenWiki when no correction is needed.
+EVK validates a bounded, finding-by-finding resolution report; this checks coverage
+of the findings, not the semantic truth of the agent's reasoning. There is no
+second review loop or completeness guarantee.
 
-Generate and Refine must each provide successful OpenWiki finalisation in Native
-Audit. No agent phase commits or publishes. The worktree stays at its starting
+Generate must complete an `init`. If it subsequently discovers a clear error, it
+may self-correct through one or more completed `update + force=true` operations.
+Self-correction is optional and does not replace the independent review.
+EVK verifies the operation sequence across every RunAttempt of the phase, not
+just the last mode or latest audit. Every started run must finish; a later success
+cannot hide an earlier unfinished operation or missing audit. Recoverable page
+validation errors can be corrected within the same run. A successful forced
+update need not produce a Git diff. Without any update, Refine must leave the
+worktree unchanged after EVK restores its managed setup files.
+
+No agent phase commits or publishes. The worktree stays at its starting
 source commit until the final host publication, which creates the existing
 Wiki-only commit and reflects it onto your selected target branch once.
 Repository settings show the current phase, including time between agent sessions.
+On the local machine, **View Workflow** remains available after completion or
+failure. Select an agent node in the Canvas to inspect that phase's conversation;
+use the Dashboard for step status, errors and whole-workflow cancellation.
+System-managed executions do not offer template editing or individual step retry.
+After resolving a failure, start a new bootstrap from repository settings.
+The chat's session selection remains independent of the Workflow view.
+Remote-machine Workflow viewing is not yet supported; use that machine's local
+EVK UI. Normal Sync workspaces have no bootstrap Workflow link.
 The Workflow owns maintenance throughout, so another maintenance request cannot
 start between phases. Normal **Sync Wiki** retains its single-session update path.
 

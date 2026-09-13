@@ -1,5 +1,6 @@
 //! Repository maintenance uses ordinary EVK workspace/session/AgentRun owners.
 //! The shared durable pointer and OS lock fence writers across server restarts.
+pub(crate) mod completion;
 use std::{
     io::Write,
     path::{Path as FsPath, PathBuf},

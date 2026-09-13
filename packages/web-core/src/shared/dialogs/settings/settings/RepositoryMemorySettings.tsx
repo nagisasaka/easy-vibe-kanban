@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Repo } from 'shared/types';
 import type { MachineClient } from '@/shared/lib/machineClient';
+import { WorkspaceWorkflowLink } from '@/features/workflow/ui/WorkspaceWorkflowLink';
 import { PrimaryButton } from '@vibe/ui/components/PrimaryButton';
 import {
   SettingsCard,
@@ -120,10 +121,18 @@ export function RepositoryMemorySettings({
         </p>
       )}
       {state?.maintenance_workspace_id && (
-        <p className="break-all text-sm text-low">
-          Maintenance workspace: {state.maintenance_workspace_id}. Open it in
-          Workspaces to inspect Codex output or stop the run.
-        </p>
+        <div className="space-y-half">
+          <WorkspaceWorkflowLink
+            workspaceId={state.maintenance_workspace_id}
+            hostId={client.target.apiHostId}
+          />
+          <a
+            className="block break-all text-sm text-brand underline"
+            href={`${client.target.apiHostId ? `/hosts/${client.target.apiHostId}` : ''}/workspaces/${state.maintenance_workspace_id}`}
+          >
+            Maintenance workspace: {state.maintenance_workspace_id}
+          </a>
+        </div>
       )}
       {(error || query.error || state?.error) && (
         <p className="whitespace-pre-wrap text-sm text-error" role="alert">

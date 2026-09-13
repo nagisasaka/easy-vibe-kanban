@@ -67,7 +67,21 @@ export function getWorkflowRuntimeView(
   options: WorkflowRuntimeViewOptions = {}
 ): WorkflowRuntimeProjection {
   if (run.runtime_view) {
-    return normalizeBackendRuntimeView(run.runtime_view);
+    const view = normalizeBackendRuntimeView(run.runtime_view);
+    if (run.repository_id) {
+      // Repository maintenance owns the whole execution, including deterministic
+      // review routing. Only whole-run cancellation and inspection are exposed.
+      view.node_work = view.node_work.map((work) => ({
+        ...work,
+        can_retry: false,
+        can_approve: false,
+        can_reject: false,
+        can_select_arena_winner: false,
+        can_select_condition_branch: false,
+        can_cancel_node: false,
+      }));
+    }
+    return view;
   }
 
   return buildFallbackWorkflowRuntimeView(run, options);
@@ -79,6 +93,24 @@ export function getWorkflowNodeWork(
 ): CanonicalWorkflowNodeWorkView | null {
   if (!nodeId) return null;
   return view.node_work.find((work) => work.node_id === nodeId) ?? null;
+}
+
+export function canCancelWorkflowRun(
+  run: WorkflowRunResponse,
+  view: WorkflowRuntimeProjection
+): boolean {
+  if (
+    !['pending', 'running', 'awaiting_human', 'awaiting_arena'].includes(
+      run.status
+    )
+  ) {
+    return false;
+  }
+  // Unstarted repository phases have no child identity yet. Their projection
+  // must not prevent cancellation through the workflow's maintenance owner.
+  return (
+    !!run.repository_id || (!!run.runtime_view && view.authority === 'current')
+  );
 }
 
 /**

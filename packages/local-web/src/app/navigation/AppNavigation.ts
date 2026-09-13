@@ -54,6 +54,7 @@ function resolveLocalDestinationFromPath(path: string): AppDestination | null {
       const hostId = getPathParam(routeParams, 'hostId');
       return hostId ? { kind: 'workspaces-create', hostId } : null;
     }
+    case '/_app/workspaces_/$workspaceId_/workflow':
     case '/_app/workspaces_/$workspaceId': {
       const workspaceId = getPathParam(routeParams, 'workspaceId');
       return workspaceId ? { kind: 'workspace', workspaceId } : null;

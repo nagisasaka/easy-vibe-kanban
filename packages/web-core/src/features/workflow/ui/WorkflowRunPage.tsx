@@ -9,7 +9,7 @@ import { cn } from '@/shared/lib/utils';
 import { WorkspaceContextHeader } from '@/shared/components/WorkspaceContextHeader';
 
 export interface WorkflowRunPageProps {
-  projectId: string;
+  projectId?: string;
   runId: string;
 }
 
@@ -112,6 +112,35 @@ export function WorkflowRunPage({ projectId, runId }: WorkflowRunPageProps) {
           </button>
         </div>
       </header>
+
+      {run.repository_id && (
+        <div className="flex flex-none flex-wrap gap-base border-b border-secondary p-half text-xs text-normal">
+          <span>
+            Repository-managed workflow · Generate → Review → optional Refine →
+            Publish
+          </span>
+          {run.workspace_id && (
+            <a
+              className="text-brand underline"
+              href={`/workspaces/${run.workspace_id}`}
+            >
+              Open workspace
+            </a>
+          )}
+          <span>
+            Step retry and template editing are unavailable. After a failure,
+            start a new bootstrap from OpenWiki settings.
+          </span>
+        </div>
+      )}
+      {run.error_text && (
+        <p
+          className="max-h-32 flex-none overflow-y-auto whitespace-pre-wrap border-b border-secondary p-half text-sm text-error"
+          role="alert"
+        >
+          {run.error_text}
+        </p>
+      )}
 
       <main className="relative min-h-0 flex-1">
         {activeTab === 'canvas' && (

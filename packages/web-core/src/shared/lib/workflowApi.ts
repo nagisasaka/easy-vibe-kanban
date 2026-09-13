@@ -272,6 +272,15 @@ export const workflowApi = {
     );
   },
 
+  async getRepositoryRunForWorkspace(
+    workspaceId: string
+  ): Promise<WorkflowRunResponse | null> {
+    return getJson(
+      await localFetch(`/workspaces/${workspaceId}/repository-workflow-run`),
+      'Failed to get repository workflow run'
+    );
+  },
+
   async cancelRun(runId: string): Promise<WorkflowActionResponse> {
     return mutate(
       await localFetch(`/workflow-runs/${runId}/cancel`, {

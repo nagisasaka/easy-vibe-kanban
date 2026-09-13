@@ -70,6 +70,92 @@ The additive migration rebuilds `workflow_runs` with exclusive Issue/repository
 scope. Existing identifiers, attempts, nodes, frozen graphs and foreign-key
 references are preserved; no historical events, Wiki files or attempts are deleted.
 
+## Phase completion contract
+
+These rules supersede the single-operation/mandatory Refine-operation assumptions
+in the original v2 specification. The Generate/Review/Refine graph and independent
+session boundaries remain unchanged.
+
+The phase, not the final OpenWiki mode or latest RunAttempt, is the unit of
+completion. `routes/openwiki/completion.rs` enumerates all persisted attempts of
+the delegated AgentRun in attempt-number order and joins their Native Audit
+streams. Missing/corrupt audit, identity mismatch, an unconfirmed process exit,
+overlapping attempts or an unfinished operation prevents completion. A closed
+audit showing no OpenWiki side effects does not invalidate a subsequent success.
+Missing audit is never interpreted as an empty attempt, even for an apparent
+launch failure: without independent proof of no launch it remains unknown.
+Terminal projection commits just before process-exit registration. For the latest
+attempt only, a normal running/spawned registration can remain pending for up to
+ten seconds after the terminal update; the existing monitor polls again instead
+of immediately failing the node. Older unfinished attempts and unreachable hosts
+are not granted this exception. The phase cannot advance during this window.
+
+`services/openwiki/completion.rs` replays started/completed root-thread MCP calls.
+It binds each attempt's root using its own thread-start/resume RPC response,
+matches call IDs and run IDs separately, checks request/response roots and modes,
+and retains completed init/update facts across attempts. A failed begin has
+unknown side effects and fails closed. Page/finish validation errors may recover
+within the same active run. Duplicate completions are fingerprinted; conflicting
+duplicates, orphan completions, foreign resumed runs and child-thread writers
+are rejected. An observed same-run re-begin can continue within one attempt.
+Cross-attempt recovery of an unfinished OpenWiki operation is not implemented;
+start a new Bootstrap after cleanup. No new operation-history table is added.
+
+Generate requires its own completed init and permits optional subsequent forced
+updates. It cannot start a new init after completing initialisation. Refine may
+perform multiple forced updates, or perform no OpenWiki operation at all when
+all material findings are refuted/already satisfied. Bootstrap authoring always
+uses `update + force=true` to avoid a source-unchanged no-op bypassing a requested
+correction. Ordinary Sync retains its existing no-op and completion behaviour.
+
+Refine returns `RefinementReport` version 1 as bounded JSON in the existing
+NodeExecution output. `findingIndex` refers to the zero-based index of the frozen
+Review findings array; the reviewer schema does not change. Every material finding
+needs exactly one resolution; unknown/duplicate indexes and unresolved dispositions
+are rejected. `fixed` requires Wiki paths, independent evidence and a completed
+update; `refuted` requires independent evidence; `already_satisfied` requires Wiki
+paths and independent evidence. Evidence paths must be existing, non-symlink files
+and cannot use Wiki content or generated setup instructions as independent proof.
+The role prompt distinguishes current implementation from documented intent/history.
+Neither path validation nor report structure proves that an argument is true.
+
+No Git diff is required for a completed update. With no completed update, Refine
+must have no `fixed` dispositions and its restored worktree fingerprint must match
+the independent Review baseline. Publication revalidates the resolution report;
+it still happens exactly once through the existing Wiki-only publication path.
+Setup/restore remains at phase boundaries, not between individual operations.
+
+The host safety prompt is shared with Sync, but its operation policy is supplied
+separately so that Refine does not inherit an unconditional `begin` instruction.
+OpenWiki itself, its installed Skill, the Workflow graph, independent reviewer,
+and source/ownership/publication guards are unchanged. No migration or generated
+API type change is needed. Start a fresh Bootstrap after updating the server;
+an old Refine output without the new report is not silently accepted.
+
+These checks establish closure of the audited owned operations. They do not
+prove absence of transient source edits later reverted, direct file edits after
+the final finish, or activity outside the owned audited host. Existing exclusive
+ownership, final source/diff guards and OpenWiki's `sourceChanged` result still
+apply; stronger temporal file integrity would require separate runtime controls.
+
+The read-only `services` example `openwiki_completion_fixture` replays supplied
+audit directories in attempt order for protocol diagnosis. It does not approve
+publication or replace the DB identity/ownership checks. Automated tests use fake
+MCP frames with real Native Audit checksums and SQLite attempt records; no paid
+model calls are required.
+
+Validation of the phase-completion revision:
+
+- Rust library suites for server, services, executors and workflow: 521 passed,
+  three explicitly ignored subprocess-fixture/installed-CLI entrypoints.
+- Workflow view/settings Vitest: eight passed.
+- Repository format, check, lint and generated-types check passed.
+- The previously rejected real Generate audit (`init` then forced self-correction
+  `update`, both finished) passes the read-only protocol replay. This neither
+  changes the historical workflow status nor approves/publishes its Wiki.
+- A fresh paid-Codex Generate/Review/Refine execution remains a manual smoke test;
+  automated tests do not assert model reasoning quality or complete coverage.
+
 ## Documentation authority prompt supplement
 
 Bootstrap's shared `DOCUMENTATION_GUIDANCE` in
@@ -141,7 +227,9 @@ not part of the automated no-model suite.
 3. In the workspace, inspect the distinct Generate, Review and optional Refine
    sessions. Native Audit should show separate Codex thread starts, a read-only
    reviewer without selected writer skills and disabled OpenWiki MCP, and verified
-   writer finalisation. Refine must start with update and force enabled.
+   finalisation for every started writer operation. Refine corrections use update
+   with force enabled; a no-change Refine instead supplies grounded resolutions
+   and leaves the restored worktree unchanged.
 4. Verify that the maintenance HEAD stays at the starting source during agent
    phases. At completion, the target has one Wiki-only publication and unchanged
    source/tests/configuration. Inspect the resulting Wiki with the existing viewer.

@@ -115,6 +115,7 @@ impl Fixture {
 struct FakeBootstrap<'a> {
     fixture: &'a Fixture,
     refine: bool,
+    refute: bool,
     fail: Option<&'static str>,
     calls: Mutex<Vec<AgentNodeRequest>>,
     publications: AtomicUsize,
@@ -171,12 +172,21 @@ impl WorkflowAgentExecutor for FakeBootstrap<'_> {
                     openwiki::bootstrap::writer_prompt(&fixture.maintenance, "ja", Some(&review))
                         .contains("force=true")
                 );
-                std::fs::write(
-                    fixture.maintenance.join("openwiki/index.md"),
-                    "Refined Wiki",
-                )
-                .unwrap();
-                "Refined".into()
+                if !self.refute {
+                    std::fs::write(
+                        fixture.maintenance.join("openwiki/index.md"),
+                        "Refined Wiki",
+                    )
+                    .unwrap();
+                }
+                let report = json!({"version":1,"summary":"Checked the finding","resolutions":[{
+                    "findingIndex":0,"disposition":if self.refute {"refuted"} else {"fixed"},
+                    "reason":"Verified against source.rs","wikiPaths":["openwiki/index.md"],"evidencePaths":["source.rs"]
+                }]}).to_string();
+                let report =
+                    openwiki::bootstrap::RefinementReport::parse(&report, &review).unwrap();
+                report.validate_files(&fixture.maintenance).unwrap();
+                serde_json::to_string(&report).unwrap()
             }
             _ => panic!("unexpected agent node"),
         };
@@ -367,6 +377,7 @@ async fn bootstrap_validation_gate_survives_generic_recovery_and_does_not_block_
         let executor = FakeBootstrap {
             fixture: &f,
             refine: false,
+            refute: false,
             fail: None,
             calls: Mutex::new(Vec::new()),
             publications: AtomicUsize::new(0),
@@ -495,12 +506,13 @@ async fn bootstrap_scope_migration_preserves_existing_issue_runs_and_references(
 
 #[tokio::test]
 async fn bootstrap_pass_and_refine_use_existing_runner_and_publish_once() {
-    for refine in [false, true] {
+    for (refine, refute) in [(false, false), (true, false), (true, true)] {
         let f = Fixture::new().await;
         let run_id = f.reserve().await;
         let executor = FakeBootstrap {
             fixture: &f,
             refine,
+            refute,
             fail: None,
             calls: Mutex::new(Vec::new()),
             publications: AtomicUsize::new(0),
@@ -543,6 +555,12 @@ async fn bootstrap_pass_and_refine_use_existing_runner_and_publish_once() {
             calls.len()
         );
         assert_eq!(executor.publications.load(Ordering::SeqCst), 1);
+        if refute {
+            assert_eq!(
+                git(&f.root, &["show", "main:openwiki/index.md"]),
+                "Generated Wiki"
+            );
+        }
         assert_eq!(
             git(
                 &f.root,
@@ -579,6 +597,7 @@ async fn bootstrap_phase_failures_never_reach_publication_or_reuse_retry() {
         let executor = FakeBootstrap {
             fixture: &f,
             refine: true,
+            refute: false,
             fail: Some(phase),
             calls: Mutex::new(Vec::new()),
             publications: AtomicUsize::new(0),

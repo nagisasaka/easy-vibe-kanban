@@ -19,7 +19,8 @@ use executors::{
 use services::services::{
     openwiki::{
         self, OpenWikiAdapter,
-        bootstrap::{CoverageReview, CoverageVerdict},
+        bootstrap::{CoverageReview, CoverageVerdict, RefinementReport},
+        completion::WriterPhase,
     },
     orchestration::OrchestrationService,
 };
@@ -359,18 +360,63 @@ pub(super) async fn validate_child_completion(
         .await?
         .context("Bootstrap AgentRun missing")?;
     ensure!(
+        owner
+            .child
+            .as_ref()
+            .is_some_and(|child| child.session_id == run.session_id),
+        "Bootstrap child Session mismatch"
+    );
+    ensure!(
         run.status == AgentRunStatus::Succeeded,
         "Writer did not succeed"
     );
-    let proof = crate::routes::openwiki::completion_proof(deployment, &run, &ctx.root).await?;
-    ensure!(
-        proof.proves_bootstrap_phase(node_id == "refine"),
-        "Bootstrap writer requires verified finish-complete with the correct begin mode (Refine: update + force=true)"
-    );
+    let report = if node_id == "refine" {
+        Some(RefinementReport::parse(
+            output,
+            &validated_review(deployment, run_id).await?,
+        )?)
+    } else {
+        None
+    };
+    let proof = crate::routes::openwiki::completion::bootstrap_completion_proof(
+        &deployment.db().pool,
+        &run,
+        ctx.workspace.id,
+        std::path::Path::new(
+            ctx.workspace
+                .container_ref
+                .as_deref()
+                .context("Bootstrap workspace path missing")?,
+        ),
+        &ctx.root,
+        if node_id == "refine" {
+            WriterPhase::Refine
+        } else {
+            WriterPhase::Generate
+        },
+    )
+    .await?;
+    if let Some(report) = &report {
+        ensure!(
+            !report.requires_update() || proof.has_completed_update(),
+            "Refine claimed fixed findings without a completed update"
+        );
+    }
     openwiki::setup::validate_provenance(&ctx.store, ctx.workspace.id, &ctx.root, source)?;
     openwiki::setup::restore(&ctx.store, ctx.workspace.id, &ctx.root, source)?;
     openwiki::setup::validate_provenance(&ctx.store, ctx.workspace.id, &ctx.root, source)?;
     openwiki::publication_paths(deployment.git(), &ctx.root, source)?;
+    if let Some(report) = report {
+        report.validate_files(&ctx.root)?;
+        if !proof.has_completed_update() {
+            ensure!(
+                owner.review_fingerprint.as_deref()
+                    == Some(&openwiki::bootstrap::worktree_fingerprint(&ctx.root)?),
+                "Refine changed files without a verified OpenWiki update"
+            );
+        }
+        return Ok(serde_json::to_string(&report)?);
+    }
     // No generator narrative is needed by the fresh reviewer or router.
     Ok(format!(
         "OpenWiki {node_id} completed; Native Audit and source invariants verified"
@@ -397,6 +443,9 @@ async fn publish(
                 && item.status == db::models::workflow::NodeExecutionStatus::Succeeded),
             "Bootstrap refinement is incomplete"
         );
+        let raw: String = sqlx::query_scalar("SELECT output_text FROM node_executions WHERE run_id = ? AND node_id = 'refine' AND iteration = 0 AND status = 'succeeded'")
+            .bind(run_id).fetch_one(&deployment.db().pool).await?;
+        RefinementReport::parse(&raw, &review)?.validate_files(&ctx.root)?;
     }
     ensure!(
         ctx.state.bootstrap.as_ref().unwrap().phase != OpenWikiBootstrapPhase::CleaningUp,

@@ -451,6 +451,10 @@ impl AgentRunReconciliationBoundary for DeploymentAgentRunReconciliationBoundary
                                 validated_output = output;
                                 Some(validated_output.as_str())
                             }
+                            Err(error) if error.downcast_ref::<crate::routes::openwiki::completion::CompletionPending>().is_some() => {
+                                all_active_agent_runs_terminal = false;
+                                continue;
+                            }
                             Err(error) => {
                                 let message =
                                     format!("Bootstrap {node_id} validation failed: {error:#}");
