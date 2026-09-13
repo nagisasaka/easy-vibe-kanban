@@ -9,7 +9,8 @@ import { RepositoryMemorySettings } from './RepositoryMemorySettings';
 function render(
   repoId: string,
   status: RepositoryMemoryState['status'],
-  active = false
+  active = false,
+  bootstrap = false
 ) {
   const query = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -26,6 +27,9 @@ function render(
     target_branch: 'main',
     last_success: status === 'uninitialized' ? null : '2026-09-13T00:00:00Z',
     active_run_id: active ? 'active-run' : null,
+    bootstrap: bootstrap
+      ? { workflow_run_id: 'bootstrap-run', phase: 'reviewing', child: null }
+      : null,
     maintenance_workspace_id: `maintenance-${repoId}`,
     error: status === 'error' ? 'OpenWiki finalisation failed' : null,
   });
@@ -42,6 +46,12 @@ function render(
 }
 
 describe('repository memory settings', () => {
+  it('keeps the workflow owner active between child AgentRuns', () => {
+    const markup = render('a', 'initializing', false, true);
+    expect(markup).toContain('reviewing');
+    expect(markup).toContain('disabled=""');
+    expect(markup).toContain('independent read-only review');
+  });
   it('distinguishes initialisation and sync and exposes errors without claiming current', () => {
     expect(render('a', 'uninitialized')).toContain('Initialize Wiki');
     const error = render('a', 'error');

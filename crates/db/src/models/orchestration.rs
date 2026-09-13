@@ -2,9 +2,10 @@ use chrono::{DateTime, Duration, Utc};
 use executors::runtime::{
     AgentRunPortCommand, AgentRunPortCommandEnvelope, AgentRunStatus, AgentRuntimeMessageRole,
     ContractVersionError, OrchestrationCommandValidationError, OrchestrationEventEnvelope,
-    OrchestrationNodeStatus, OrchestrationPlanSnapshot, OrchestrationReducerApply,
-    OrchestrationReducerError, OrchestrationRunStatus, OrchestrationState, ProjectionStatus,
-    UpstreamHandoff, UpstreamSourceReference, reduce_orchestration_event,
+    OrchestrationEventPayload, OrchestrationNodeStatus, OrchestrationPlanSnapshot,
+    OrchestrationReducerApply, OrchestrationReducerError, OrchestrationRunStatus,
+    OrchestrationState, ProjectionStatus, UpstreamHandoff, UpstreamSourceReference,
+    reduce_orchestration_event,
 };
 use serde::Serialize;
 use sqlx::{FromRow, SqliteConnection, SqlitePool, types::Json};
@@ -273,6 +274,67 @@ impl OrchestrationRunRecord {
 }
 
 impl OrchestrationEventRecord {
+    /// Product validation and its durable status fact share one commit. A failed
+    /// audit append must never leave an unaudited successful child projection.
+    pub async fn append_product_completion(
+        pool: &SqlitePool,
+        event: &OrchestrationEventEnvelope,
+    ) -> Result<OrchestrationReducerApply, OrchestrationPersistenceError> {
+        let OrchestrationEventPayload::NodeStatusChanged {
+            node_execution_id,
+            status,
+        } = event.payload
+        else {
+            return Err(OrchestrationPersistenceError::IdempotencyConflict {
+                entity: "product completion payload",
+                key: event.event_id.to_string(),
+            });
+        };
+        let mut tx = pool.begin().await?;
+        let (key, current): (String, OrchestrationNodeStatus) = sqlx::query_as(
+            "SELECT node_key, status FROM orchestration_node_executions WHERE id = ? AND orchestration_run_id = ?",
+        ).bind(node_execution_id).bind(event.orchestration_run_id).fetch_one(&mut *tx).await?;
+        let plan: Json<OrchestrationPlanSnapshot> =
+            sqlx::query_scalar("SELECT plan_snapshot FROM orchestration_runs WHERE id = ?")
+                .bind(event.orchestration_run_id)
+                .fetch_one(&mut *tx)
+                .await?;
+        let terminal = |value| {
+            matches!(
+                value,
+                OrchestrationNodeStatus::Succeeded
+                    | OrchestrationNodeStatus::Failed
+                    | OrchestrationNodeStatus::Cancelled
+            )
+        };
+        if !terminal(status)
+            || !plan
+                .nodes
+                .iter()
+                .any(|node| node.node_key == key && node.requires_product_validation)
+            || (terminal(current) && current != status)
+        {
+            return Err(OrchestrationPersistenceError::IdempotencyConflict {
+                entity: "product completion",
+                key: node_execution_id.to_string(),
+            });
+        }
+        if current == status {
+            return Ok(OrchestrationReducerApply::Duplicate);
+        }
+        let applied = append_and_project_in_transaction(&mut tx, event).await?;
+        sqlx::query(
+            "UPDATE orchestration_node_executions SET status = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(status)
+        .bind(event.timestamp)
+        .bind(node_execution_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(applied)
+    }
+
     /// Append one orchestration fact and update its reducer-owned projection
     /// atomically. A duplicate event is acknowledged without changing state.
     pub async fn append_and_project(
@@ -1537,6 +1599,7 @@ mod tests {
             product_kind: OrchestrationProductKind::Workflow,
             workspace_mode: WorkspaceMode::SharedWorkspace,
             nodes: vec![OrchestrationPlanNode {
+                requires_product_validation: false,
                 node_key: "implement".to_string(),
                 stable_order: 0,
                 dependencies: Vec::new(),
@@ -1978,6 +2041,100 @@ mod tests {
                 .unwrap()
                 .expect("second queue item should resume after terminal state");
         assert_eq!(resumed.target_node_execution_id, second_target);
+    }
+
+    #[tokio::test]
+    async fn product_completion_is_gated_atomic_and_idempotent() {
+        let pool = setup_pool().await;
+        let mut plan = plan();
+        plan.nodes[0].requires_product_validation = true;
+        let run_id = Uuid::new_v4();
+        OrchestrationRunRecord::persist_before_dispatch(
+            &pool,
+            run_id,
+            Uuid::new_v4(),
+            "product-validation",
+            run_id,
+            &plan,
+        )
+        .await
+        .unwrap();
+        let node_id = Uuid::new_v4();
+        OrchestrationNodeExecutionRecord::persist_identity_before_dispatch(
+            &pool,
+            node_id,
+            run_id,
+            "implement",
+            0,
+            0,
+        )
+        .await
+        .unwrap();
+        let mut event = OrchestrationEventEnvelope {
+            schema_version: 1,
+            payload_version: 1,
+            event_id: Uuid::new_v4(),
+            orchestration_run_id: run_id,
+            sequence: 1,
+            correlation_id: run_id,
+            timestamp: Utc::now(),
+            payload: OrchestrationEventPayload::NodeStatusChanged {
+                node_execution_id: node_id,
+                status: OrchestrationNodeStatus::Succeeded,
+            },
+        };
+        // Failure after the event INSERT must roll both projections and audit back.
+        sqlx::raw_sql("CREATE TRIGGER reject_product BEFORE UPDATE ON orchestration_node_executions BEGIN SELECT RAISE(ABORT, 'fixture write failure'); END;")
+            .execute(&pool).await.unwrap();
+        assert!(
+            OrchestrationEventRecord::append_product_completion(&pool, &event)
+                .await
+                .is_err()
+        );
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM orchestration_node_executions WHERE id = ?")
+                .bind(node_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(status, "pending");
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orchestration_events")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+        sqlx::query("DROP TRIGGER reject_product")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            OrchestrationEventRecord::append_product_completion(&pool, &event)
+                .await
+                .unwrap(),
+            OrchestrationReducerApply::Applied
+        );
+        event.event_id = Uuid::new_v4();
+        event.sequence = 2;
+        assert_eq!(
+            OrchestrationEventRecord::append_product_completion(&pool, &event)
+                .await
+                .unwrap(),
+            OrchestrationReducerApply::Duplicate
+        );
+        event.payload = OrchestrationEventPayload::NodeStatusChanged {
+            node_execution_id: node_id,
+            status: OrchestrationNodeStatus::Failed,
+        };
+        assert!(
+            OrchestrationEventRecord::append_product_completion(&pool, &event)
+                .await
+                .is_err()
+        );
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM orchestration_events")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
     }
 
     #[tokio::test]

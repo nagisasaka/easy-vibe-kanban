@@ -64,14 +64,15 @@ export function RepositoryMemorySettings({
       setBusy(false);
     }
   };
-  const active = state?.active_run_id != null;
+  const active = state?.active_run_id != null || state?.bootstrap != null;
   return (
     <SettingsCard
       title="OpenWiki repository memory"
-      description="Canonical openwiki/ is maintained against the integrated branch by one dedicated Codex session. Coding workspaces only read it and keep their own shared Workspace Memory."
+      description="Canonical openwiki/ is maintained against the integrated branch in a dedicated workspace. Initial generation receives an independent read-only review and optional refinement before publication. Coding workspaces only read it and keep their own shared Workspace Memory."
     >
       <p className="text-sm text-normal" role="status">
         Status: {state?.status ?? 'Loading…'}
+        {state?.bootstrap && ` · ${state.bootstrap.phase}`}
       </p>
       <SettingsCheckbox
         id={`openwiki-enabled-${repo.id}`}

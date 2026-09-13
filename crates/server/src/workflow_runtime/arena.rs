@@ -390,6 +390,7 @@ async fn launch_arena_candidates(
             .map(|(index, candidate)| {
                 let provider = direct_provider_for_agent(candidate.executor_config.executor)?;
                 Ok(OrchestrationPlanNode {
+                    requires_product_validation: false,
                     node_key: candidate.node_key.clone(),
                     stable_order: u32::try_from(index).unwrap_or(u32::MAX),
                     dependencies: Vec::new(),

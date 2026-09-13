@@ -183,6 +183,31 @@ pub fn restore(
     Ok(())
 }
 
+/// Begin a *new* writer phase after a completed restoration. The original
+/// snapshot is retained; this never reopens an old AgentRun reservation.
+pub fn prepare_next_phase(
+    store: &RepositoryMemoryStore,
+    workspace_id: Uuid,
+    root: &Path,
+    source_commit: &str,
+) -> anyhow::Result<()> {
+    restore(store, workspace_id, root, source_commit)?;
+    let mut checkpoint = store
+        .wiki_setup(workspace_id)?
+        .context("Missing original instruction journal")?;
+    validate_identity(&checkpoint, workspace_id, root, source_commit)?;
+    ensure!(
+        checkpoint.phase == WikiSetupPhase::Restored,
+        "Previous writer phase is not restored"
+    );
+    checkpoint.phase = WikiSetupPhase::Preparing;
+    for entry in &mut checkpoint.files {
+        entry.restoring_from = None;
+    }
+    store.save_wiki_setup(&checkpoint)?;
+    prepare(store, workspace_id, root, source_commit)
+}
+
 fn validate_identity(
     checkpoint: &WikiSetupCheckpoint,
     workspace_id: Uuid,
@@ -574,6 +599,36 @@ mod tests {
     const CLAUDE: &str = "# Other user rules\n";
     const BLOCK: &str =
         "<!-- OPENWIKI:START -->\nGenerated setup guidance\n<!-- OPENWIKI:END -->\n";
+
+    #[test]
+    fn bootstrap_writer_phases_restore_originals_without_moving_head() {
+        let fixture = Fixture::new();
+        fixture.prepare();
+        fixture.write("AGENTS.md", &format!("{AGENTS}{BLOCK}"));
+        fixture.write("openwiki/new.md", "generated page");
+        restore(&fixture.store, fixture.id, &fixture.root, &fixture.source).unwrap();
+        assert_eq!(
+            fs::read_to_string(fixture.root.join("AGENTS.md")).unwrap(),
+            AGENTS
+        );
+        assert!(prepare(&fixture.store, fixture.id, &fixture.root, &fixture.source).is_err());
+        prepare_next_phase(&fixture.store, fixture.id, &fixture.root, &fixture.source).unwrap();
+        fixture.write("AGENTS.md", &format!("{AGENTS}{BLOCK}"));
+        fixture.write("openwiki/new.md", "refined page");
+        restore(&fixture.store, fixture.id, &fixture.root, &fixture.source).unwrap();
+        assert_eq!(
+            fs::read_to_string(fixture.root.join("AGENTS.md")).unwrap(),
+            AGENTS
+        );
+        assert_eq!(
+            super::super::git_text(&fixture.root, &["rev-parse", "HEAD"]).unwrap(),
+            fixture.source
+        );
+        assert_eq!(
+            fs::read_to_string(fixture.root.join("openwiki/new.md")).unwrap(),
+            "refined page"
+        );
+    }
 
     struct Fixture {
         temp: tempfile::TempDir,

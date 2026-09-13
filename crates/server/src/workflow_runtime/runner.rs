@@ -156,6 +156,16 @@ pub enum AgentNodeExecution {
 #[async_trait]
 pub trait WorkflowAgentExecutor: Send + Sync {
     async fn run_agent(&self, request: AgentNodeRequest) -> Result<AgentNodeExecution, ApiError>;
+
+    fn owns_repository_execution(&self) -> bool {
+        false
+    }
+
+    async fn publish_repository(&self, _run_id: Uuid) -> Result<Option<String>, ApiError> {
+        Err(ApiError::BadRequest(
+            "Repository workflow requires its maintenance owner".into(),
+        ))
+    }
 }
 
 #[async_trait]
@@ -305,11 +315,22 @@ impl AgentRunReconciliationBoundary for UnconfiguredAgentRunReconciliationBounda
 #[derive(Clone)]
 pub struct DeploymentAgentRunReconciliationBoundary {
     deployment: DeploymentImpl,
+    repository_owned: bool,
 }
 
 impl DeploymentAgentRunReconciliationBoundary {
     pub fn new(deployment: DeploymentImpl) -> Self {
-        Self { deployment }
+        Self {
+            deployment,
+            repository_owned: false,
+        }
+    }
+
+    pub(super) fn for_repository(deployment: DeploymentImpl) -> Self {
+        Self {
+            deployment,
+            repository_owned: true,
+        }
     }
 }
 
@@ -320,6 +341,15 @@ impl AgentRunReconciliationBoundary for DeploymentAgentRunReconciliationBoundary
         pool: &SqlitePool,
         run_id: Uuid,
     ) -> Result<AgentRunReconciliationResult, ApiError> {
+        let repository_id: Option<Uuid> =
+            sqlx::query_scalar("SELECT repository_id FROM workflow_runs WHERE id = ?")
+                .bind(run_id)
+                .fetch_optional(pool)
+                .await?
+                .flatten();
+        if repository_id.is_some() && !self.repository_owned {
+            return Ok(AgentRunReconciliationResult::default());
+        }
         let Some(orchestration_run_id) = sqlx::query_scalar::<_, Option<Uuid>>(
             "SELECT orchestration_run_id FROM workflow_runs WHERE id = ?",
         )
@@ -406,6 +436,60 @@ impl AgentRunReconciliationBoundary for DeploymentAgentRunReconciliationBoundary
 
             match state.status {
                 AgentRunStatus::Succeeded => {
+                    let validated_output;
+                    let terminal_output = if self.repository_owned {
+                        match super::bootstrap::validate_child_completion(
+                            &self.deployment,
+                            run_id,
+                            &node_id,
+                            agent_run_id,
+                            terminal_output.unwrap_or_default(),
+                        )
+                        .await
+                        {
+                            Ok(output) => {
+                                validated_output = output;
+                                Some(validated_output.as_str())
+                            }
+                            Err(error) => {
+                                let message =
+                                    format!("Bootstrap {node_id} validation failed: {error:#}");
+                                mark_canonical_node_failed(
+                                    pool,
+                                    run_id,
+                                    &node_id,
+                                    iteration,
+                                    session_id,
+                                    orchestration_node_execution_id,
+                                    agent_run_id,
+                                    &message,
+                                )
+                                .await?;
+                                service
+                                    .complete_product_node(
+                                        orchestration_run_id,
+                                        orchestration_node_execution_id,
+                                        executors::runtime::OrchestrationNodeStatus::Failed,
+                                    )
+                                    .await
+                                    .map_err(orchestration_api_error)?;
+                                outcome.failed = true;
+                                continue;
+                            }
+                        }
+                    } else {
+                        terminal_output
+                    };
+                    if self.repository_owned {
+                        service
+                            .complete_product_node(
+                                orchestration_run_id,
+                                orchestration_node_execution_id,
+                                executors::runtime::OrchestrationNodeStatus::Succeeded,
+                            )
+                            .await
+                            .map_err(orchestration_api_error)?;
+                    }
                     if node_type == node_kind_value(&WorkflowNodeKind::Condition) {
                         let completion = complete_condition_router(
                             pool,
@@ -618,12 +702,15 @@ impl DeploymentWorkflowAgentExecutor {
 
 #[async_trait]
 impl WorkflowAgentExecutor for DeploymentWorkflowAgentExecutor {
-    async fn run_agent(&self, request: AgentNodeRequest) -> Result<AgentNodeExecution, ApiError> {
+    async fn run_agent(
+        &self,
+        mut request: AgentNodeRequest,
+    ) -> Result<AgentNodeExecution, ApiError> {
         let pool = &self.deployment.db().pool;
         let workspace = Workspace::find_by_id(pool, request.workspace_id)
             .await?
             .ok_or(ApiError::Workspace(WorkspaceError::WorkspaceNotFound))?;
-        let executor_config = executor_config_from_node(request.executor_config).await?;
+        let executor_config = executor_config_from_node(request.executor_config.clone()).await?;
 
         let session = if let Some(session_id) = request.session_id {
             let session =
@@ -694,6 +781,14 @@ impl WorkflowAgentExecutor for DeploymentWorkflowAgentExecutor {
             path: workspace_path,
         };
         let created_at = Utc::now();
+        super::bootstrap::prepare_child_dispatch(
+            &self.deployment,
+            &mut request,
+            session.id,
+            agent_run_id,
+        )
+        .await
+        .map_err(orchestration_api_error)?;
         let idempotency_key = format!(
             "workflow:{}:node:{}:iteration:{}:create",
             request.run_id, request.node_id, request.iteration
@@ -884,6 +979,15 @@ where
     let workflow = get_workflow_template(pool, workflow_id).await?;
     let mut graph: WorkflowGraph = serde_json::from_str(&workflow.graph_json)
         .map_err(|err| ApiError::BadRequest(format!("Invalid workflow graph JSON: {err}")))?;
+    if graph
+        .nodes
+        .iter()
+        .any(|node| node.data.decision_source.is_some())
+    {
+        return Err(ApiError::BadRequest(
+            "System repository workflows must be started through Repository Settings".into(),
+        ));
+    }
     validate_graph_for_run(&graph)
         .map_err(|err| ApiError::BadRequest(format!("Invalid workflow graph: {err}")))?;
 
@@ -929,7 +1033,7 @@ where
         pool,
         run_id,
         &graph,
-        trigger.issue_id,
+        Some(trigger.issue_id),
         workspace_id,
         &trigger.input_text,
         agent_executor,
@@ -938,6 +1042,65 @@ where
     .await?;
 
     get_workflow_run_response(pool, run_id).await
+}
+
+/// Reserve a server-managed run on an already-owned repository workspace.
+/// No Issue/Attempt and no dispatch: the caller persists ownership first.
+pub(super) async fn reserve_repository_workflow(
+    pool: &SqlitePool,
+    run_id: Uuid,
+    repository_id: Uuid,
+    workspace_id: Uuid,
+    mut graph: WorkflowGraph,
+) -> Result<(), ApiError> {
+    let template_id =
+        Uuid::parse_str(workflow::templates::OPENWIKI_BOOTSTRAP_ID).expect("system UUID");
+    get_workflow_template(pool, template_id).await?;
+    validate_graph_for_run(&graph).map_err(orchestration_api_error)?;
+    ensure_agent_node_sessions(pool, workspace_id, &mut graph).await?;
+    sqlx::query("INSERT INTO workflow_runs (id, workflow_id, repository_id, workspace_id, trigger_source, input_text, graph_snapshot, status, started_at) VALUES (?, ?, ?, ?, 'openwiki_bootstrap', '', ?, 'running', datetime('now','subsec'))")
+        .bind(run_id).bind(template_id).bind(repository_id).bind(workspace_id)
+        .bind(serde_json::to_string(&graph).map_err(orchestration_api_error)?)
+        .execute(pool).await?;
+    let orchestration_id =
+        start_workflow_orchestration(pool, run_id, template_id, workspace_id, &graph).await?;
+    sqlx::query("UPDATE workflow_runs SET orchestration_run_id = ? WHERE id = ?")
+        .bind(orchestration_id)
+        .bind(run_id)
+        .execute(pool)
+        .await?;
+    initialize_node_executions(pool, run_id, &graph).await?;
+    link_workflow_node_execution_identities(pool, run_id, orchestration_id).await?;
+    emit_run_status(run_id, WorkflowRunStatus::Running, None, None);
+    Ok(())
+}
+
+pub(super) async fn drive_repository_workflow<A: WorkflowAgentExecutor>(
+    pool: &SqlitePool,
+    run_id: Uuid,
+    executor: &A,
+) -> Result<(), ApiError> {
+    let current = get_workflow_run_response(pool, run_id).await?;
+    if current.repository_id.is_none()
+        || !matches!(
+            current.status,
+            WorkflowRunStatus::Running | WorkflowRunStatus::Pending
+        )
+    {
+        return Ok(());
+    }
+    let run = load_runtime_run(pool, run_id).await?;
+    drive_workflow_run(
+        pool,
+        run_id,
+        &run.graph,
+        run.issue_id,
+        run.workspace_id,
+        &run.input_text,
+        executor,
+        &NoopWorkflowArenaCreator,
+    )
+    .await
 }
 
 async fn start_workflow_orchestration(
@@ -971,6 +1134,8 @@ async fn start_workflow_orchestration(
                         serde_json::from_value::<ExecutorConfig>(value.clone()).ok()
                     });
                 OrchestrationPlanNode {
+                    requires_product_validation: workflow_id.to_string()
+                        == workflow::templates::OPENWIKI_BOOTSTRAP_ID,
                     node_key: node.id.clone(),
                     stable_order: u32::try_from(index).unwrap_or(u32::MAX),
                     dependencies: graph
@@ -980,7 +1145,17 @@ async fn start_workflow_orchestration(
                         .map(|edge| edge.source.clone())
                         .collect(),
                     join: OrchestrationJoinPolicy::All,
-                    failure_policy: OrchestrationFailurePolicy::FailFast,
+                    failure_policy: if workflow_id.to_string()
+                        == workflow::templates::OPENWIKI_BOOTSTRAP_ID
+                        && matches!(node.id.as_str(), "pass" | "refine")
+                    {
+                        // An unselected branch is canonically cancelled. Its
+                        // product node still uses Bootstrap fail-fast handling
+                        // if it actually runs and fails.
+                        OrchestrationFailurePolicy::AllowPartial
+                    } else {
+                        OrchestrationFailurePolicy::FailFast
+                    },
                     remaining_upstreams: RemainingUpstreamsPolicy::Continue,
                     each_downstream_execution: EachDownstreamExecution::Parallel,
                     retry: OrchestrationRetryPolicy::default(),
@@ -1086,7 +1261,7 @@ fn workflow_graph_snapshot_version(graph: &WorkflowGraph) -> Result<String, ApiE
     Ok(format!("sha256:{digest:x}"))
 }
 
-fn stable_workflow_identity(
+pub(super) fn stable_workflow_identity(
     orchestration_run_id: Uuid,
     node_execution_id: Uuid,
     iteration: i64,
@@ -1236,7 +1411,7 @@ pub async fn get_workflow_run_response(
 ) -> Result<WorkflowRunResponse, ApiError> {
     let row = sqlx::query(
         r#"
-        SELECT id, orchestration_run_id, workflow_id, attempt_id, issue_id, workspace_id, trigger_source, input_text,
+        SELECT id, orchestration_run_id, workflow_id, attempt_id, issue_id, repository_id, workspace_id, trigger_source, input_text,
                output_text, status, started_at, finished_at, error_text, created_at, updated_at
         FROM workflow_runs
         WHERE id = ?
@@ -1263,6 +1438,7 @@ pub async fn get_workflow_run_response(
         workflow_id: row.try_get("workflow_id")?,
         attempt_id: row.try_get("attempt_id")?,
         issue_id: row.try_get("issue_id")?,
+        repository_id: row.try_get("repository_id")?,
         workspace_id: row.try_get("workspace_id")?,
         trigger_source: row.try_get("trigger_source")?,
         input_text: row.try_get("input_text")?,
@@ -1651,6 +1827,11 @@ where
     R: WorkflowArenaCreator,
 {
     let run = load_runtime_run(pool, run_id).await?;
+    if run.issue_id.is_none() {
+        return Err(ApiError::BadRequest(
+            "Bootstrap cannot retry individual nodes; start a new Initialise Wiki request".into(),
+        ));
+    }
     let node = run
         .graph
         .nodes
@@ -1730,6 +1911,9 @@ where
     B: AgentRunReconciliationBoundary,
 {
     let current = get_workflow_run_response(pool, run_id).await?;
+    if current.repository_id.is_some() && !agent_executor.owns_repository_execution() {
+        return Ok(current);
+    }
     if !matches!(
         current.status,
         WorkflowRunStatus::Pending
@@ -1841,7 +2025,7 @@ where
 #[derive(Debug)]
 struct RuntimeRun {
     graph: WorkflowGraph,
-    issue_id: Uuid,
+    issue_id: Option<Uuid>,
     workspace_id: Uuid,
     input_text: String,
 }
@@ -2059,7 +2243,7 @@ async fn drive_workflow_run<A, R>(
     pool: &SqlitePool,
     run_id: Uuid,
     graph: &WorkflowGraph,
-    issue_id: Uuid,
+    issue_id: Option<Uuid>,
     workspace_id: Uuid,
     run_input_text: &str,
     agent_executor: &A,
@@ -2069,6 +2253,11 @@ where
     A: WorkflowAgentExecutor,
     R: WorkflowArenaCreator,
 {
+    if issue_id.is_none() && !agent_executor.owns_repository_execution() {
+        return Err(ApiError::BadRequest(
+            "Only the repository maintenance owner may advance this workflow".into(),
+        ));
+    }
     let runner = WorkflowRunner::from_graph(graph.clone());
 
     loop {
@@ -2142,7 +2331,7 @@ async fn execute_ready_node<A, R>(
     graph: &WorkflowGraph,
     node: &WorkflowNode,
     iteration: i64,
-    issue_id: Uuid,
+    issue_id: Option<Uuid>,
     workspace_id: Uuid,
     run_input_text: &str,
     agent_executor: &A,
@@ -2236,6 +2425,43 @@ where
                     Ok(RunStep::Stop)
                 }
             }
+        }
+        WorkflowNodeKind::Condition if node.data.decision_source.is_some() => {
+            if issue_id.is_some() || !agent_executor.owns_repository_execution() {
+                return Err(ApiError::BadRequest(
+                    "Deterministic coverage routing is restricted to the system Bootstrap workflow"
+                        .into(),
+                ));
+            }
+            let raw = context
+                .upstream_outputs
+                .first()
+                .ok_or_else(|| ApiError::BadRequest("Missing validated coverage review".into()))?;
+            let review =
+                services::services::openwiki::bootstrap::CoverageReview::parse(&raw.output_text)
+                    .map_err(orchestration_api_error)?;
+            let (selected, skipped) = match review.verdict {
+                services::services::openwiki::bootstrap::CoverageVerdict::Pass => {
+                    ("pass", "refine")
+                }
+                services::services::openwiki::bootstrap::CoverageVerdict::NeedsRefinement => {
+                    ("refine", "pass")
+                }
+            };
+            let output =
+                json!({"selected_target_node_ids":[selected], "review":review}).to_string();
+            mark_node_succeeded(pool, run_id, &node.id, iteration, Some(&output), None).await?;
+            mark_skipped_targets(pool, run_id, &[skipped.into()]).await?;
+            Ok(RunStep::Continue)
+        }
+        WorkflowNodeKind::End if issue_id.is_none() => {
+            // Leave this host node pending on publication I/O failure. The
+            // repository owner decides between bounded replay and cleanup.
+            let Some(output) = agent_executor.publish_repository(run_id).await? else {
+                return Ok(RunStep::Pause);
+            };
+            mark_node_succeeded(pool, run_id, &node.id, iteration, Some(&output), None).await?;
+            Ok(RunStep::Continue)
         }
         WorkflowNodeKind::Condition => {
             let pre_worktree_snapshot = workflow_worktree_snapshot(pool, workspace_id).await?;
@@ -2368,6 +2594,9 @@ where
             }
         }
         WorkflowNodeKind::Arena => {
+            let issue_id = issue_id.ok_or_else(|| {
+                ApiError::BadRequest("Repository workflows do not support Arena nodes".into())
+            })?;
             let prompt = render_arena_prompt(node, &context);
             mark_node_running(pool, run_id, &node.id, iteration, Some(&prompt)).await?;
             match arena_creator
@@ -2983,7 +3212,7 @@ pub fn spawn_workflow_completion_watcher(deployment: DeploymentImpl) {
                  AND links.orchestration_run_id = wr.orchestration_run_id
                 JOIN agent_run_state agent_state
                   ON agent_state.agent_run_id = links.agent_run_id
-                WHERE (
+                WHERE wr.repository_id IS NULL AND (
                     ne.status IN ('running', 'awaiting_human', 'awaiting_arena', 'cancelling')
                     OR agent_state.status IN (
                         'pending', 'starting', 'running',
@@ -3861,7 +4090,7 @@ async fn update_node_execution(
     Ok(())
 }
 
-async fn update_run_status(
+pub(super) async fn update_run_status(
     pool: &SqlitePool,
     run_id: Uuid,
     status: WorkflowRunStatus,
@@ -4136,6 +4365,10 @@ fn node_kind_value(kind: &WorkflowNodeKind) -> &'static str {
         WorkflowNodeKind::Arena => "arena",
     }
 }
+
+#[cfg(test)]
+#[path = "bootstrap_tests.rs"]
+mod bootstrap_tests;
 
 #[cfg(test)]
 mod tests {

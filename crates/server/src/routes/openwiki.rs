@@ -104,7 +104,7 @@ pub async fn configure(
     let store = RepositoryMemoryStore::for_repository(&repo.name, repo.id)?;
     let _lock = store.try_lock()?;
     let mut state = store.state()?;
-    if state.active_run_id.is_some() {
+    if state.active_run_id.is_some() || state.bootstrap.is_some() {
         return Err(api_error(
             "Repository maintenance is active; stop or finish that AgentRun before changing configuration",
         ));
@@ -149,15 +149,19 @@ pub async fn start_reconciliation(deployment: &DeploymentImpl, id: Uuid) -> anyh
     if !state.enabled {
         bail!("Enable OpenWiki repository memory first");
     }
-    if state.active_run_id.is_some() {
+    if state.active_run_id.is_some() || state.bootstrap.is_some() {
         bail!(
             "Repository maintenance already has an active AgentRun; inspect its workspace or wait for recovery"
         );
     }
     let result = prepare_run(deployment, &repo, &store, &mut state).await;
     if let Err(error) = result {
+        state = store.state()?;
         state.status = RepositoryWikiStatus::Error;
         state.error = Some(format!("{error:#}"));
+        if let Some(owner) = &mut state.bootstrap {
+            owner.phase = utils::repository_memory::OpenWikiBootstrapPhase::CleaningUp;
+        }
         store.save_state(&state)?;
         return Err(error);
     }
@@ -277,6 +281,15 @@ async fn prepare_run(
     )?;
     // First bootstrap is explicit init; subsequent sync preserves existing Wiki.
     let initial = !root.join("openwiki/index.md").exists();
+    if initial {
+        state.active_source_commit = Some(source.clone());
+        state.active_event_ids = events.iter().map(|event| event.event_id).collect();
+        state.error = None;
+        return crate::workflow_runtime::bootstrap::start(
+            deployment, repo, store, state, &workspace, &root,
+        )
+        .await;
+    }
     let prompt =
         OpenWikiAdapter::maintenance_prompt(&root, initial, &state.output_language, &hints);
     let skill_path = OpenWikiAdapter::installed_skill_path(&root, project_scope)?;
@@ -340,7 +353,7 @@ async fn prepare_run(
 
 /// Native Audit checksum validation precedes inspection; only root-thread
 /// OpenWiki MCP completion frames can acknowledge semantic events.
-async fn completion_proof(
+pub(crate) async fn completion_proof(
     deployment: &DeploymentImpl,
     run: &AgentRunRecord,
     root: &FsPath,
@@ -383,6 +396,9 @@ async fn recover_repository(deployment: &DeploymentImpl, repo: &Repo) -> anyhow:
     let mut state = store.state()?;
     observe_recorded_pr_integrations(deployment, repo, &store).await?;
     recover_integrations(&store, &repo.path)?;
+    if state.bootstrap.is_some() {
+        return crate::workflow_runtime::bootstrap::recover_locked(deployment, repo, &store).await;
+    }
     let Some(run_id) = state.active_run_id else {
         // Initialisation requires an explicit request. After that, merged
         // source events trigger maintenance; errors require an explicit retry
@@ -423,6 +439,16 @@ async fn recover_repository(deployment: &DeploymentImpl, repo: &Repo) -> anyhow:
         // successful host owner/checkpoint and retry; never pay for another run.
         return Ok(());
     }
+    record_reconciliation_result(&store, &mut state, result)
+}
+
+/// Shared receipt/freshness completion for the single-host Sync and the
+/// Workflow-owned Bootstrap. Call only after publication or confirmed cleanup.
+pub(crate) fn record_reconciliation_result(
+    store: &RepositoryMemoryStore,
+    state: &mut RepositoryMemoryState,
+    result: anyhow::Result<(Option<String>, bool)>,
+) -> anyhow::Result<()> {
     let now = chrono::Utc::now();
     match result {
         Ok((wiki_commit, no_op)) => {
@@ -468,9 +494,10 @@ async fn recover_repository(deployment: &DeploymentImpl, repo: &Repo) -> anyhow:
         }
     }
     state.active_run_id = None;
+    state.bootstrap = None;
     state.active_event_ids.clear();
     state.active_source_commit = None;
-    store.save_state(&state)?;
+    store.save_state(state)?;
     Ok(())
 }
 

@@ -8,6 +8,7 @@ use std::{
 use serde_json::Value;
 use tokio::process::Command;
 
+pub mod bootstrap;
 pub mod setup;
 
 pub const OPENWIKI_VERSION: &str = include_str!("../../../../assets/openwiki-version");
@@ -376,9 +377,19 @@ pub struct HostReconciliationProof {
     run_id: Option<String>,
     pub complete: bool,
     pub no_op: bool,
+    pub begin_mode: Option<String>,
+    pub forced: bool,
 }
 
 impl HostReconciliationProof {
+    /// Bootstrap phases require real finalisation, not the normal Sync no-op.
+    pub fn proves_bootstrap_phase(&self, refine: bool) -> bool {
+        self.complete
+            && !self.no_op
+            && self.begin_mode.as_deref() == Some(if refine { "update" } else { "init" })
+            && (!refine || self.forced)
+    }
+
     /// Versioned Codex adapter boundary. Child threads, assistant claims and
     /// incomplete/error tool calls can never acknowledge the repository outbox.
     pub fn observe_codex_frame(
@@ -422,6 +433,11 @@ impl HostReconciliationProof {
                 if arguments.get("root").and_then(Value::as_str) == expected_root.to_str() =>
             {
                 self.complete = false;
+                self.begin_mode = arguments
+                    .get("mode")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                self.forced = arguments.get("force").and_then(Value::as_bool) == Some(true);
                 self.no_op = data.get("status").and_then(Value::as_str) == Some("noop");
                 self.complete = self.no_op;
                 self.run_id = data.get("runId").and_then(Value::as_str).map(str::to_owned);
@@ -574,6 +590,19 @@ mod tests {
     }
 
     #[test]
+    fn publication_rejects_renaming_authoritative_source_into_the_wiki() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("repo");
+        let (_, source, maintenance) = publication_fixture(&root);
+        std::fs::rename(
+            maintenance.join("source.txt"),
+            maintenance.join("openwiki/source.md"),
+        )
+        .unwrap();
+        assert!(publication_paths(&git::GitService::new(), &maintenance, &source).is_err());
+    }
+
+    #[test]
     fn publication_rejects_source_and_user_instruction_changes() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("repo");
@@ -705,6 +734,56 @@ mod tests {
             Err(OpenWikiError::Command(_))
         ));
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn bootstrap_requires_matching_begin_mode_force_and_finalisation() {
+        let root = Path::new("/repo");
+        for (mode, force, refine, expected) in [
+            ("init", false, false, true),
+            ("init", true, true, false),
+            ("update", false, true, false),
+            ("update", true, true, true),
+        ] {
+            let mut proof = HostReconciliationProof::default();
+            proof
+                .observe(
+                    "openwiki_begin",
+                    &json!({"root":"/repo", "mode":mode,"force":force}),
+                    &json!({"runId":"run", "status":"started"}),
+                    root,
+                )
+                .unwrap();
+            assert!(!proof.proves_bootstrap_phase(refine));
+            proof
+                .observe(
+                    "openwiki_finish",
+                    &json!({"runId":"wrong"}),
+                    &json!({"status":"complete"}),
+                    root,
+                )
+                .unwrap();
+            assert!(!proof.proves_bootstrap_phase(refine));
+            proof
+                .observe(
+                    "openwiki_finish",
+                    &json!({"runId":"run"}),
+                    &json!({"status":"complete"}),
+                    root,
+                )
+                .unwrap();
+            assert_eq!(proof.proves_bootstrap_phase(refine), expected);
+        }
+        let mut noop = HostReconciliationProof::default();
+        noop.observe(
+            "openwiki_begin",
+            &json!({"root":"/repo", "mode":"update","force":true}),
+            &json!({"status":"noop"}),
+            root,
+        )
+        .unwrap();
+        assert!(noop.complete && noop.no_op); // Ordinary Sync is unchanged.
+        assert!(!noop.proves_bootstrap_phase(true));
     }
 
     #[test]

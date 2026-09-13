@@ -182,10 +182,13 @@ fn validate_condition_routing_for_run(graph: &WorkflowGraph) -> Result<(), Valid
         return Ok(());
     }
 
-    if graph
-        .router_executor_config
-        .as_ref()
-        .is_none_or(|config| !router_executor_config_has_executor(config))
+    if condition_nodes
+        .iter()
+        .any(|node| node.data.decision_source.is_none())
+        && graph
+            .router_executor_config
+            .as_ref()
+            .is_none_or(|config| !router_executor_config_has_executor(config))
     {
         return Err(ValidationError::new(
             "workflow with condition nodes requires router executor config",

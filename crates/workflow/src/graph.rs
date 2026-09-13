@@ -150,6 +150,9 @@ pub struct WorkflowNodeData {
     pub apply_strategy: Option<ArenaApplyStrategy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub routing_mode: Option<ConditionRoutingMode>,
+    /// Server-managed decision sources are not user-authored LLM routers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision_source: Option<ConditionDecisionSource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branches: Option<Vec<ConditionBranch>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -211,6 +214,12 @@ pub enum ArenaApplyStrategy {
 pub enum ConditionRoutingMode {
     Single,
     Multi,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConditionDecisionSource {
+    OpenWikiCoverageReview,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

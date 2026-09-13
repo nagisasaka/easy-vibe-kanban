@@ -446,7 +446,13 @@ impl GitService {
                 cli::StatusDiffOptions { path_filter: None },
             )
             .map_err(|e| GitServiceError::InvalidRepository(format!("git diff failed: {e}")))?;
-        Ok(entries.into_iter().map(|e| e.path).collect())
+        // A rename changes both paths. Safety consumers (including Wiki-only
+        // publication) must not overlook a source deletion merely because the
+        // destination is inside their allowed artifact directory.
+        Ok(entries
+            .into_iter()
+            .flat_map(|entry| std::iter::once(entry.path).chain(entry.old_path))
+            .collect())
     }
 
     /// Return a raw binary-safe patch for all worktree changes against a base commit.

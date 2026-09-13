@@ -909,7 +909,24 @@ impl Codex {
         env: &ExecutionEnv,
     ) -> ThreadStartParams {
         let mut params = self.build_thread_start_params(cwd);
-        if env
+        let reviewer = env
+            .get("EVK_OPENWIKI_REVIEWER")
+            .is_some_and(|value| value == "1");
+        if reviewer {
+            // A trusted server role, not a prompt or user profile preference.
+            // Overrides apply to this fresh thread only; inherited user/project
+            // MCP and Skill installation remains untouched for other workspaces.
+            params.sandbox = Some(codex_app_server_protocol::SandboxMode::ReadOnly);
+            params.approval_policy = Some(V2AskForApproval::Never);
+            params.permissions = None;
+            params.runtime_workspace_roots = None;
+            let config = params.config.get_or_insert_with(HashMap::new);
+            config.insert("mcp_servers.openwiki.enabled".into(), Value::Bool(false));
+            config.insert(
+                "skills.config".into(),
+                serde_json::json!([{"name":"openwiki", "enabled":false}]),
+            );
+        } else if env
             .get("EVK_OPENWIKI_MAINTENANCE")
             .is_some_and(|value| value == "1")
         {
@@ -930,14 +947,17 @@ impl Codex {
                 serde_json::json!({"OPENWIKI_TELEMETRY_DISABLED":"1"}),
             );
         }
-        if let Some(memory) = env.get("EVK_REPOSITORY_MEMORY_INSTRUCTIONS") {
+        if let Some(memory) = env
+            .get("EVK_REPOSITORY_MEMORY_INSTRUCTIONS")
+            .filter(|_| !reviewer)
+        {
             params.developer_instructions = Some(match params.developer_instructions.take() {
                 Some(existing) => format!("{existing}\n\n{memory}"),
                 None => memory.clone(),
             });
         }
         let roots = env.shared_resource_roots();
-        if !roots.is_empty() {
+        if !reviewer && !roots.is_empty() {
             params.runtime_workspace_roots = Some(
                 std::iter::once(cwd.to_path_buf())
                     .chain(roots)
@@ -1933,6 +1953,37 @@ mod tests {
 #[cfg(test)]
 mod goal_skill_tests {
     use super::*;
+
+    #[test]
+    fn bootstrap_reviewer_overrides_writer_profile_without_shared_config_writes() {
+        let codex: Codex =
+            serde_json::from_value(serde_json::json!({"sandbox":"danger-full-access"})).unwrap();
+        let mut env = ExecutionEnv::new(RepoContext::default(), false, String::new());
+        env.insert("EVK_OPENWIKI_REVIEWER", "1");
+        env.insert("EVK_OPENWIKI_MAINTENANCE", "1");
+        env.insert(
+            "EVK_REPOSITORY_MEMORY_INSTRUCTIONS",
+            "previous task memory must not leak",
+        );
+        env.insert("EVK_SHARED_RESOURCE_ROOTS", r#"["/shared/writable"]"#);
+        let params = codex.build_thread_start_params_with_resources(Path::new("/workspace"), &env);
+        assert_eq!(params.sandbox, Some(V2SandboxMode::ReadOnly));
+        assert_eq!(params.approval_policy, Some(V2AskForApproval::Never));
+        assert!(params.runtime_workspace_roots.is_none());
+        assert!(
+            !params
+                .developer_instructions
+                .unwrap_or_default()
+                .contains("previous task")
+        );
+        let config = params.config.unwrap();
+        assert_eq!(config["mcp_servers.openwiki.enabled"], false);
+        assert!(!config.contains_key("mcp_servers.openwiki.command"));
+        assert_eq!(
+            config["skills.config"],
+            serde_json::json!([{"name":"openwiki","enabled":false}])
+        );
+    }
 
     #[test]
     fn repository_memory_is_persistent_for_initial_and_resumed_threads() {

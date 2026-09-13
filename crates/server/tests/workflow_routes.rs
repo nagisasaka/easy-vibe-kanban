@@ -104,7 +104,8 @@ async fn setup_workflow_pool() -> SqlitePool {
             id             BLOB PRIMARY KEY,
             workflow_id    BLOB NOT NULL,
             attempt_id     BLOB,
-            issue_id       BLOB NOT NULL,
+            issue_id       BLOB,
+            repository_id  BLOB,
             workspace_id   BLOB,
             trigger_source TEXT NOT NULL DEFAULT 'manual',
             input_text     TEXT NOT NULL,
@@ -1281,7 +1282,10 @@ async fn list_project_workflows_seeds_system_templates_and_returns_project_templ
         .await
         .expect("list workflows");
 
-    let built_in_count = workflow::templates::built_in_templates().len();
+    let built_in_count = workflow::templates::built_in_templates()
+        .iter()
+        .filter(|template| template.id != workflow::templates::OPENWIKI_BOOTSTRAP_ID)
+        .count();
     assert_eq!(workflows.len(), built_in_count + 1);
     assert!(
         workflows
@@ -1818,7 +1822,7 @@ async fn workflow_runner_trigger_creates_run_workspace_and_node_executions() {
     .expect("trigger workflow run");
 
     assert_eq!(run.workflow_id, workflow_id);
-    assert_eq!(run.issue_id, issue_id);
+    assert_eq!(run.issue_id, Some(issue_id));
     assert_eq!(run.workspace_id, Some(workspace_id));
     assert_eq!(run.nodes.len(), 3);
     assert_eq!(

@@ -108,11 +108,21 @@ export function WorkflowRunDashboardTab({
     : null;
   const selectedAgentSessionRows = buildAgentSessionRows(run, selectedNodeId);
   const workflowWorkspaceHref = run.workspace_id
-    ? `/projects/${projectId}/issues/${run.issue_id}/workspaces/${run.workspace_id}`
+    ? run.issue_id
+      ? `/projects/${projectId}/issues/${run.issue_id}/workspaces/${run.workspace_id}`
+      : `/workspaces/${run.workspace_id}`
     : null;
   const handleOpenWorkflowWorkspace = useCallback(() => {
     if (!run.workspace_id) return;
-    appNav.goToProjectIssueWorkspace(projectId, run.issue_id, run.workspace_id);
+    if (run.issue_id) {
+      appNav.goToProjectIssueWorkspace(
+        projectId,
+        run.issue_id,
+        run.workspace_id
+      );
+    } else {
+      appNav.goToWorkspace(run.workspace_id);
+    }
   }, [appNav, projectId, run.issue_id, run.workspace_id]);
 
   const handleCancelRun = async () => {
@@ -587,7 +597,7 @@ export function WorkflowRunDashboardTab({
                   </div>
                 )}
 
-              {selectedNodeActionGate.canSelectArenaWinner && (
+              {selectedNodeActionGate.canSelectArenaWinner && run.issue_id && (
                 <WorkflowArenaWinnerPanel
                   arenaGroupId={selectedNode.arena_group_id}
                   issueId={run.issue_id}

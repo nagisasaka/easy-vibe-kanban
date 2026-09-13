@@ -734,6 +734,7 @@ impl LocalAgentRunPort {
             .collect();
         let mut memory_instructions = Vec::new();
         let mut openwiki_maintenance = false;
+        let mut openwiki_reviewer = false;
         let source_completion_allowed =
             executors::executors::provider_adapter::memory_source_completion_allowed(
                 provider,
@@ -751,7 +752,20 @@ impl LocalAgentRunPort {
                     .state()
                     .map_err(|error| AgentRunPortError::Rejected(error.to_string()))?;
                 if state.maintenance_workspace_id == Some(workspace.id) {
-                    if state.maintenance_session_id != Some(request.session_id)
+                    if let Some(owner) = &state.bootstrap {
+                        let child = owner.child.as_ref().ok_or_else(|| {
+                            AgentRunPortError::Rejected(
+                                "Bootstrap has not delegated an active child".into(),
+                            )
+                        })?;
+                        let bound: bool = sqlx::query_scalar(
+                            "SELECT EXISTS(SELECT 1 FROM workflow_runs wr JOIN orchestration_node_executions ne ON ne.orchestration_run_id = wr.orchestration_run_id WHERE wr.id = ? AND wr.repository_id = ? AND wr.workspace_id = ? AND wr.issue_id IS NULL AND wr.status IN ('running','awaiting_human') AND ne.id = ? AND ne.node_key = ?)",
+                        ).bind(owner.workflow_run_id).bind(repo.id).bind(workspace.id).bind(child.node_execution_id).bind(&child.node_id)
+                            .fetch_one(&self.db.pool).await.map_err(port_database)?;
+                        openwiki_reviewer =
+                            bootstrap_child_is_reviewer(&state, request, attempt, provider, bound)?;
+                        openwiki_maintenance = !openwiki_reviewer;
+                    } else if state.maintenance_session_id != Some(request.session_id)
                         || state
                             .active_run_id
                             .is_some_and(|id| id != request.agent_run_id)
@@ -762,8 +776,9 @@ impl LocalAgentRunPort {
                         )
                     {
                         return Err(AgentRunPortError::Rejected("This workspace belongs to repository maintenance. Use Sync Wiki to start a fenced maintenance run.".into()));
+                    } else {
+                        openwiki_maintenance = true;
                     }
-                    openwiki_maintenance = true;
                 } else if state.enabled
                     && source_completion_allowed
                     && !crate::container::should_disable_default_commit_for_workspace(
@@ -820,6 +835,9 @@ impl LocalAgentRunPort {
         env.insert("OPENWIKI_TELEMETRY_DISABLED", "1");
         if openwiki_maintenance {
             env.insert("EVK_OPENWIKI_MAINTENANCE", "1");
+        }
+        if openwiki_reviewer {
+            env.insert("EVK_OPENWIKI_REVIEWER", "1");
         }
         if !memory_instructions.is_empty() {
             env.insert(
@@ -2255,6 +2273,44 @@ impl LocalAgentRunPort {
     }
 }
 
+fn bootstrap_child_is_reviewer(
+    state: &utils::repository_memory::RepositoryMemoryState,
+    request: &AgentRunRequestEnvelope,
+    attempt: &RunAttemptRequest,
+    provider: DirectProvider,
+    bound: bool,
+) -> Result<bool, AgentRunPortError> {
+    use utils::repository_memory::OpenWikiBootstrapPhase;
+    let rejected = || {
+        AgentRunPortError::Rejected(
+            "AgentRun is not the delegated fresh Bootstrap child with the required role".into(),
+        )
+    };
+    let owner = state.bootstrap.as_ref().ok_or_else(rejected)?;
+    let child = owner.child.as_ref().ok_or_else(rejected)?;
+    if !bound
+        || child.session_id != request.session_id
+        || child.agent_run_id != request.agent_run_id
+        || state.active_run_id != Some(request.agent_run_id)
+        || state.maintenance_session_id != Some(request.session_id)
+        || request.intent != AgentRunIntent::Initial
+        || attempt.mode != RunAttemptMode::Launch
+        || provider != DirectProvider::Codex
+    {
+        return Err(rejected());
+    }
+    match (&owner.phase, child.node_id.as_str()) {
+        (OpenWikiBootstrapPhase::Reviewing, "review")
+            if attempt.selected_skills.as_ref().is_none_or(Vec::is_empty) =>
+        {
+            Ok(true)
+        }
+        (OpenWikiBootstrapPhase::Generating, "generate")
+        | (OpenWikiBootstrapPhase::Refining, "refine") => Ok(false),
+        _ => Err(rejected()),
+    }
+}
+
 fn cancellation_terminal_result(status: AgentRunStatus) -> Result<(), AgentRunPortError> {
     if status == AgentRunStatus::Cancelled {
         Ok(())
@@ -2927,6 +2983,80 @@ mod tests {
         );
         env.insert("VK_AGENT_RUN_ID", "frozen-run");
         env
+    }
+
+    #[tokio::test]
+    async fn bootstrap_delegation_requires_exact_fresh_child_and_phase() {
+        use utils::repository_memory::{
+            OpenWikiBootstrapChild, OpenWikiBootstrapOwner, OpenWikiBootstrapPhase,
+            RepositoryMemoryState,
+        };
+        let db = setup_runtime_db().await;
+        let (mut request, mut attempt) = persisted_codex_run(&db).await;
+        let mut state = RepositoryMemoryState {
+            active_run_id: Some(request.agent_run_id),
+            maintenance_session_id: Some(request.session_id),
+            bootstrap: Some(OpenWikiBootstrapOwner {
+                workflow_run_id: Uuid::new_v4(),
+                server_instance_id: Uuid::new_v4(),
+                phase: OpenWikiBootstrapPhase::Reviewing,
+                review_fingerprint: None,
+                child: Some(OpenWikiBootstrapChild {
+                    session_id: request.session_id,
+                    agent_run_id: request.agent_run_id,
+                    node_execution_id: Uuid::new_v4(),
+                    node_id: "review".into(),
+                }),
+            }),
+            ..Default::default()
+        };
+        assert!(
+            bootstrap_child_is_reviewer(&state, &request, &attempt, DirectProvider::Codex, true)
+                .unwrap()
+        );
+        assert!(
+            bootstrap_child_is_reviewer(&state, &request, &attempt, DirectProvider::Codex, false)
+                .is_err()
+        );
+        attempt.mode = RunAttemptMode::Resume;
+        assert!(
+            bootstrap_child_is_reviewer(&state, &request, &attempt, DirectProvider::Codex, true)
+                .is_err()
+        );
+        attempt.mode = RunAttemptMode::Launch;
+        request.intent = AgentRunIntent::FollowUp;
+        assert!(
+            bootstrap_child_is_reviewer(&state, &request, &attempt, DirectProvider::Codex, true)
+                .is_err()
+        );
+        request.intent = AgentRunIntent::Initial;
+        state.bootstrap.as_mut().unwrap().phase = OpenWikiBootstrapPhase::CleaningUp;
+        assert!(
+            bootstrap_child_is_reviewer(&state, &request, &attempt, DirectProvider::Codex, true)
+                .is_err()
+        );
+        state.bootstrap.as_mut().unwrap().phase = OpenWikiBootstrapPhase::Generating;
+        assert!(
+            bootstrap_child_is_reviewer(&state, &request, &attempt, DirectProvider::Codex, true)
+                .is_err()
+        );
+        state
+            .bootstrap
+            .as_mut()
+            .unwrap()
+            .child
+            .as_mut()
+            .unwrap()
+            .node_id = "generate".into();
+        assert!(
+            !bootstrap_child_is_reviewer(&state, &request, &attempt, DirectProvider::Codex, true)
+                .unwrap()
+        );
+        state.active_run_id = Some(Uuid::new_v4());
+        assert!(
+            bootstrap_child_is_reviewer(&state, &request, &attempt, DirectProvider::Codex, true)
+                .is_err()
+        );
     }
 
     #[tokio::test]

@@ -8,6 +8,7 @@ use crate::graph::{
 // Stable system template ids. These ids are persisted by workflow_runs.workflow_id.
 const PLAN_PARALLEL_FULLSTACK_REVIEW_FINALIZE_ID: &str = "8f1f2f0c-0e58-4c7c-8dc1-000000000004";
 const RESEARCH_MULTI_PERSPECTIVE_SYNTHESIZE_ID: &str = "8f1f2f0c-0e58-4c7c-8dc1-000000000005";
+pub const OPENWIKI_BOOTSTRAP_ID: &str = "8f1f2f0c-0e58-4c7c-8dc1-000000000006";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorkflowTemplate {
@@ -29,7 +30,96 @@ pub fn built_in_templates() -> Vec<WorkflowTemplate> {
     vec![
         plan_parallel_fullstack_review_finalize(),
         research_multi_perspective_synthesize(),
+        openwiki_bootstrap(),
     ]
+}
+
+/// Internal repository-owned template. It is not an Issue Workflow preset.
+/// Per-run roots, language, skills and fresh session bindings are frozen by the
+/// server without modifying this shared definition.
+pub fn openwiki_bootstrap() -> WorkflowTemplate {
+    use crate::graph::{ConditionBranch, ConditionDecisionSource, TransformMode};
+    let nodes = [
+        ("start", WorkflowNodeKind::Start),
+        ("generate", WorkflowNodeKind::Agent),
+        ("review", WorkflowNodeKind::Agent),
+        ("decision", WorkflowNodeKind::Condition),
+        ("pass", WorkflowNodeKind::Transform),
+        ("refine", WorkflowNodeKind::Agent),
+        ("publish", WorkflowNodeKind::End),
+    ]
+    .into_iter()
+    .map(|(id, kind)| {
+        let mut data = WorkflowNodeData {
+            display_name: Some(id.into()),
+            include_workflow_context: Some(false),
+            ..Default::default()
+        };
+        if kind == WorkflowNodeKind::Agent {
+            data.executor_config = Some(json!({"executor":"CODEX", "execution_mode":"code"}));
+            data.prompt_template = Some(format!("EVK-managed OpenWiki {id} phase"));
+        }
+        if kind == WorkflowNodeKind::Condition {
+            data.decision_source = Some(ConditionDecisionSource::OpenWikiCoverageReview);
+            data.branches = Some(
+                [("pass", "pass"), ("refine", "needs_refinement")]
+                    .into_iter()
+                    .map(|(target, verdict)| ConditionBranch {
+                        id: Some(verdict.into()),
+                        target_node_id: Some(target.into()),
+                        condition: Some(verdict.into()),
+                    })
+                    .collect(),
+            );
+        }
+        if kind == WorkflowNodeKind::Transform {
+            data.mode = Some(TransformMode::Template);
+            data.template = Some("Coverage review passed".into());
+        }
+        WorkflowNode {
+            id: id.into(),
+            kind,
+            data,
+            position: None,
+        }
+    })
+    .collect();
+    let edges = [
+        ("start", "generate"),
+        ("generate", "review"),
+        ("review", "decision"),
+        ("decision", "pass"),
+        ("decision", "refine"),
+        ("pass", "publish"),
+        ("refine", "publish"),
+    ]
+    .into_iter()
+    .map(|(source, target)| WorkflowEdge {
+        id: format!("{source}-{target}"),
+        source: source.into(),
+        source_handle: None,
+        target: target.into(),
+        target_handle: None,
+        kind: if source == "decision" {
+            WorkflowEdgeKind::ConditionBranch
+        } else {
+            WorkflowEdgeKind::Default
+        },
+        data: None,
+    })
+    .collect();
+    WorkflowTemplate {
+        id: OPENWIKI_BOOTSTRAP_ID,
+        name: "OpenWiki Bootstrap",
+        description: "Repository-managed independent coverage review and optional refinement before publication.",
+        graph: WorkflowGraph {
+            version: 2,
+            nodes,
+            edges,
+            router_executor_config: None,
+            canvas: None,
+        },
+    }
 }
 
 pub fn role_templates() -> Vec<RoleTemplate> {
@@ -338,6 +428,7 @@ mod tests {
             vec![
                 PLAN_PARALLEL_FULLSTACK_REVIEW_FINALIZE_ID,
                 RESEARCH_MULTI_PERSPECTIVE_SYNTHESIZE_ID,
+                OPENWIKI_BOOTSTRAP_ID,
             ]
         );
     }

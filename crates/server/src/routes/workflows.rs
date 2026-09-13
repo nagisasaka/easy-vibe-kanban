@@ -150,7 +150,9 @@ pub struct WorkflowRunResponse {
     pub orchestration_run_id: Option<Uuid>,
     pub workflow_id: Uuid,
     pub attempt_id: Option<Uuid>,
-    pub issue_id: Uuid,
+    pub issue_id: Option<Uuid>,
+    #[serde(default)]
+    pub repository_id: Option<Uuid>,
     pub workspace_id: Option<Uuid>,
     pub trigger_source: String,
     pub input_text: String,
@@ -289,7 +291,8 @@ struct WorkflowRunFallbackRow {
     pub orchestration_run_id: Option<Uuid>,
     pub workflow_id: Uuid,
     pub attempt_id: Option<Uuid>,
-    pub issue_id: Uuid,
+    pub issue_id: Option<Uuid>,
+    pub repository_id: Option<Uuid>,
     pub workspace_id: Option<Uuid>,
     pub trigger_source: String,
     pub input_text: String,
@@ -1313,6 +1316,7 @@ async fn ensure_system_workflows(pool: &SqlitePool) -> Result<(), ApiError> {
 fn built_in_workflow_ids() -> Result<Vec<Uuid>, ApiError> {
     built_in_templates()
         .iter()
+        .filter(|template| template.id != workflow::templates::OPENWIKI_BOOTSTRAP_ID)
         .map(|template| parse_system_template_id(template.id))
         .collect()
 }
@@ -1448,6 +1452,7 @@ fn workflow_run_from_row(row: &SqliteRow) -> Result<WorkflowRunFallbackRow, Work
         workflow_id: row.try_get("workflow_id")?,
         attempt_id: row.try_get("attempt_id")?,
         issue_id: row.try_get("issue_id")?,
+        repository_id: row.try_get("repository_id")?,
         workspace_id: row.try_get("workspace_id")?,
         trigger_source: row.try_get("trigger_source")?,
         input_text: row.try_get("input_text")?,
@@ -1495,7 +1500,7 @@ async fn workflow_run_rows(
     workflow_id: Option<Uuid>,
 ) -> Result<Vec<WorkflowRunFallbackRow>, ApiError> {
     let select = r#"
-        SELECT id, orchestration_run_id, workflow_id, attempt_id, issue_id, workspace_id, trigger_source, input_text,
+        SELECT id, orchestration_run_id, workflow_id, attempt_id, issue_id, repository_id, workspace_id, trigger_source, input_text,
                output_text, status, started_at, finished_at, error_text, created_at, updated_at
         FROM workflow_runs
     "#;
@@ -1938,8 +1943,14 @@ async fn cancel_workflow_run(
     State(deployment): State<DeploymentImpl>,
     Path(run_id): Path<Uuid>,
 ) -> Result<ResponseJson<MutationResponse<WorkflowActionResponse>>, ApiError> {
-    let canceller = DeploymentWorkflowRunCanceller::new(deployment.clone());
-    let run = cancel_workflow_run_runtime(&deployment.db().pool, run_id, &canceller).await?;
+    let current = get_workflow_run_response(&deployment.db().pool, run_id).await?;
+    let run = if current.repository_id.is_some() {
+        crate::workflow_runtime::bootstrap::cancel_owned_run(&deployment, run_id).await?;
+        get_workflow_run_response(&deployment.db().pool, run_id).await?
+    } else {
+        let canceller = DeploymentWorkflowRunCanceller::new(deployment.clone());
+        cancel_workflow_run_runtime(&deployment.db().pool, run_id, &canceller).await?
+    };
     sync_attempt_from_run(&deployment.db().pool, &run).await?;
 
     Ok(ResponseJson(MutationResponse {

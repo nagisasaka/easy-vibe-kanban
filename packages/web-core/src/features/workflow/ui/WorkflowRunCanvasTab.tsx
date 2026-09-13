@@ -1189,7 +1189,7 @@ function NodeDetailsTab({
         </div>
       ) : null}
 
-      {actionGate.canSelectArenaWinner ? (
+      {actionGate.canSelectArenaWinner && run.issue_id ? (
         <WorkflowArenaWinnerPanel
           arenaGroupId={selectedExecution.arena_group_id}
           issueId={run.issue_id}

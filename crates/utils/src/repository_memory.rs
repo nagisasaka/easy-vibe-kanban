@@ -169,6 +169,9 @@ pub struct RepositoryMemoryState {
     pub wiki_commit: Option<String>,
     pub last_success: Option<DateTime<Utc>>,
     pub active_run_id: Option<Uuid>,
+    // Bootstrap's durable owner is the Workflow, not any individual child.
+    #[serde(default)]
+    pub bootstrap: Option<OpenWikiBootstrapOwner>,
     pub maintenance_workspace_id: Option<Uuid>,
     #[serde(default)]
     pub maintenance_session_id: Option<Uuid>,
@@ -199,6 +202,7 @@ impl Default for RepositoryMemoryState {
             wiki_commit: None,
             last_success: None,
             active_run_id: None,
+            bootstrap: None,
             maintenance_workspace_id: None,
             maintenance_session_id: None,
             error: None,
@@ -208,6 +212,34 @@ impl Default for RepositoryMemoryState {
             coding_errors: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct OpenWikiBootstrapOwner {
+    pub workflow_run_id: Uuid,
+    // An interrupted process may clean up, but must not resume paid stages.
+    pub server_instance_id: Uuid,
+    pub phase: OpenWikiBootstrapPhase,
+    pub child: Option<OpenWikiBootstrapChild>,
+    pub review_fingerprint: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenWikiBootstrapPhase {
+    Generating,
+    Reviewing,
+    Refining,
+    Publishing,
+    CleaningUp,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct OpenWikiBootstrapChild {
+    pub session_id: Uuid,
+    pub agent_run_id: Uuid,
+    pub node_execution_id: Uuid,
+    pub node_id: String,
 }
 
 impl RepositoryMemoryState {

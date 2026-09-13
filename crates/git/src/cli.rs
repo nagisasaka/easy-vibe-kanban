@@ -194,17 +194,16 @@ impl GitCli {
             }
         }
         if !paths_to_add.is_empty() {
-            paths_to_add.extend(
-                Self::get_default_pathspec_excludes()
-                    .iter()
-                    .map(|s| s.as_encoded_bytes().to_vec()),
-            );
+            // Status has already applied exclusions. Pass only literal file
+            // paths here: mixing exclusion magic into the NUL input can hide
+            // all newly generated files from the temporary index (Git 2.43).
             let mut input = Vec::new();
             for p in paths_to_add {
                 input.extend_from_slice(&p);
                 input.push(0);
             }
             let args = vec![
+                OsString::from("--literal-pathspecs"),
                 OsString::from("add"),
                 OsString::from("-A"),
                 OsString::from("--pathspec-from-file=-"),
@@ -254,17 +253,13 @@ impl GitCli {
             }
         }
         if !paths_to_add.is_empty() {
-            paths_to_add.extend(
-                Self::get_default_pathspec_excludes()
-                    .iter()
-                    .map(|s| s.as_encoded_bytes().to_vec()),
-            );
             let mut input = Vec::new();
             for path in paths_to_add {
                 input.extend_from_slice(&path);
                 input.push(0);
             }
             let args = vec![
+                OsString::from("--literal-pathspecs"),
                 OsString::from("add"),
                 OsString::from("-A"),
                 OsString::from("--pathspec-from-file=-"),
@@ -303,12 +298,14 @@ impl GitCli {
     pub fn get_worktree_status(&self, worktree_path: &Path) -> Result<WorktreeStatus, GitCliError> {
         // Using -z for NUL-separated output which correctly handles paths with special chars.
         // Format: XY<space>PATH<NUL>[ORIGPATH<NUL>] where ORIGPATH only present for R/C.
+        // Enumerate files, not collapsed directories, so temporary-index callers
+        // need not recursively add a directory containing excluded resources.
         let args = Self::apply_default_excludes(vec![
             "--no-optional-locks",
             "status",
             "--porcelain",
             "-z",
-            "--untracked-files=normal",
+            "--untracked-files=all",
         ]);
         let out = self.git_impl(worktree_path, args, None, None)?;
         let mut entries = Vec::new();

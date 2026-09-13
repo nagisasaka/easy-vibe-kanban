@@ -6,7 +6,13 @@
 
 export type Repo = { id: string, path: string, name: string, display_name: string, setup_script: string | null, cleanup_script: string | null, archive_script: string | null, copy_files: string | null, parallel_setup_script: boolean, dev_server_script: string | null, default_target_branch: string | null, default_working_dir: string | null, created_at: Date, updated_at: Date, };
 
-export type RepositoryMemoryState = { version: number, enabled: boolean, status: RepositoryWikiStatus, target_branch: string | null, source_commit: string | null, wiki_commit: string | null, last_success: string | null, active_run_id: string | null, maintenance_workspace_id: string | null, maintenance_session_id: string | null, error: string | null, output_language: string, active_source_commit: string | null, active_event_ids: Array<string>, coding_errors: Array<string>, };
+export type RepositoryMemoryState = { version: number, enabled: boolean, status: RepositoryWikiStatus, target_branch: string | null, source_commit: string | null, wiki_commit: string | null, last_success: string | null, active_run_id: string | null, bootstrap: OpenWikiBootstrapOwner | null, maintenance_workspace_id: string | null, maintenance_session_id: string | null, error: string | null, output_language: string, active_source_commit: string | null, active_event_ids: Array<string>, coding_errors: Array<string>, };
+
+export type OpenWikiBootstrapOwner = { workflow_run_id: string, server_instance_id: string, phase: OpenWikiBootstrapPhase, child: OpenWikiBootstrapChild | null, review_fingerprint: string | null, };
+
+export type OpenWikiBootstrapChild = { session_id: string, agent_run_id: string, node_execution_id: string, node_id: string, };
+
+export type OpenWikiBootstrapPhase = "generating" | "reviewing" | "refining" | "publishing" | "cleaning_up";
 
 export type RepositoryWikiStatus = "disabled" | "uninitialized" | "initializing" | "current" | "stale" | "reconciling" | "error";
 
@@ -224,7 +230,7 @@ export type NodeExecutionStatus = "pending" | "running" | "awaiting_human" | "aw
 
 export type Workflow = { id: string, source: WorkflowSource, project_id: string | null, name: string, description: string | null, graph_json: string, created_at: string, updated_at: string, };
 
-export type WorkflowRun = { id: string, orchestration_run_id: string | null, workflow_id: string, attempt_id: string | null, issue_id: string, workspace_id: string | null, trigger_source: string, input_text: string, output_text: string | null, status: WorkflowRunStatus, started_at: string | null, finished_at: string | null, error_text: string | null, created_at: string, updated_at: string, };
+export type WorkflowRun = { id: string, orchestration_run_id: string | null, workflow_id: string, attempt_id: string | null, issue_id: string | null, repository_id: string | null, workspace_id: string | null, trigger_source: string, input_text: string, output_text: string | null, status: WorkflowRunStatus, started_at: string | null, finished_at: string | null, error_text: string | null, created_at: string, updated_at: string, };
 
 export type WorkflowAttempt = { id: string, project_id: string, issue_id: string, workflow_id: string, latest_run_id: string | null, workspace_id: string | null, name: string, status: WorkflowAttemptStatus, created_at: string, updated_at: string, };
 
@@ -317,7 +323,7 @@ export type WorkflowNodeWorkView = { node_id: string, node_type: string, iterati
 
 export type WorkflowRunRuntimeView = { run_id: string, status: WorkflowRunStatus, active_node_count: number, pending_node_count: number, waiting_node_count: number, failed_node_count: number, completed_node_count: number, node_work: Array<WorkflowNodeWorkView>, };
 
-export type WorkflowRunResponse = { id: string, orchestration_run_id: string | null, workflow_id: string, attempt_id: string | null, issue_id: string, workspace_id: string | null, trigger_source: string, input_text: string, output_text: string | null, status: WorkflowRunStatus, started_at: string | null, finished_at: string | null, error_text: string | null, created_at: string, updated_at: string, nodes: Array<WorkflowNodeExecutionResponse>, runtime_view?: WorkflowRunRuntimeView, };
+export type WorkflowRunResponse = { id: string, orchestration_run_id: string | null, workflow_id: string, attempt_id: string | null, issue_id: string | null, repository_id: string | null, workspace_id: string | null, trigger_source: string, input_text: string, output_text: string | null, status: WorkflowRunStatus, started_at: string | null, finished_at: string | null, error_text: string | null, created_at: string, updated_at: string, nodes: Array<WorkflowNodeExecutionResponse>, runtime_view?: WorkflowRunRuntimeView, };
 
 export type WorkflowNodeExecutionResponse = { id: string, run_id: string, node_id: string, node_type: string, iteration: bigint, status: NodeExecutionStatus, input_text: string | null, output_text: string | null, session_id: string | null, orchestration_node_execution_id: string | null, agent_run_id: string | null, projection_status: ProjectionStatus | null, execution_process_id: string | null, arena_group_id: string | null, tokens_used: bigint | null, cost_estimate: number | null, started_at: string | null, finished_at: string | null, error_text: string | null, created_at: string, updated_at: string, };
 
@@ -1264,7 +1270,7 @@ export enum RetryBackoffKind { none = "none", fixed = "fixed", exponential = "ex
 
 export type OrchestrationRetryPolicy = { max_run_attempts: number, backoff: RetryBackoffKind, backoff_ms: bigint, retryable_terminal_statuses: Array<AgentRunStatus>, mode: RunAttemptMode, };
 
-export type OrchestrationPlanNode = { node_key: string, stable_order: number, dependencies: Array<string>, join: OrchestrationJoinPolicy, failure_policy: OrchestrationFailurePolicy, remaining_upstreams: RemainingUpstreamsPolicy, each_downstream_execution: EachDownstreamExecution, retry: OrchestrationRetryPolicy, runtime_profile_id?: string | null, provider_id?: string | null, provider_config?: JsonValue | null, };
+export type OrchestrationPlanNode = { node_key: string, requires_product_validation?: boolean, stable_order: number, dependencies: Array<string>, join: OrchestrationJoinPolicy, failure_policy: OrchestrationFailurePolicy, remaining_upstreams: RemainingUpstreamsPolicy, each_downstream_execution: EachDownstreamExecution, retry: OrchestrationRetryPolicy, runtime_profile_id?: string | null, provider_id?: string | null, provider_config?: JsonValue | null, };
 
 export type OrchestrationPlanSnapshot = { schema_version: number, plan_id: string, source_definition_id: string, source_definition_version: string, product_kind: OrchestrationProductKind, workspace_mode: WorkspaceMode, nodes: Array<OrchestrationPlanNode>, created_at: string, };
 
