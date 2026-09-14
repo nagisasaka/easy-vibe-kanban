@@ -10,6 +10,7 @@ use tokio::process::Command;
 
 pub mod bootstrap;
 pub mod completion;
+pub mod inventory;
 pub mod setup;
 
 pub const OPENWIKI_VERSION: &str = include_str!("../../../../assets/openwiki-version");

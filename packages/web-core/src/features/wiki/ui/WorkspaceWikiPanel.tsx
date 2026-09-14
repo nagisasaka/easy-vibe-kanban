@@ -54,6 +54,14 @@ export function WorkspaceWikiPanel({
     [repos, workspace]
   );
   const [repoId, setRepoId] = useState(repositoryOptions[0]?.id ?? '');
+  const formatKey = `evk-wiki-viewer-format:${workspace.id}`;
+  const [openwiki, setOpenwiki] = useState(() => {
+    try {
+      return sessionStorage.getItem(formatKey) === 'openwiki';
+    } catch {
+      return false;
+    }
+  });
   const [snapshot, setSnapshot] = useState<WorkspaceWikiSnapshot | null>(null);
   const [selectedPath, setSelectedPath] = useState('index.md');
   const [query, setQuery] = useState('');
@@ -80,7 +88,11 @@ export function WorkspaceWikiPanel({
     setError(null);
     setSnapshot(null);
     try {
-      const next = await workspacesApi.wiki.snapshot(workspace.id, repoId);
+      const next = await workspacesApi.wiki.snapshot(
+        workspace.id,
+        repoId,
+        openwiki
+      );
       if (sequence !== loadSequence.current) return;
       setSnapshot(next);
       setLanguage(next.wiki.config?.output_language ?? 'en');
@@ -98,7 +110,7 @@ export function WorkspaceWikiPanel({
     } finally {
       if (sequence === loadSequence.current) setLoading(false);
     }
-  }, [repoId, workspace.id]);
+  }, [repoId, workspace.id, openwiki]);
 
   useEffect(() => {
     void load();
@@ -123,7 +135,7 @@ export function WorkspaceWikiPanel({
     allPages.find((page) => page.path === selectedPath) ?? null;
 
   const saveLanguage = async () => {
-    if (!repoId || !snapshot?.wiki.exists) return;
+    if (openwiki || !repoId || !snapshot?.wiki.exists) return;
     setSaving(true);
     setError(null);
     try {
@@ -149,7 +161,12 @@ export function WorkspaceWikiPanel({
     const anchor = (event.target as HTMLElement).closest('a');
     const href = anchor?.getAttribute('href');
     if (!href || !selectedPage) return;
-    const target = resolveWikiHref(selectedPage.path, href, availablePaths);
+    const target = resolveWikiHref(
+      selectedPage.path,
+      href,
+      availablePaths,
+      openwiki
+    );
     if (!target) return;
     event.preventDefault();
     setSelectedPath(target);
@@ -160,7 +177,7 @@ export function WorkspaceWikiPanel({
       <div className="space-y-half border-b p-base">
         <div className="flex items-center justify-between gap-half">
           <span className="rounded bg-panel px-half py-[2px] text-xs text-low">
-            Current workspace
+            Current workspace · {openwiki ? 'openwiki/' : '.llm-wiki/'}
           </span>
           <button
             type="button"
@@ -193,7 +210,35 @@ export function WorkspaceWikiPanel({
             </option>
           ))}
         </select>
-        {snapshot && !error && repoId && (
+        <select
+          aria-label="Wiki format"
+          value={openwiki ? 'openwiki' : 'llm-wiki'}
+          onChange={(event) => {
+            loadSequence.current += 1;
+            setOpenwiki(event.target.value === 'openwiki');
+            try {
+              sessionStorage.setItem(formatKey, event.target.value);
+            } catch {
+              // Viewing still works when browser storage is unavailable.
+            }
+            setBootstrapOpen(false);
+            setSnapshot(null);
+            setSelectedPath('index.md');
+            setQuery('');
+            setError(null);
+          }}
+          className="w-full rounded border bg-primary px-half py-half text-high"
+        >
+          <option value="llm-wiki">LLM Wiki · .llm-wiki/</option>
+          <option value="openwiki">OpenWiki · openwiki/ (read-only)</option>
+        </select>
+        {openwiki && (
+          <p className="text-xs text-low">
+            This shows the current worktree, including unpublished changes.
+            Initialisation and Sync use repository memory settings.
+          </p>
+        )}
+        {!openwiki && snapshot && !error && repoId && (
           <button
             type="button"
             className="rounded border px-base py-half text-high hover:bg-panel"
@@ -204,7 +249,7 @@ export function WorkspaceWikiPanel({
               : 'Create Wiki from existing code'}
           </button>
         )}
-        {bootstrapOpen && snapshot && !error && (
+        {!openwiki && bootstrapOpen && snapshot && !error && (
           <WikiBootstrapDialog
             key={`${workspace.id}:${repoId}`}
             workspaceId={workspace.id}
@@ -219,33 +264,37 @@ export function WorkspaceWikiPanel({
         )}
         {snapshot?.wiki.exists && (
           <>
-            <div className="flex gap-half">
-              <input
-                list="llm-wiki-language-options"
-                aria-label="Wiki output language"
-                value={language}
-                onChange={(event) => setLanguage(event.target.value)}
-                placeholder="BCP 47 language tag"
-                className="min-w-0 flex-1 rounded border bg-primary px-half py-half text-high"
-              />
-              <datalist id="llm-wiki-language-options">
-                {LANGUAGE_OPTIONS.map(([code, label]) => (
-                  <option key={code} value={code} label={label} />
-                ))}
-              </datalist>
-              <button
-                type="button"
-                disabled={saving || !language.trim()}
-                onClick={() => void saveLanguage()}
-                className="rounded bg-brand px-base py-half text-white disabled:opacity-50"
-              >
-                Save
-              </button>
-            </div>
-            <p className="text-xs text-low">
-              Titles and prose use this language. Existing pages are not
-              translated.
-            </p>
+            {!openwiki && (
+              <>
+                <div className="flex gap-half">
+                  <input
+                    list="llm-wiki-language-options"
+                    aria-label="Wiki output language"
+                    value={language}
+                    onChange={(event) => setLanguage(event.target.value)}
+                    placeholder="BCP 47 language tag"
+                    className="min-w-0 flex-1 rounded border bg-primary px-half py-half text-high"
+                  />
+                  <datalist id="llm-wiki-language-options">
+                    {LANGUAGE_OPTIONS.map(([code, label]) => (
+                      <option key={code} value={code} label={label} />
+                    ))}
+                  </datalist>
+                  <button
+                    type="button"
+                    disabled={saving || !language.trim()}
+                    onClick={() => void saveLanguage()}
+                    className="rounded bg-brand px-base py-half text-white disabled:opacity-50"
+                  >
+                    Save
+                  </button>
+                </div>
+                <p className="text-xs text-low">
+                  Titles and prose use this language. Existing pages are not
+                  translated.
+                </p>
+              </>
+            )}
             <input
               type="search"
               aria-label="Search Wiki"
@@ -260,13 +309,25 @@ export function WorkspaceWikiPanel({
       </div>
 
       {error ? (
-        <EmptyState text="The repository's .llm-wiki files are invalid or unavailable. Fix the files in the workspace before starting another LLM Wiki task." />
+        <EmptyState
+          text={
+            openwiki
+              ? 'OpenWiki files are invalid or unavailable. Inspect the reported error; this viewer does not repair or initialise files.'
+              : "The repository's .llm-wiki files are invalid or unavailable. Fix the files in the workspace before starting another LLM Wiki task."
+          }
+        />
       ) : !repoId ? (
         <EmptyState text="This workspace has no repositories." />
       ) : loading && !snapshot ? (
         <EmptyState text="Loading Wiki…" />
       ) : snapshot && !snapshot.wiki.exists ? (
-        <EmptyState text="No .llm-wiki exists in this repository. It will be initialised automatically before an LLM Wiki-enabled agent run starts." />
+        <EmptyState
+          text={
+            openwiki
+              ? 'No openwiki/ exists in this repository. Use Initialize Wiki in repository memory settings.'
+              : 'No .llm-wiki exists in this repository. It will be initialised automatically before an LLM Wiki-enabled agent run starts.'
+          }
+        />
       ) : (
         <div className="grid min-h-[320px] flex-1 grid-cols-[minmax(110px,0.34fr)_minmax(0,1fr)] overflow-hidden">
           <nav
@@ -341,7 +402,7 @@ function PageMetadata({
     <div className="mb-base space-y-[2px] rounded border bg-panel/50 p-half text-xs text-low">
       <p className="font-medium text-high">{metadata.title}</p>
       <p>{metadata.summary}</p>
-      <p>Language: {metadata.language}</p>
+      {metadata.language && <p>Language: {metadata.language}</p>}
       {metadata.tags.length > 0 && <p>Tags: {metadata.tags.join(', ')}</p>}
       {metadata.sources.length > 0 && (
         <p>
@@ -367,7 +428,8 @@ function PageMetadata({
         </p>
       )}
       <p>
-        Updated: {metadata.updated} · {page.path}
+        {metadata.updated && `Updated: ${metadata.updated} · `}
+        {page.path}
       </p>
     </div>
   );

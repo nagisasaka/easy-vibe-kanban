@@ -1056,14 +1056,16 @@ pub(super) async fn reserve_repository_workflow(
     repository_id: Uuid,
     workspace_id: Uuid,
     mut graph: WorkflowGraph,
+    input_text: &str,
 ) -> Result<(), ApiError> {
     let template_id =
         Uuid::parse_str(workflow::templates::OPENWIKI_BOOTSTRAP_ID).expect("system UUID");
     get_workflow_template(pool, template_id).await?;
     validate_graph_for_run(&graph).map_err(orchestration_api_error)?;
     ensure_agent_node_sessions(pool, workspace_id, &mut graph).await?;
-    sqlx::query("INSERT INTO workflow_runs (id, workflow_id, repository_id, workspace_id, trigger_source, input_text, graph_snapshot, status, started_at) VALUES (?, ?, ?, ?, 'openwiki_bootstrap', '', ?, 'running', datetime('now','subsec'))")
+    sqlx::query("INSERT INTO workflow_runs (id, workflow_id, repository_id, workspace_id, trigger_source, input_text, graph_snapshot, status, started_at) VALUES (?, ?, ?, ?, 'openwiki_bootstrap', ?, ?, 'running', datetime('now','subsec'))")
         .bind(run_id).bind(template_id).bind(repository_id).bind(workspace_id)
+        .bind(input_text)
         .bind(serde_json::to_string(&graph).map_err(orchestration_api_error)?)
         .execute(pool).await?;
     let orchestration_id =

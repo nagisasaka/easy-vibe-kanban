@@ -23,9 +23,11 @@ export function RepositoryMemorySettings({
     queryFn: () => client.getRepositoryMemory(repo.id),
     refetchInterval: 5000,
   });
-  const [enabled, setEnabled] = useState(false);
-  const [branch, setBranch] = useState(repo.default_target_branch ?? 'main');
-  const [language, setLanguage] = useState('en');
+  const [enabled, setEnabled] = useState(query.data?.enabled ?? false);
+  const [branch, setBranch] = useState(
+    query.data?.target_branch ?? repo.default_target_branch ?? 'main'
+  );
+  const [language, setLanguage] = useState(query.data?.output_language ?? 'en');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const state = query.data;
@@ -46,7 +48,18 @@ export function RepositoryMemorySettings({
     repo.default_target_branch,
   ]);
 
+  const active = state?.active_run_id != null || state?.bootstrap != null;
+  const unsaved =
+    state != null &&
+    (enabled !== state.enabled ||
+      branch !==
+        (state.target_branch ?? repo.default_target_branch ?? 'main') ||
+      language !== state.output_language);
+  const cannotStart =
+    busy || active || !state?.enabled || unsaved || query.isError;
   const perform = async (sync: boolean) => {
+    // Sync uses the server's saved branch, not the draft displayed in this form.
+    if (sync && cannotStart) return;
     setBusy(true);
     setError(null);
     try {
@@ -65,7 +78,6 @@ export function RepositoryMemorySettings({
       setBusy(false);
     }
   };
-  const active = state?.active_run_id != null || state?.bootstrap != null;
   return (
     <SettingsCard
       title="OpenWiki repository memory"
@@ -104,11 +116,21 @@ export function RepositoryMemorySettings({
           onClick={() => void perform(false)}
         />
         <PrimaryButton
-          value={state?.last_success ? 'Sync Wiki' : 'Initialize Wiki'}
-          disabled={busy || active || !state?.enabled}
+          value={
+            state?.status === 'uninitialized' || !state?.last_success
+              ? 'Initialize Wiki'
+              : 'Sync Wiki'
+          }
+          disabled={cannotStart}
           onClick={() => void perform(true)}
         />
       </div>
+      {unsaved && (
+        <p className="text-sm text-low" role="status">
+          Save settings before starting Wiki generation. The run uses the saved
+          branch and language.
+        </p>
+      )}
       <p className="text-sm text-low">
         Last successful reconciliation:{' '}
         {state?.last_success

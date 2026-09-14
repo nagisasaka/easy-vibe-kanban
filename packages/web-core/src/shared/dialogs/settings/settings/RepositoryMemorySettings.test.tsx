@@ -11,7 +11,8 @@ function render(
   repoId: string,
   status: RepositoryMemoryState['status'],
   active = false,
-  bootstrap = false
+  bootstrap = false,
+  overrides: Partial<RepositoryMemoryState> = {}
 ) {
   const query = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -42,6 +43,7 @@ function render(
       : null,
     maintenance_workspace_id: `maintenance-${repoId}`,
     error: status === 'error' ? 'OpenWiki finalisation failed' : null,
+    ...overrides,
   });
   return renderToStaticMarkup(
     createElement(
@@ -56,6 +58,13 @@ function render(
 }
 
 describe('repository memory settings', () => {
+  it('offers initialisation for a new branch despite an earlier branch success', () => {
+    const markup = render('a', 'uninitialized', false, false, {
+      last_success: '2026-09-13T00:00:00Z',
+    });
+    expect(markup).toContain('Initialize Wiki');
+    expect(markup).not.toContain('>Sync Wiki<');
+  });
   it('keeps the workflow owner active between child AgentRuns', () => {
     const markup = render('a', 'initializing', false, true);
     expect(markup).toContain('reviewing');

@@ -1138,21 +1138,20 @@ impl Codex {
             ));
         }
 
-        let (thread_id, resolved_model) = match resume_session {
+        let thread_id = match resume_session {
             None => {
                 let response = client.thread_start(thread_start_params).await?;
-                (response.thread.id, response.model)
+                response.thread.id
             }
             Some(session_id) => {
                 let response = client
                     .thread_resume(resume_params_from(session_id, thread_start_params))
                     .await?;
                 tracing::debug!("resumed thread, thread_id={}", response.thread.id);
-                (response.thread.id, response.model)
+                response.thread.id
             }
         };
 
-        client.set_resolved_model(resolved_model);
         client.register_session(&thread_id).await?;
         if client.execution_mode() == ExecutionMode::Goal {
             client.start_goal(thread_id, combined_prompt).await?;

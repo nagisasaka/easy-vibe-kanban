@@ -25,6 +25,8 @@ const MAX_SOURCE_LINKS: usize = 500;
 #[derive(Debug, Deserialize)]
 pub struct WikiRepoQuery {
     pub repo_id: Uuid,
+    #[serde(default)]
+    pub openwiki: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -160,10 +162,16 @@ pub async fn get_snapshot(
 ) -> Result<ResponseJson<ApiResponse<WorkspaceWikiSnapshot>>, ApiError> {
     let resolved = resolve_wiki_repo(&deployment, &workspace, query.repo_id).await?;
     let root = resolved.root.clone();
-    let wiki = tokio::task::spawn_blocking(move || wiki::load_snapshot(&root))
-        .await
-        .map_err(|error| ApiError::BadRequest(error.to_string()))?
-        .map_err(map_wiki_error)?;
+    let wiki = tokio::task::spawn_blocking(move || {
+        if query.openwiki {
+            wiki::openwiki::load_snapshot(&root)
+        } else {
+            wiki::load_snapshot(&root)
+        }
+    })
+    .await
+    .map_err(|error| ApiError::BadRequest(error.to_string()))?
+    .map_err(map_wiki_error)?;
     let source_links = resolve_source_links(&deployment, &wiki).await?;
     Ok(ResponseJson(ApiResponse::success(WorkspaceWikiSnapshot {
         workspace_id: workspace.id,

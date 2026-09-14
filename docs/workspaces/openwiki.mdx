@@ -11,9 +11,12 @@ does not migrate, delete, or rewrite the other.
 
 ## Set up a repository
 
-1. Open **Settings → Repositories** and select your repository and machine.
+1. Open your project's **Configure project working location** settings, then
+   expand **Local execution configuration** for the repository and machine.
 2. Enable **OpenWiki repository memory**. Choose the integrated **local branch**
    and an output language such as `en` or `ja`, then save.
+   Generation stays disabled whilst these fields contain unsaved changes: the
+   run uses the saved branch and language, not the draft shown in the form.
 3. Select **Initialize Wiki**. EVK creates an OpenWiki maintenance workspace and
    a repository-scoped system Workflow, without creating an Issue. Select
    **View Workflow** in these settings or above the maintenance workspace's chat
@@ -96,6 +99,64 @@ shared bootstrap policy into every fresh phase without rewriting your brief or
 copying OpenWiki's standard Skill. Normal Sync does not receive these additional
 bootstrap instructions.
 
+### Common document inventory
+
+Before Generate starts, EVK builds a mechanical document inventory from the
+selected repository's pinned, Git-tracked source. Both Generate and the fresh
+read-only Reviewer receive the same short reference, then read the inventory's
+numbered JSON chunks. No generator summary, plan or conversation is shared.
+Source exploration remains necessary, including when there are no documents.
+
+The inventory includes documents outside `docs/`. It extracts static Markdown
+and MDX headings and original line positions with the pinned Rust `markdown`
+1.0.0 parser compiled into the server. It does not render MDX or run JavaScript,
+imports, repository plugins or document builds. In v1, MDX containing JavaScript
+expressions or ESM falls back to file-only coverage with a reason. Other document
+formats, oversized or unreadable documents and files whose checked-out contents
+do not match the snapshot also remain visible with their limitations. Agent
+instruction files are marked separately, not offered as Wiki evidence.
+
+If the source has `.openwikiignore`, the inventory is explicitly unavailable in
+v1: OpenWiki 0.5.1 has no compatible public path-selection API. Normal independent
+exploration continues; this is not a zero-document result. Do not remove ignore
+rules just to enable the inventory.
+
+Inventory records live in shared persistent storage under
+`knowledge/document-inventories/<workflow-run-id>/`. The host freezes their
+identity and digest in the Workflow run and checks every chunk at phase
+boundaries and before publication. Missing or changed input fails the run; EVK
+does not regenerate it to hide a mismatch. This detects boundary changes, not
+every possible write-and-restore during a phase. Records persist until explicitly
+deleted, including after workspace deletion.
+
+An inventory is a discovery aid, not proof that either agent understood every
+document or that the Wiki is semantically complete. Check the review summary for
+important uninspected areas and inspect the generated evidence yourself.
+
+### View the generated Wiki
+
+Open the maintenance workspace, expand **LLM Wiki** in the right sidebar, and
+select **OpenWiki · openwiki/ (read-only)** in **Wiki format**. Select the
+repository, browse the index or page list, follow Wiki-internal links, or search
+the text. **Reload Wiki files** rereads the worktree. Your browser tab remembers
+the format for this workspace after a page reload.
+
+The badge explicitly identifies **Current workspace · openwiki/**. This view can
+include unpublished changes; it is not proof of successful publication. Confirm
+the Workflow result and target branch separately. The Viewer reuses the existing
+Markdown and Mermaid renderer. It displays the OpenWiki title, description and
+tags without requiring legacy `config.toml` or rewriting producer metadata.
+Private Claims/run records and `INSTRUCTIONS.md` are not navigation pages.
+Repository `repo://` evidence references are not Wiki-internal navigation links;
+inspect their source files in the workspace when checking claims.
+
+OpenWiki viewing does not expose legacy generation or language-write controls.
+Use repository memory settings for those operations. The separate
+**LLM Wiki · .llm-wiki/** option preserves the original viewer and its behaviour.
+Oversized pages (512 KiB), snapshots over 2,000 pages or 16 MiB, invalid frontmatter,
+and unsafe paths produce an explicit error rather than an incomplete successful
+view. Base-branch browsing is not added here; this is a current-workspace view.
+
 If you use `.openwikiignore`, prepare it on your selected target branch before
 initialisation. Exclude known irrelevant logs or build output selectively; do not
 exclude all documentation or assume archived decisions and generated references
@@ -145,6 +206,7 @@ knowledge/
   publications/       Validated Wiki publication checkpoints for crash recovery
   source-publications/ Frozen source trees and semantics before source commits
   wiki-setups/         Original maintenance instructions and restoration journals
+  document-inventories/ Run-scoped source document manifests and numbered chunks
   locks/              Maintenance and short publication locks
   state.json          Repository configuration and maintenance owner
 ```

@@ -257,14 +257,17 @@ impl RepositoryMemoryState {
             RepositoryWikiStatus::Initializing
                 | RepositoryWikiStatus::Reconciling
                 | RepositoryWikiStatus::Error
-                | RepositoryWikiStatus::Stale
         ) {
             return self.status;
         }
         if !wiki_exists {
             return RepositoryWikiStatus::Uninitialized;
         }
-        if pending || !source_matches || self.last_success.is_none() {
+        if self.status == RepositoryWikiStatus::Stale
+            || pending
+            || !source_matches
+            || self.last_success.is_none()
+        {
             return RepositoryWikiStatus::Stale;
         }
         RepositoryWikiStatus::Current
@@ -445,6 +448,7 @@ impl RepositoryMemoryStore {
             "publications",
             "source-publications",
             "wiki-setups",
+            "document-inventories",
             "locks",
         ] {
             real_directory(&store.root.join(directory))?;
@@ -456,6 +460,31 @@ impl RepositoryMemoryStore {
         self.root
             .join("workspace-memory")
             .join(format!("{workspace_id}.md"))
+    }
+
+    /// Bootstrap-only input records reuse shared-folder atomic, bounded I/O.
+    /// Trust/digests belong to the host's Workflow input, not to this writable folder.
+    pub fn document_inventory_path(&self, run_id: Uuid, chunk: Option<u32>) -> PathBuf {
+        self.root
+            .join("document-inventories")
+            .join(run_id.to_string())
+            .join(chunk.map_or_else(|| "manifest.json".into(), |n| format!("chunk-{n:06}.json")))
+    }
+
+    pub fn save_document_inventory<T: Serialize>(
+        &self,
+        run_id: Uuid,
+        chunk: Option<u32>,
+        value: &T,
+    ) -> io::Result<()> {
+        let path = self.document_inventory_path(run_id, chunk);
+        real_directory(path.parent().unwrap())?;
+        self.publish(&path, value, false)
+    }
+
+    pub fn read_document_inventory(&self, run_id: Uuid, chunk: Option<u32>) -> io::Result<Vec<u8>> {
+        self.read_optional(&self.document_inventory_path(run_id, chunk))?
+            .ok_or_else(|| invalid("Document inventory record is missing"))
     }
 
     pub fn wiki_setup(&self, workspace_id: Uuid) -> io::Result<Option<WikiSetupCheckpoint>> {
@@ -809,7 +838,16 @@ impl RepositoryMemoryStore {
 
     fn read_optional(&self, path: &Path) -> io::Result<Option<Vec<u8>>> {
         reject_symlinks(path)?;
-        let file = match File::open(path) {
+        let mut options = OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            // An agent-writable shared record must not block a phase boundary
+            // when replaced with a FIFO, or follow a swapped final symlink.
+            options.custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK);
+        }
+        let file = match options.open(path) {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error),
@@ -890,6 +928,24 @@ fn invalid(error: impl std::fmt::Display) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn changed_branch_without_wiki_is_uninitialized_despite_previous_success() {
+        let state = RepositoryMemoryState {
+            enabled: true,
+            status: RepositoryWikiStatus::Stale,
+            last_success: Some(Utc::now()),
+            ..Default::default()
+        };
+        assert_eq!(
+            state.derived_status(false, false, false),
+            RepositoryWikiStatus::Uninitialized
+        );
+        assert_eq!(
+            state.derived_status(true, false, true),
+            RepositoryWikiStatus::Stale
+        );
+    }
 
     fn event() -> ChangeManifest {
         ChangeManifest {
@@ -1060,5 +1116,23 @@ mod tests {
         )
         .unwrap();
         assert!(store.publish_event(&a).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_fifo_inventory_without_waiting_for_a_writer() {
+        use std::{ffi::CString, os::unix::ffi::OsStrExt};
+        let temp = tempfile::tempdir().unwrap();
+        let store = RepositoryMemoryStore::at_persistent(temp.path()).unwrap();
+        let run = Uuid::new_v4();
+        store
+            .save_document_inventory(run, None, &serde_json::json!({}))
+            .unwrap();
+        let path = store.document_inventory_path(run, None);
+        fs::remove_file(&path).unwrap();
+        let path = CString::new(path.as_os_str().as_bytes()).unwrap();
+        // SAFETY: the path is a valid, terminated C string for a test-owned path.
+        assert_eq!(unsafe { nix::libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        assert!(store.read_document_inventory(run, None).is_err());
     }
 }

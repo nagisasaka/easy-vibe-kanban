@@ -70,6 +70,8 @@ struct PendingPlan {
 pub struct ResumedThread {
     pub thread: ResumedThreadIdentity,
     pub model: String,
+    #[serde(rename = "reasoningEffort")]
+    pub reasoning_effort: Option<ProtocolReasoningEffort>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -176,6 +178,15 @@ impl AppServerClient {
         let _ = self.resolved_model.set(model);
     }
 
+    fn adopt_thread_settings(&self, model: String, effort: Option<ProtocolReasoningEffort>) {
+        // The app-server resolves user/project config, profiles and explicit
+        // overrides. Keep its result, including an intentional default (None),
+        // before constructing any collaboration mode or continuation. Our
+        // initially absent override must not clear an inherited xhigh/max/etc.
+        self.set_resolved_model(model);
+        self.set_reasoning_effort(effort);
+    }
+
     fn rpc(&self) -> &JsonRpcPeer {
         self.rpc.get().expect("Codex RPC peer not attached")
     }
@@ -249,7 +260,9 @@ impl AppServerClient {
             request_id: self.next_request_id(),
             params,
         };
-        self.send_request(request, "thread/start").await
+        let response: ThreadStartResponse = self.send_request(request, "thread/start").await?;
+        self.adopt_thread_settings(response.model.clone(), response.reasoning_effort.clone());
+        Ok(response)
     }
 
     pub async fn thread_resume(
@@ -266,6 +279,7 @@ impl AppServerClient {
         };
         let response: ResumedThread = self.send_request(request, "thread/resume").await?;
         ensure_resumed_thread_id(&requested_thread_id, &response.thread.id)?;
+        self.adopt_thread_settings(response.model.clone(), response.reasoning_effort.clone());
         Ok(response)
     }
 
@@ -1849,6 +1863,9 @@ fn extract_semver(input: &str) -> Option<String> {
         })
         .map(str::to_string)
 }
+
+#[cfg(test)]
+mod reasoning_tests;
 
 #[cfg(test)]
 mod version_check_tests {

@@ -658,9 +658,11 @@ export const workspacesApi = {
   wiki: {
     snapshot: async (
       workspaceId: string,
-      repoId: string
+      repoId: string,
+      openwiki = false
     ): Promise<WorkspaceWikiSnapshot> => {
       const query = new URLSearchParams({ repo_id: repoId });
+      if (openwiki) query.set('openwiki', 'true');
       const response = await makeRequest(
         `/api/workspaces/${workspaceId}/wiki?${query.toString()}`
       );

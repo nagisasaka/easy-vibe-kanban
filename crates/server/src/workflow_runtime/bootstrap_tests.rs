@@ -5,7 +5,11 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use services::services::openwiki::{self, bootstrap::CoverageReview};
+use services::services::openwiki::{
+    self,
+    bootstrap::CoverageReview,
+    inventory::{DocumentInventory, InventoryIdentity},
+};
 use utils::repository_memory::RepositoryMemoryStore;
 
 use super::*;
@@ -98,17 +102,59 @@ impl Fixture {
 
     async fn reserve(&self) -> Uuid {
         let id = Uuid::new_v4();
+        let inventory = DocumentInventory::generate(
+            &git::GitService::new(),
+            &self.maintenance,
+            &self.store,
+            InventoryIdentity::new(
+                self.repository_id,
+                self.workspace_id,
+                id,
+                self.source.clone(),
+            ),
+        )
+        .unwrap();
         let mut graph = workflow::templates::openwiki_bootstrap().graph;
         for node in &mut graph.nodes {
             if node.id == "review" {
-                node.data.prompt_template =
-                    Some(openwiki::bootstrap::review_prompt(&self.maintenance, "ja"));
+                node.data.prompt_template = Some(
+                    openwiki::bootstrap::review_prompt(&self.maintenance, "ja")
+                        + &inventory.prompt(&self.store, true),
+                );
+            } else if node.id == "generate" {
+                node.data.prompt_template = Some(
+                    openwiki::bootstrap::writer_prompt(&self.maintenance, "ja", None)
+                        + &inventory.prompt(&self.store, false),
+                );
             }
         }
-        reserve_repository_workflow(&self.pool, id, self.repository_id, self.workspace_id, graph)
-            .await
-            .unwrap();
+        reserve_repository_workflow(
+            &self.pool,
+            id,
+            self.repository_id,
+            self.workspace_id,
+            graph,
+            &serde_json::to_string(&inventory).unwrap(),
+        )
+        .await
+        .unwrap();
         id
+    }
+
+    async fn inventory(&self, run_id: Uuid) -> Result<DocumentInventory, ApiError> {
+        super::super::bootstrap::load_inventory_input(
+            &self.pool,
+            &self.store,
+            InventoryIdentity::new(
+                self.repository_id,
+                self.workspace_id,
+                run_id,
+                self.source.clone(),
+            ),
+        )
+        .await
+        .map_err(orchestration_api_error)?
+        .ok_or_else(|| ApiError::BadRequest("inventory missing".into()))
     }
 }
 
@@ -129,6 +175,18 @@ impl WorkflowAgentExecutor for FakeBootstrap<'_> {
 
     async fn run_agent(&self, request: AgentNodeRequest) -> Result<AgentNodeExecution, ApiError> {
         let fixture = self.fixture;
+        let inventory = fixture.inventory(request.run_id).await?;
+        if matches!(request.node_id.as_str(), "generate" | "review") {
+            assert!(
+                request
+                    .prompt
+                    .contains(&inventory.prompt(&fixture.store, request.node_id == "review"))
+            );
+            assert!(
+                !request.prompt.contains("\"digest\":"),
+                "host input is not workflow context"
+            );
+        }
         assert_eq!(
             git(&fixture.maintenance, &["rev-parse", "HEAD"]),
             fixture.source
@@ -191,6 +249,14 @@ impl WorkflowAgentExecutor for FakeBootstrap<'_> {
             _ => panic!("unexpected agent node"),
         };
         let session_id = request.session_id.unwrap();
+        if self.fail == Some(format!("tamper_{}", request.node_id).as_str()) {
+            std::fs::write(
+                fixture.store.document_inventory_path(request.run_id, None),
+                "{}",
+            )
+            .unwrap();
+        }
+        fixture.inventory(request.run_id).await?;
         let agent_run_id = Uuid::new_v4();
         // The fake host supplies durable identities; real host protocol and
         // sandbox behaviour have separate adapter/Native Audit tests.
@@ -211,6 +277,10 @@ impl WorkflowAgentExecutor for FakeBootstrap<'_> {
             return Err(ApiError::BadRequest("fixture publication failure".into()));
         }
         let f = self.fixture;
+        if self.fail == Some("tamper_publish") {
+            std::fs::write(f.store.document_inventory_path(run_id, None), "{}").unwrap();
+        }
+        f.inventory(run_id).await?;
         let result = openwiki::publish_validated_wiki(
             &git::GitService::new(),
             &f.store,
@@ -233,6 +303,64 @@ impl WorkflowAgentExecutor for FakeBootstrap<'_> {
         self.publications.fetch_add(1, Ordering::SeqCst);
         Ok(Some("Published".into()))
     }
+}
+
+#[tokio::test]
+async fn inventory_preprocessing_failure_before_reservation_releases_owner() {
+    use utils::repository_memory::{
+        OpenWikiBootstrapOwner, OpenWikiBootstrapPhase, RepositoryMemoryState, RepositoryWikiStatus,
+    };
+    let f = Fixture::new().await;
+    let run_id = Uuid::new_v4();
+    // The start path has persisted ownership, but no Workflow row/child exists.
+    std::fs::write(f.maintenance.join(".openwikiignore"), "docs/**").unwrap();
+    let error = DocumentInventory::generate(
+        &git::GitService::new(),
+        &f.maintenance,
+        &f.store,
+        InventoryIdentity::new(f.repository_id, f.workspace_id, run_id, f.source.clone()),
+    )
+    .unwrap_err();
+    let state = RepositoryMemoryState {
+        enabled: true,
+        status: RepositoryWikiStatus::Error,
+        maintenance_workspace_id: Some(f.workspace_id),
+        active_source_commit: Some(f.source.clone()),
+        error: Some(error.to_string()),
+        bootstrap: Some(OpenWikiBootstrapOwner {
+            workflow_run_id: run_id,
+            server_instance_id: Uuid::new_v4(),
+            phase: OpenWikiBootstrapPhase::CleaningUp,
+            child: None,
+            review_fingerprint: None,
+        }),
+        ..Default::default()
+    };
+    f.store.save_state(&state).unwrap();
+    let repo = db::models::repo::Repo::find_by_id(&f.pool, f.repository_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let service = OrchestrationService::new(f.pool.clone(), Arc::new(NoopAgentRunPort));
+    super::super::bootstrap::cleanup_with_service(&f.pool, &repo, &f.store, &service)
+        .await
+        .unwrap();
+    let state = f.store.state().unwrap();
+    assert!(
+        state.bootstrap.is_none()
+            && state.active_run_id.is_none()
+            && state.active_source_commit.is_none()
+    );
+    assert_eq!(state.status, RepositoryWikiStatus::Error);
+    assert!(state.error.unwrap().contains("ignore policy"));
+    let runs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM workflow_runs")
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(runs, 0);
+    assert!(f.store.publication(run_id).unwrap().is_none());
+    assert_eq!(git(&f.root, &["rev-parse", "main"]), f.source);
+    assert!(f.store.try_lock().is_ok());
 }
 
 #[tokio::test]
@@ -591,7 +719,16 @@ async fn bootstrap_pass_and_refine_use_existing_runner_and_publish_once() {
 
 #[tokio::test]
 async fn bootstrap_phase_failures_never_reach_publication_or_reuse_retry() {
-    for phase in ["generate", "review", "refine", "publish"] {
+    for phase in [
+        "generate",
+        "review",
+        "refine",
+        "publish",
+        "tamper_generate",
+        "tamper_review",
+        "tamper_refine",
+        "tamper_publish",
+    ] {
         let f = Fixture::new().await;
         let run_id = f.reserve().await;
         let executor = FakeBootstrap {
@@ -612,4 +749,102 @@ async fn bootstrap_phase_failures_never_reach_publication_or_reuse_retry() {
                 .is_err()
         );
     }
+}
+
+#[tokio::test]
+async fn inventory_host_input_identity_and_tampering_fail_before_dispatch() {
+    for defect in [
+        "changed_manifest",
+        "missing_manifest",
+        "foreign_run",
+        "invalid_input",
+    ] {
+        let f = Fixture::new().await;
+        let run_id = f.reserve().await;
+        let inventory = f.inventory(run_id).await.unwrap();
+        let manifest = f.store.document_inventory_path(run_id, None);
+        match defect {
+            "changed_manifest" => {
+                let bytes = std::fs::read_to_string(&manifest).unwrap();
+                std::fs::write(&manifest, format!("{bytes}\n")).unwrap();
+            }
+            "missing_manifest" => std::fs::remove_file(&manifest).unwrap(),
+            "foreign_run" => {
+                let other = f.reserve().await;
+                sqlx::query("UPDATE workflow_runs SET input_text = (SELECT input_text FROM workflow_runs WHERE id = ?) WHERE id = ?")
+                    .bind(other).bind(run_id).execute(&f.pool).await.unwrap();
+            }
+            _ => {
+                sqlx::query("UPDATE workflow_runs SET input_text = 'not json' WHERE id = ?")
+                    .bind(run_id)
+                    .execute(&f.pool)
+                    .await
+                    .unwrap();
+            }
+        }
+        assert!(f.inventory(run_id).await.is_err(), "{defect}");
+        let executor = FakeBootstrap {
+            fixture: &f,
+            refine: false,
+            refute: false,
+            fail: None,
+            calls: Mutex::new(Vec::new()),
+            publications: AtomicUsize::new(0),
+        };
+        let _ = drive_repository_workflow(&f.pool, run_id, &executor).await;
+        assert!(executor.calls.lock().unwrap().is_empty());
+        assert_eq!(executor.publications.load(Ordering::SeqCst), 0);
+        assert!(f.store.publication(run_id).unwrap().is_none());
+        assert_eq!(git(&f.root, &["rev-parse", "main"]), f.source);
+        assert_eq!(inventory.identity().run_id, run_id);
+    }
+}
+
+#[tokio::test]
+async fn inventory_is_frozen_in_host_input_not_global_template_or_upstream() {
+    let f = Fixture::new().await;
+    let run_id = f.reserve().await;
+    let inventory = f.inventory(run_id).await.unwrap();
+    let input: String = sqlx::query_scalar("SELECT input_text FROM workflow_runs WHERE id = ?")
+        .bind(run_id)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<DocumentInventory>(&input).unwrap(),
+        inventory
+    );
+    let global: String = sqlx::query_scalar("SELECT graph_json FROM workflows WHERE id = ?")
+        .bind(Uuid::parse_str(workflow::templates::OPENWIKI_BOOTSTRAP_ID).unwrap())
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    assert!(!global.contains(&run_id.to_string()));
+    let graph: String = sqlx::query_scalar("SELECT graph_snapshot FROM workflow_runs WHERE id = ?")
+        .bind(run_id)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    let graph: WorkflowGraph = serde_json::from_str(&graph).unwrap();
+    for node in graph
+        .nodes
+        .iter()
+        .filter(|node| matches!(node.id.as_str(), "generate" | "review"))
+    {
+        assert_eq!(node.data.include_workflow_context, Some(false));
+        assert!(
+            node.data
+                .prompt_template
+                .as_deref()
+                .unwrap()
+                .contains(&inventory.prompt(&f.store, node.id == "review"))
+        );
+    }
+    let mut expected = inventory.identity().clone();
+    expected.source_sha = "0".repeat(40);
+    assert!(
+        super::super::bootstrap::load_inventory_input(&f.pool, &f.store, expected)
+            .await
+            .is_err()
+    );
 }

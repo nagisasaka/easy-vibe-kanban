@@ -21,6 +21,7 @@ use services::services::{
         self, OpenWikiAdapter,
         bootstrap::{CoverageReview, CoverageVerdict, RefinementReport},
         completion::WriterPhase,
+        inventory::{DocumentInventory, InventoryIdentity},
     },
     orchestration::OrchestrationService,
 };
@@ -111,18 +112,35 @@ pub async fn start(
         review_fingerprint: None,
     });
     store.save_state(state)?;
+    let identity = InventoryIdentity::new(
+        repo.id,
+        workspace.id,
+        run_id,
+        state
+            .active_source_commit
+            .clone()
+            .context("Bootstrap source is missing")?,
+    );
+    let inventory = {
+        let root = root.to_path_buf();
+        let store = store.clone();
+        tokio::task::spawn_blocking(move || {
+            DocumentInventory::generate(&git::GitService::new(), &root, &store, identity)
+        })
+        .await??
+    };
+    tracing::info!(workflow_run_id = %run_id, inventory = ?inventory, "Bootstrap document inventory prepared");
     let mut graph = workflow::templates::openwiki_bootstrap().graph;
     for node in &mut graph.nodes {
         node.data.prompt_template = match node.id.as_str() {
-            "generate" => Some(openwiki::bootstrap::writer_prompt(
-                root,
-                &state.output_language,
-                None,
-            )),
-            "review" => Some(openwiki::bootstrap::review_prompt(
-                root,
-                &state.output_language,
-            )),
+            "generate" => Some(
+                openwiki::bootstrap::writer_prompt(root, &state.output_language, None)
+                    + &inventory.prompt(store, false),
+            ),
+            "review" => Some(
+                openwiki::bootstrap::review_prompt(root, &state.output_language)
+                    + &inventory.prompt(store, true),
+            ),
             _ => node.data.prompt_template.take(),
         };
     }
@@ -132,6 +150,7 @@ pub async fn start(
         repo.id,
         workspace.id,
         graph,
+        &serde_json::to_string(&inventory)?,
     )
     .await?;
     let executor = BootstrapExecutor {
@@ -150,6 +169,45 @@ struct ContextData {
     state: RepositoryMemoryState,
     workspace: Workspace,
     root: PathBuf,
+}
+
+/// Workflow input is host-owned. Never recover a reference/digest from agent output
+/// or the writable shared manifest. Empty input belongs to pre-inventory runs only.
+async fn validated_inventory(
+    deployment: &DeploymentImpl,
+    ctx: &ContextData,
+    run_id: Uuid,
+) -> anyhow::Result<Option<DocumentInventory>> {
+    let expected = InventoryIdentity::new(
+        ctx.repo.id,
+        ctx.workspace.id,
+        run_id,
+        ctx.state
+            .active_source_commit
+            .clone()
+            .context("Bootstrap source missing")?,
+    );
+    load_inventory_input(&deployment.db().pool, &ctx.store, expected).await
+}
+
+pub(super) async fn load_inventory_input(
+    pool: &sqlx::SqlitePool,
+    store: &RepositoryMemoryStore,
+    expected: InventoryIdentity,
+) -> anyhow::Result<Option<DocumentInventory>> {
+    let input: String = sqlx::query_scalar("SELECT input_text FROM workflow_runs WHERE id = ? AND repository_id = ? AND workspace_id = ? AND issue_id IS NULL AND trigger_source = 'openwiki_bootstrap'")
+        .bind(expected.run_id).bind(expected.repository_id).bind(expected.workspace_id).fetch_one(pool).await?;
+    if input.is_empty() {
+        return Ok(None);
+    }
+    let inventory: DocumentInventory =
+        serde_json::from_str(&input).context("Invalid host inventory input")?;
+    let store = store.clone();
+    tokio::task::spawn_blocking(move || {
+        inventory.validate(&store, &expected)?;
+        Ok::<_, anyhow::Error>(Some(inventory))
+    })
+    .await?
 }
 
 async fn context(deployment: &DeploymentImpl, run_id: Uuid) -> anyhow::Result<ContextData> {
@@ -208,6 +266,7 @@ pub(super) async fn prepare_child_dispatch(
         return Ok(());
     }
     let mut ctx = context(deployment, request.run_id).await?;
+    let inventory = validated_inventory(deployment, &ctx, request.run_id).await?;
     let owner = ctx
         .state
         .bootstrap
@@ -271,6 +330,17 @@ pub(super) async fn prepare_child_dispatch(
         }
         _ => bail!("Unsupported Bootstrap agent phase"),
     };
+    if let Some(inventory) = &inventory {
+        match phase {
+            OpenWikiBootstrapPhase::Generating => request
+                .prompt
+                .push_str(&inventory.prompt(&ctx.store, false)),
+            OpenWikiBootstrapPhase::Reviewing => {
+                request.prompt.push_str(&inventory.prompt(&ctx.store, true))
+            }
+            _ => {} // Refine receives findings, not a new inventory-reading task.
+        }
+    }
     request.selected_skills = if phase == OpenWikiBootstrapPhase::Reviewing {
         None
     } else {
@@ -313,6 +383,7 @@ pub(super) async fn validate_child_completion(
     output: &str,
 ) -> anyhow::Result<String> {
     let ctx = context(deployment, run_id).await?;
+    validated_inventory(deployment, &ctx, run_id).await?;
     let owner = ctx.state.bootstrap.as_ref().unwrap();
     ensure!(
         owner
@@ -428,6 +499,7 @@ async fn publish(
     run_id: Uuid,
 ) -> anyhow::Result<(Option<String>, bool)> {
     let mut ctx = context(deployment, run_id).await?;
+    validated_inventory(deployment, &ctx, run_id).await?;
     let run = runner::get_workflow_run_response(&deployment.db().pool, run_id).await?;
     for node in ["generate", "review"] {
         ensure!(

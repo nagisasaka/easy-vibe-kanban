@@ -31,6 +31,63 @@ const wiki: WikiSnapshot = {
 };
 
 describe('Wiki navigation', () => {
+  it('routes OpenWiki generated directory links to their index pages', () => {
+    const paths = new Set(['index.md', 'architecture/index.md']);
+    expect(resolveWikiHref('index.md', 'architecture/', paths, true)).toBe(
+      'architecture/index.md'
+    );
+    expect(resolveWikiHref('architecture/index.md', '../', paths, true)).toBe(
+      'index.md'
+    );
+    expect(
+      resolveWikiHref('index.md', '/openwiki/architecture/', paths, true)
+    ).toBe('architecture/index.md');
+    expect(resolveWikiHref('index.md', 'missing/', paths, true)).toBeNull();
+    expect(resolveWikiHref('index.md', '../../', paths, true)).toBeNull();
+    expect(resolveWikiHref('index.md', 'architecture/', paths)).toBeNull();
+  });
+  it('routes nested OpenWiki pages without changing legacy or escaping the wiki', () => {
+    const paths = new Set([
+      'index.md',
+      'architecture/index.md',
+      'architecture/system.md',
+      'runtime/lifecycle.md',
+    ]);
+    expect(
+      resolveWikiHref('index.md', 'architecture/system.md', paths, true)
+    ).toBe('architecture/system.md');
+    expect(
+      resolveWikiHref(
+        'architecture/system.md',
+        '../runtime/lifecycle.md#state',
+        paths,
+        true
+      )
+    ).toBe('runtime/lifecycle.md');
+    expect(
+      resolveWikiHref('architecture/system.md', 'index.md', paths, true)
+    ).toBe('architecture/index.md');
+    expect(
+      resolveWikiHref(
+        'architecture/system.md',
+        '/openwiki/runtime/lifecycle.md',
+        paths,
+        true
+      )
+    ).toBe('runtime/lifecycle.md');
+    expect(
+      resolveWikiHref('architecture/system.md', '../../secret.md', paths, true)
+    ).toBeNull();
+    expect(
+      resolveWikiHref('index.md', '/openwiki/../secret.md', paths, true)
+    ).toBeNull();
+    expect(
+      resolveWikiHref('index.md', 'repo://README.md', paths, true)
+    ).toBeNull();
+    expect(
+      resolveWikiHref('index.md', 'architecture/system.md', paths)
+    ).toBeNull();
+  });
   it('searches frontmatter and full text', () => {
     expect(searchWikiPages(wiki, 'EASY-123 markers')).toHaveLength(1);
     expect(searchWikiPages(wiki, 'missing')).toHaveLength(0);
