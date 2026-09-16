@@ -58,7 +58,8 @@ terminal state, Native Audit proof or bounded Review JSON, source HEAD and resto
 instructions before completing an agent node. The closed Review schema rejects
 unknown fields, oversized output, unsafe evidence paths and inconsistent verdicts.
 The Condition's limited `OpenWikiCoverageReview` source selects PASS or REFINE;
-ordinary LLM Conditions remain unchanged. NodeExecution holds the validated JSON.
+ordinary LLM Conditions remain unchanged. NodeExecution holds a compact reference
+to the validated report in the repository's existing shared folder.
 
 The End node calls the existing `publish_validated_wiki`. Finalisation reuses the
 existing publication checkpoint, commit trailer, target reflection and receipts.
@@ -108,8 +109,8 @@ all material findings are refuted/already satisfied. Bootstrap authoring always
 uses `update + force=true` to avoid a source-unchanged no-op bypassing a requested
 correction. Ordinary Sync retains its existing no-op and completion behaviour.
 
-Refine returns `RefinementReport` version 1 as bounded JSON in the existing
-NodeExecution output. `findingIndex` refers to the zero-based index of the frozen
+Refine returns `RefinementReport` version 1 as JSON, which the host validates and
+saves separately from the NodeExecution handoff. `findingIndex` refers to the zero-based index of the frozen
 Review findings array; the reviewer schema does not change. Every material finding
 needs exactly one resolution; unknown/duplicate indexes and unresolved dispositions
 are rejected. `fixed` requires Wiki paths, independent evidence and a completed
@@ -155,6 +156,227 @@ Validation of the phase-completion revision:
   changes the historical workflow status nor approves/publishes its Wiki.
 - A fresh paid-Codex Generate/Review/Refine execution remains a manual smoke test;
   automated tests do not assert model reasoning quality or complete coverage.
+
+## Full review reports without handoff quotas
+
+This revision supersedes the original limit of 12 findings and 12,000 UTF-8 bytes
+for Review and Refine results. The ordinary Workflow handoff still truncates at
+12,000 **characters**; its policy and ordinary LLM Conditions do not change.
+The old byte budget was particularly restrictive for Japanese reports. It could
+encourage prioritising a short list, but does not by itself prove why a particular
+model run returned only four findings.
+
+The independent Reviewer remains ReadOnly, with no writer MCP, extra file-writing
+tool, or Generator conversation. It returns its full schema-valid final JSON.
+EVK validates the response and existing evidence-file checks before atomically
+publishing `knowledge/bootstrap-reports/<workflow-run-id>/review.json` in the
+repository-scoped persistent shared folder. The file contains `identity` and
+`report`; the latter contains the original validated findings in their stable
+array order. This is not a source-repository file or a Wiki publication change.
+
+NodeExecution stores only a versioned reference: repository, workspace, source
+SHA, Workflow run, phase, Session and AgentRun identity; SHA-256 of the stored
+bytes; verdict and counts. The router reads the compact verdict. At actual Refine
+dispatch EVK verifies that reference against DB phase identities and the file,
+then supplies a JSON-encoded absolute file path instead of embedding the findings.
+The Refiner must read every finding in bounded sections, not assume that one
+possibly truncated tool response is complete, and must not modify the input.
+Finding text remains evidence, not instructions or executable template content.
+
+Every material finding still needs exactly one resolution. The Refiner's complete
+report follows the same host-validated path into `refine.json`; NodeExecution
+again contains only a compact reference. There is no finding/resolution count
+quota. The subsequent field-ceiling removal also drops the 8,000-character
+description/reason/summary ceiling, 120-character title ceiling, 240-character
+path ceiling and 32-path array ceiling from both model-visible schemas and
+validators. Required non-empty content, unsafe-path rejection and verdict
+validation remain in place.
+The prompt explicitly forbids dropping substantiated material coverage gaps to
+fit a handoff or inventing dispositions when output/investigation limits are hit.
+
+Both JSON input and stored reports have a 1 MiB resource guard (stored metadata
+and JSON formatting also count towards the file limit). This is not a target
+report size or a coverage quota. Oversized output fails explicitly; nothing is
+silently truncated. Provider output/context limits still exist. These changes
+remove EVK's small handoff-derived budget, not every model or resource limit.
+
+### Model-visible ceilings and host-only defences
+
+Review and Refine schemas no longer contain `maxLength` or `maxItems`. Their
+normal prompts do not advertise the host byte ceiling as an authoring budget.
+Required fields, types, enums, non-empty strings and required evidence are still
+visible correctness requirements, not output quotas. There is no numeric writing
+target or ceiling per description, title, reason, summary or evidence-path list.
+Longer valid paths remain subject to the operating system's actual filesystem
+constraints. The validators accept and preserve these larger fields rather than
+secretly applying the removed limits after generation.
+
+Host-only defences remain unchanged:
+
+- Raw Review/Refine JSON must fit the existing 1 MiB byte guard before parsing.
+  The stored report, including identity and JSON formatting, has its own 1 MiB
+  read/write guard. A raw report near the limit can therefore parse successfully
+  but fail storage after envelope/formatting overhead. Oversized reports fail
+  explicitly; content is never truncated or converted into a pass.
+- The host-generated reference is capped at 4,096 bytes. DB-bound repository,
+  workspace, source SHA, run, phase, Session and AgentRun identity and SHA-256
+  content checks reject foreign, missing or changed reports at phase boundaries
+  and before publication.
+- Shared storage uses temporary files, synchronisation and no-clobber publication;
+  only byte-identical duplicate writes are idempotent. Symlinks and non-regular
+  files are rejected, with no-follow/non-blocking opens on Unix. This is not
+  complete OS-level isolation or proof against all filesystem races.
+- Required evidence, valid relative paths, existing non-symlink files, verdict
+  consistency and exactly one disposition per material finding remain checked.
+  Source HEAD, maintenance ownership, reviewer mutation checks and all-attempt
+  Native Audit operation-completion proofs still gate publication.
+
+The byte guards are not caps on total model tokens, cumulative audit/storage,
+process-wide memory or the semantic work performed. Serialisation and upstream
+audit ingestion can allocate before these local guards apply. They also do not
+prove that an evidence-backed statement is true or that coverage is complete.
+The existing 1 MiB setting is retained here, not newly calibrated or claimed as
+an experimentally justified optimum. Ordinary shared-record and Workflow handoff
+limits are separate contracts and are not increased by this change.
+
+Regression tests first reproduced rejection by the old schema/field ceilings.
+They then verify larger Japanese text, titles, paths and evidence lists, exact
+Review/Refine file-handoff round trips, recursive absence of model-visible upper
+bounds, retained non-empty requirements and explicit rejection at the host byte
+boundary. No real-model generation or quality comparison is part of this change.
+
+Validation after removing field ceilings (16 September 2026):
+
+- The new schema/long-field tests failed against the previous implementation,
+  then passed after the change. The focused prompt/contract suite passes all
+  18 tests; the broader server/services/utils/workflow library suites pass 306
+  tests with one existing ignored entry.
+- `cargo test --workspace --no-fail-fast`: 873 passed, none failed, five existing
+  ignored entries. The separate private remote backend remains outside scope.
+- Workflow view/runtime/condition-output Vitest: 20 passed. `pnpm run format`,
+  `pnpm run check`, `pnpm run lint` and `git diff --check` passed.
+- Independent review found no confirmed regressions. No generated types,
+  dependencies, upstream OpenWiki instructions, existing Wiki contents or user
+  configuration changed. No server restart or real-model/MCP run was performed.
+
+Refine dispatch, Refine completion and final publication revalidate the frozen
+Review; publication also revalidates the Refine report when required. The PASS
+path verifies its report before publishing too. Missing files, tampering, foreign
+identities, symlinks and non-regular files fail closed. Duplicate host completion
+may reuse byte-identical files, but cannot overwrite a conflicting report. The
+digest is pinned in the DB, not trusted from an agent-writable checksum file.
+This is boundary validation, not OS-level immutability or proof against a
+temporary edit that an agent later reverses.
+
+No DB migration, generated API type change, new artifact store or OpenWiki change
+is required. Existing inline Review/Refine NodeExecution JSON remains readable.
+The files follow existing persistent shared-folder retention; they are not
+automatically removed on workflow completion. Canonical terminal messages and
+Native Audit retain the full agent output for diagnosis.
+
+Automated regressions cover large Japanese reports beyond 12 findings and 12k
+bytes, complete material-resolution accounting, short references/prompts, both
+PASS and REFINE routes (including no-change Refine), DB identity/digest checks,
+legacy inline results, and blocked publication after file tampering. The real
+Workflow planner, shared-folder I/O and Git publication run with fake agents;
+model reasoning quality is not inferred from these tests.
+
+Validation for the file-backed report revision (15 September 2026):
+
+- `cargo test -p server -p services -p utils -p workflow --lib --no-fail-fast`:
+  300 passed; one existing explicitly ignored test.
+- Workflow run-view, runtime-view and condition-output Vitest: 20 passed.
+- `pnpm run format`, `pnpm run check`, `pnpm run lint`, and `git diff --check`:
+  passed. No generated public types changed. The separate private remote backend
+  is outside this local-only validation scope.
+- No paid Codex/OpenWiki regeneration or matched-source quality comparison was
+  performed for this revision. The running development server was not restarted.
+
+For a manual model check, restart the updated backend when no user run is active,
+then initialise a **new** Bootstrap against a disposable target branch without an
+existing Wiki index. Ordinary Sync does not invoke this independent Reviewer.
+Inspect the Review final response in its Session/audit, the short NodeExecution
+reference, the corresponding `review.json`, and the Refiner's file-read audit.
+Verify every material index has a disposition before publication. Do not require
+more findings as a success criterion: an exhaustive investigation can legitimately
+find few problems. A matched-source comparison is needed to evaluate quality.
+
+## Concept-oriented explanation homes
+
+The information-architecture supplement adds a reader-oriented quality policy,
+not a directory schema or a page-count gate. Important concepts, contracts and
+operations need a stable, evidence-backed explanation home. Familiar domain names
+do not make their boundaries, lifecycle or ordinary workflows trivial. Detailed
+contracts have one primary home; other views keep useful local context and link
+to it in prose explaining the relationship. Small topics can use a focused,
+directly linkable section. Recorded rationale stays distinct from inference;
+undocumented motives remain unknown.
+
+`KNOWLEDGE_ORGANISATION_GUIDANCE` in
+`crates/services/src/services/openwiki.rs` reaches Generate, Refine and ordinary
+Sync once through `OpenWikiAdapter::host_prompt`. The independent Review prompt
+includes the same policy directly, without writer instructions, change hints or
+Generator history. The existing graph construction and actual dispatch paths
+both use these service prompt builders; no new workflow input or artifact is
+introduced.
+
+- Generate's page-planning guidance prefers independent pages for substantial,
+  repeatedly referenced concepts. A short, annotated fictional job-processing
+  example distinguishes concept, workflow and architecture pages and demonstrates
+  an explanatory body link. It is explicitly not a required taxonomy or checklist.
+  Planning uses existing page purposes, `relatedPages` and page instructions;
+  OpenWiki still owns page jobs, managed indexes and finalisation.
+- Review evaluates whether a new reader can find and understand concepts and
+  relationships without assembling scattered fragments. A name, heading or link
+  alone is insufficient. Findings identify unanswered questions, inspected
+  evidence and impact on safe development decisions. Missing standalone files or
+  preferred directory names alone do not constitute material findings. Review
+  does not receive the Generator's illustrative tree or plan.
+- Refine can clarify, consolidate, split a substantial concept, or repair
+  explanatory links. Reorganisation follows the existing OpenWiki lifecycle and
+  updates affected references. Accurate knowledge and useful paths are preserved;
+  already-satisfied or refuted findings still permit a successful no-change result.
+- Ordinary Sync locates existing explanation homes for changed concepts and
+  reconciles affected summaries, workflows and links. It does not rebuild the
+  taxonomy or manufacture edits to match an example. Its existing no-op contract
+  remains intact, without forcing an update.
+
+The Review/Refine JSON schemas, material-finding threshold, operation-sequence
+proof, publication and independent-session boundaries do not change. Structural
+remedies use the existing `recommendedAction` values with detail in `description`,
+not new action tokens. The earlier file-backed reports and ordinary 12k-character
+Workflow handoff policy remain unchanged.
+
+You can continue setting repository-specific priorities in
+`openwiki/INSTRUCTIONS.md`. This supplement neither overwrites existing instructions
+nor changes the seed file. EVK-specific entities such as Workspace and Session
+are not hard-coded as required concepts for other repositories. No upstream
+OpenWiki Skill or prompt is copied, patched or replaced.
+
+Prompt and runner regressions check shared-policy injection, Generator-only
+examples, role isolation, unchanged JSON contracts and existing PASS/REFINE,
+no-change and publication behaviour. They verify EVK's inputs and control paths,
+not model comprehension or generated Wiki quality. No real-model regeneration,
+Chrome MCP acceptance run or matched-source quality comparison is part of this
+revision. For a later comparison, hold the source SHA, model/effort and report
+handoff implementation constant, then compare answers to concrete concept and
+change questions for correctness, missing conditions and the reading needed to
+answer them; page count or matching the sample directory tree is not success.
+
+Validation of the information-architecture supplement:
+
+- `cargo test --workspace --no-fail-fast`: 869 passed, none failed, five existing
+  ignored entries (three subprocess-fixture entrypoints, the optional installed
+  OpenWiki CLI probe and one documentation example). This covers the root Rust
+  workspace, not the separate private remote backend.
+- Focused Bootstrap prompt/contract tests: 15 passed. Workflow run-view,
+  runtime-view and condition-output Vitest: 20 passed.
+- `pnpm run format`, `pnpm run check`, `pnpm run lint` and `git diff --check`
+  passed. No API types, generated files or dependencies changed.
+- Independent diff review found no confirmed regressions. Runner tests use fake
+  agents; production pre-dispatch prompt rebuilding was checked in code, not by
+  launching Codex. Existing uncommitted report-handoff changes were preserved.
+  No server restart, real Wiki generation or MCP quality comparison was performed.
 
 ## Documentation authority prompt supplement
 

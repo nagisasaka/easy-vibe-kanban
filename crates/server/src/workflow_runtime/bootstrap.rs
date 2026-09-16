@@ -19,15 +19,18 @@ use executors::{
 use services::services::{
     openwiki::{
         self, OpenWikiAdapter,
-        bootstrap::{CoverageReview, CoverageVerdict, RefinementReport},
+        bootstrap::{
+            CoverageReview, CoverageVerdict, RefinementReport,
+            reports::{self, ReportIdentity, ReportReference},
+        },
         completion::WriterPhase,
         inventory::{DocumentInventory, InventoryIdentity},
     },
     orchestration::OrchestrationService,
 };
 use utils::repository_memory::{
-    OpenWikiBootstrapChild, OpenWikiBootstrapOwner, OpenWikiBootstrapPhase, RepositoryMemoryState,
-    RepositoryMemoryStore, RepositoryWikiStatus,
+    BootstrapReportKind, OpenWikiBootstrapChild, OpenWikiBootstrapOwner, OpenWikiBootstrapPhase,
+    RepositoryMemoryState, RepositoryMemoryStore, RepositoryWikiStatus,
 };
 use uuid::Uuid;
 
@@ -315,7 +318,7 @@ pub(super) async fn prepare_child_dispatch(
             OpenWikiBootstrapPhase::Reviewing
         }
         "refine" => {
-            let review = validated_review(deployment, request.run_id).await?;
+            let (review, reference) = validated_review(deployment, &ctx, request.run_id).await?;
             ensure!(
                 review.verdict == CoverageVerdict::NeedsRefinement,
                 "Refine requires material coverage findings"
@@ -324,7 +327,7 @@ pub(super) async fn prepare_child_dispatch(
             request.prompt = openwiki::bootstrap::writer_prompt(
                 &ctx.root,
                 &ctx.state.output_language,
-                Some(&review),
+                Some(&reference.prompt_path(&ctx.store)),
             );
             OpenWikiBootstrapPhase::Refining
         }
@@ -368,11 +371,90 @@ pub(super) async fn prepare_child_dispatch(
 
 async fn validated_review(
     deployment: &DeploymentImpl,
+    ctx: &ContextData,
     run_id: Uuid,
-) -> anyhow::Result<CoverageReview> {
-    let raw: String = sqlx::query_scalar("SELECT output_text FROM node_executions WHERE run_id = ? AND node_id = 'review' AND iteration = 0 AND status = 'succeeded'")
-        .bind(run_id).fetch_one(&deployment.db().pool).await?;
-    CoverageReview::parse(&raw)
+) -> anyhow::Result<(CoverageReview, ReportReference)> {
+    load_review_phase(
+        &deployment.db().pool,
+        &ctx.store,
+        source_identity(ctx, run_id)?,
+    )
+    .await
+}
+
+pub(super) async fn load_review_phase(
+    pool: &sqlx::SqlitePool,
+    store: &RepositoryMemoryStore,
+    source: InventoryIdentity,
+) -> anyhow::Result<(CoverageReview, ReportReference)> {
+    let (raw, identity) = phase_report_input(pool, source, BootstrapReportKind::Review).await?;
+    if reports::is_reference(&raw) {
+        let reference = ReportReference::parse(&raw)?;
+        let review = reference.load_review(store, &identity)?;
+        Ok((review, reference))
+    } else {
+        // Existing inline executions remain readable. The DB's full JSON is the
+        // authority; materialise a file only to support reference-based dispatch.
+        let review = CoverageReview::parse(&raw)?;
+        let reference = reports::save_review(store, identity, &review)?;
+        Ok((review, reference))
+    }
+}
+
+fn source_identity(ctx: &ContextData, run_id: Uuid) -> anyhow::Result<InventoryIdentity> {
+    Ok(InventoryIdentity::new(
+        ctx.repo.id,
+        ctx.workspace.id,
+        run_id,
+        ctx.state
+            .active_source_commit
+            .clone()
+            .context("Bootstrap source missing")?,
+    ))
+}
+
+/// Bind the file to the successful phase's DB identities, not fields supplied
+/// by the file itself or by the currently active (possibly different) child.
+pub(super) async fn phase_report_input(
+    pool: &sqlx::SqlitePool,
+    source: InventoryIdentity,
+    phase: BootstrapReportKind,
+) -> anyhow::Result<(String, ReportIdentity)> {
+    let node = match phase {
+        BootstrapReportKind::Review => "review",
+        BootstrapReportKind::Refine => "refine",
+    };
+    let (raw, session_id, agent_run_id): (String, Uuid, Uuid) = sqlx::query_as(
+        "SELECT output_text, session_id, agent_run_id FROM node_executions WHERE run_id = ? AND node_id = ? AND iteration = 0 AND status = 'succeeded'")
+        .bind(source.run_id).bind(node).fetch_one(pool).await?;
+    Ok((
+        raw,
+        ReportIdentity {
+            source,
+            phase,
+            session_id,
+            agent_run_id,
+        },
+    ))
+}
+
+pub(super) async fn validate_publication_reports(
+    pool: &sqlx::SqlitePool,
+    store: &RepositoryMemoryStore,
+    source: InventoryIdentity,
+    root: &std::path::Path,
+) -> anyhow::Result<()> {
+    let (review, _) = load_review_phase(pool, store, source.clone()).await?;
+    if review.verdict == CoverageVerdict::NeedsRefinement {
+        let (raw, identity) = phase_report_input(pool, source, BootstrapReportKind::Refine).await?;
+        let report = if reports::is_reference(&raw) {
+            ReportReference::parse(&raw)?.load_refinement(store, &identity, &review)?
+        } else {
+            RefinementReport::parse(&raw, &review)?
+        };
+        report.validate_files(root)?;
+    }
+    Ok(())
 }
 
 pub(super) async fn validate_child_completion(
@@ -405,6 +487,28 @@ pub(super) async fn validate_child_completion(
         deployment.git().get_head_info(&ctx.root)?.oid == source,
         "Bootstrap agent changed Git history"
     );
+    let run = AgentRunRecord::find(&deployment.db().pool, agent_run_id)
+        .await?
+        .context("Bootstrap AgentRun missing")?;
+    ensure!(
+        owner
+            .child
+            .as_ref()
+            .is_some_and(|child| child.session_id == run.session_id),
+        "Bootstrap child Session mismatch"
+    );
+    ensure!(
+        run.status == AgentRunStatus::Succeeded,
+        "Bootstrap child did not succeed"
+    );
+    let report_identity = |phase| -> anyhow::Result<ReportIdentity> {
+        Ok(ReportIdentity {
+            source: source_identity(&ctx, run_id)?,
+            phase,
+            session_id: run.session_id,
+            agent_run_id,
+        })
+    };
     if node_id == "review" {
         ensure!(
             owner.review_fingerprint.as_deref()
@@ -421,30 +525,26 @@ pub(super) async fn validate_child_completion(
                 );
             }
         }
-        return Ok(serde_json::to_string(&review)?);
+        let reference = reports::save_review(
+            &ctx.store,
+            report_identity(BootstrapReportKind::Review)?,
+            &review,
+        )?;
+        return Ok(serde_json::to_string(&reference)?);
     }
     ensure!(
         matches!(node_id, "generate" | "refine"),
         "Unexpected writer phase"
     );
-    let run = AgentRunRecord::find(&deployment.db().pool, agent_run_id)
-        .await?
-        .context("Bootstrap AgentRun missing")?;
-    ensure!(
-        owner
-            .child
-            .as_ref()
-            .is_some_and(|child| child.session_id == run.session_id),
-        "Bootstrap child Session mismatch"
-    );
-    ensure!(
-        run.status == AgentRunStatus::Succeeded,
-        "Writer did not succeed"
-    );
+    let review = if node_id == "refine" {
+        Some(validated_review(deployment, &ctx, run_id).await?.0)
+    } else {
+        None
+    };
     let report = if node_id == "refine" {
         Some(RefinementReport::parse(
             output,
-            &validated_review(deployment, run_id).await?,
+            review.as_ref().context("Refine review missing")?,
         )?)
     } else {
         None
@@ -486,7 +586,13 @@ pub(super) async fn validate_child_completion(
                 "Refine changed files without a verified OpenWiki update"
             );
         }
-        return Ok(serde_json::to_string(&report)?);
+        let reference = reports::save_refinement(
+            &ctx.store,
+            report_identity(BootstrapReportKind::Refine)?,
+            &report,
+            review.as_ref().context("Refine review missing")?,
+        )?;
+        return Ok(serde_json::to_string(&reference)?);
     }
     // No generator narrative is needed by the fresh reviewer or router.
     Ok(format!(
@@ -508,17 +614,13 @@ async fn publish(
             "Bootstrap has not validated {node}"
         );
     }
-    let review = validated_review(deployment, run_id).await?;
-    if review.verdict == CoverageVerdict::NeedsRefinement {
-        ensure!(
-            run.nodes.iter().any(|item| item.node_id == "refine"
-                && item.status == db::models::workflow::NodeExecutionStatus::Succeeded),
-            "Bootstrap refinement is incomplete"
-        );
-        let raw: String = sqlx::query_scalar("SELECT output_text FROM node_executions WHERE run_id = ? AND node_id = 'refine' AND iteration = 0 AND status = 'succeeded'")
-            .bind(run_id).fetch_one(&deployment.db().pool).await?;
-        RefinementReport::parse(&raw, &review)?.validate_files(&ctx.root)?;
-    }
+    validate_publication_reports(
+        &deployment.db().pool,
+        &ctx.store,
+        source_identity(&ctx, run_id)?,
+        &ctx.root,
+    )
+    .await?;
     ensure!(
         ctx.state.bootstrap.as_ref().unwrap().phase != OpenWikiBootstrapPhase::CleaningUp,
         "Failed Bootstrap cannot publish"

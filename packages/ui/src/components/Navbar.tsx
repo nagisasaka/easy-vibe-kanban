@@ -4,6 +4,7 @@ import {
   Layout as LayoutIcon,
   ChatsTeardrop as ChatsTeardropIcon,
   Files as FilesIcon,
+  BookOpen as BookOpenIcon,
   GitDiff as GitDiffIcon,
   Terminal as TerminalIcon,
   Desktop as DesktopIcon,
@@ -100,12 +101,14 @@ export type MobileTabId =
   | 'changes'
   | 'logs'
   | 'preview'
+  | 'wiki'
   | 'git';
 
 export const MOBILE_TABS: { id: MobileTabId; icon: Icon; label: string }[] = [
   { id: 'workspaces', icon: LayoutIcon, label: 'Wksps' },
   { id: 'chat', icon: ChatsTeardropIcon, label: 'Chat' },
   { id: 'files', icon: FilesIcon, label: 'Files' },
+  { id: 'wiki', icon: BookOpenIcon, label: 'Wiki' },
   { id: 'changes', icon: GitDiffIcon, label: 'Diff' },
   { id: 'logs', icon: TerminalIcon, label: 'Logs' },
   { id: 'preview', icon: DesktopIcon, label: 'Preview' },
@@ -309,6 +312,8 @@ export function Navbar({
                     <button
                       key={tab.id}
                       type="button"
+                      aria-label={tab.label}
+                      aria-current={isActive ? 'page' : undefined}
                       className={cn(
                         'flex items-center gap-1 px-1.5 py-1 text-xs whitespace-nowrap transition-colors',
                         isActive

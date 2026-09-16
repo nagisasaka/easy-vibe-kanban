@@ -14,6 +14,7 @@ import {
   RowsIcon,
   TextAlignLeftIcon,
   FilesIcon,
+  BookOpenIcon,
   EyeSlashIcon,
   SidebarSimpleIcon,
   ChatsTeardropIcon,
@@ -698,6 +699,28 @@ export const Actions = {
         .getState()
         .toggleRightMainPanelMode(
           RIGHT_MAIN_PANEL_MODES.LOGS,
+          ctx.currentWorkspaceId ?? undefined
+        );
+    },
+  },
+
+  ToggleWikiMode: {
+    id: 'toggle-wiki-mode',
+    label: 'Toggle Wiki Reader',
+    icon: BookOpenIcon,
+    requiresTarget: ActionTargetType.NONE,
+    isVisible: (ctx) => !ctx.isCreateMode && ctx.layoutMode === 'workspaces',
+    isActive: (ctx) => ctx.rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.WIKI,
+    isEnabled: (ctx) => !ctx.isCreateMode && ctx.hasWorkspace,
+    getLabel: (ctx) =>
+      ctx.rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.WIKI
+        ? 'Close Wiki Reader'
+        : 'Open Wiki Reader',
+    execute: (ctx) => {
+      useUiPreferencesStore
+        .getState()
+        .toggleRightMainPanelMode(
+          RIGHT_MAIN_PANEL_MODES.WIKI,
           ctx.currentWorkspaceId ?? undefined
         );
     },
@@ -1567,6 +1590,7 @@ export const NavbarActionGroups = {
     Actions.ToggleLeftMainPanel,
     Actions.ToggleChangesMode,
     Actions.ToggleFilesMode,
+    Actions.ToggleWikiMode,
     Actions.ToggleLogsMode,
     Actions.TogglePreviewMode,
     Actions.ToggleRightSidebar,

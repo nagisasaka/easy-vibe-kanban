@@ -42,6 +42,61 @@ export function allWikiPages(snapshot: WikiSnapshot): WikiPage[] {
   return [...(snapshot.index ? [snapshot.index] : []), ...snapshot.pages];
 }
 
+/** Cancel the renderer's external-link behavior before selecting a Wiki page. */
+export function activateWikiLink(
+  destination: string | null,
+  event: { preventDefault(): void; stopPropagation(): void },
+  selectPage: (path: string) => void
+): void {
+  if (!destination) return;
+  event.preventDefault();
+  event.stopPropagation();
+  selectPage(destination);
+}
+
+export type WikiTreeNode =
+  | { kind: 'directory'; path: string; name: string; children: WikiTreeNode[] }
+  | { kind: 'page'; path: string; page: WikiPage };
+
+/** Build navigation only from the public Wiki snapshot, never a broader file API. */
+export function buildWikiTree(pages: readonly WikiPage[]): WikiTreeNode[] {
+  const root: WikiTreeNode[] = [];
+  for (const page of [...pages].sort((a, b) => a.path.localeCompare(b.path))) {
+    const segments = page.path.split('/');
+    let siblings = root;
+    let path = '';
+    for (const name of segments.slice(0, -1)) {
+      path = path ? `${path}/${name}` : name;
+      let directory = siblings.find(
+        (node) => node.kind === 'directory' && node.path === path
+      );
+      if (!directory) {
+        directory = { kind: 'directory', path, name, children: [] };
+        siblings.push(directory);
+      }
+      if (directory.kind === 'directory') siblings = directory.children;
+    }
+    siblings.push({ kind: 'page', path: page.path, page });
+  }
+  const sort = (nodes: WikiTreeNode[]): WikiTreeNode[] =>
+    nodes
+      .sort((a, b) => {
+        const rank = (node: WikiTreeNode) =>
+          node.kind === 'page' && node.path.split('/').at(-1) === 'index.md'
+            ? 0
+            : node.kind === 'directory'
+              ? 1
+              : 2;
+        return rank(a) - rank(b) || a.path.localeCompare(b.path);
+      })
+      .map((node) =>
+        node.kind === 'directory'
+          ? { ...node, children: sort(node.children) }
+          : node
+      );
+  return sort(root);
+}
+
 export function searchWikiPages(
   snapshot: WikiSnapshot,
   query: string

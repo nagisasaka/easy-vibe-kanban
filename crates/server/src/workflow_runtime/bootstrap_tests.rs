@@ -7,10 +7,13 @@ use std::{
 
 use services::services::openwiki::{
     self,
-    bootstrap::CoverageReview,
+    bootstrap::{
+        CoverageReview,
+        reports::{self, ReportIdentity, ReportReference},
+    },
     inventory::{DocumentInventory, InventoryIdentity},
 };
-use utils::repository_memory::RepositoryMemoryStore;
+use utils::repository_memory::{BootstrapReportKind, RepositoryMemoryStore};
 
 use super::*;
 
@@ -177,6 +180,12 @@ impl WorkflowAgentExecutor for FakeBootstrap<'_> {
         let fixture = self.fixture;
         let inventory = fixture.inventory(request.run_id).await?;
         if matches!(request.node_id.as_str(), "generate" | "review") {
+            assert_eq!(request.prompt.matches("Knowledge organisation:").count(), 1);
+            assert!(request.prompt.contains("canonical explanation home"));
+            assert_eq!(
+                request.prompt.contains("fictional job-processing product"),
+                request.node_id == "generate",
+            );
             assert!(
                 request
                     .prompt
@@ -196,6 +205,19 @@ impl WorkflowAgentExecutor for FakeBootstrap<'_> {
         if self.fail == Some(request.node_id.as_str()) {
             return Err(ApiError::BadRequest("fixture phase failure".into()));
         }
+        let session_id = request.session_id.unwrap();
+        let agent_run_id = Uuid::new_v4();
+        let identity = |phase| ReportIdentity {
+            source: InventoryIdentity::new(
+                fixture.repository_id,
+                fixture.workspace_id,
+                request.run_id,
+                fixture.source.clone(),
+            ),
+            phase,
+            session_id,
+            agent_run_id,
+        };
         let output = match request.node_id.as_str() {
             "generate" => {
                 std::fs::create_dir(fixture.maintenance.join("openwiki")).unwrap();
@@ -214,22 +236,57 @@ impl WorkflowAgentExecutor for FakeBootstrap<'_> {
             "review" => {
                 assert!(!request.prompt.contains("SENSITIVE_GENERATOR_CONVERSATION"));
                 assert!(!request.prompt.contains("Direct Upstream Handoff"));
+                assert!(
+                    request
+                        .prompt
+                        .contains("unanswered question, inspected evidence")
+                );
+                assert!(request.prompt.contains(
+                    "Missing standalone pages or preferred directory names alone are not material"
+                ));
                 assert!(request.selected_skills.is_none());
-                let raw = if self.refine {
-                    json!({"version":1,"verdict":"needs_refinement","summary":"A material gap","findings":[{"severity":"material","title":"Missing lifecycle","description":"Document cancellation","evidencePaths":["source.rs"],"recommendedAction":"expand_page"}]})
-                } else { json!({"version":1,"verdict":"pass","findings":[],"summary":"No material gaps"}) }.to_string();
-                CoverageReview::parse(&raw).unwrap();
-                raw
+                let findings: Vec<_> = (0..20).map(|index| json!({
+                    "severity": if self.refine {"material"} else {"minor"},
+                    "title":format!("Coverage gap {index}"),"description":"契約と実装を確認し、知識の不足を具体的に記録。".repeat(40),
+                    "evidencePaths":["source.rs"],"recommendedAction":"expand_page"
+                })).collect();
+                let raw =
+                    json!({"version":1,"verdict":if self.refine {"needs_refinement"} else {"pass"},
+                    "summary":"All findings preserved","findings":findings})
+                    .to_string();
+                assert!(raw.len() > 12_000);
+                let review = CoverageReview::parse(&raw).unwrap();
+                let reference = reports::save_review(
+                    &fixture.store,
+                    identity(BootstrapReportKind::Review),
+                    &review,
+                )
+                .unwrap();
+                if self.fail == Some("tamper_review_report") {
+                    std::fs::write(reference.prompt_path(&fixture.store), "{}").unwrap();
+                }
+                serde_json::to_string(&reference).unwrap()
             }
             "refine" => {
                 assert!(self.refine);
-                let raw: String = sqlx::query_scalar("SELECT output_text FROM node_executions WHERE run_id = ? AND node_id = 'review' AND status = 'succeeded'")
-                    .bind(request.run_id).fetch_one(&fixture.pool).await?;
-                let review = CoverageReview::parse(&raw).unwrap();
-                assert!(
-                    openwiki::bootstrap::writer_prompt(&fixture.maintenance, "ja", Some(&review))
-                        .contains("force=true")
+                let (review, reference) = crate::workflow_runtime::bootstrap::load_review_phase(
+                    &fixture.pool,
+                    &fixture.store,
+                    identity(BootstrapReportKind::Review).source,
+                )
+                .await
+                .map_err(orchestration_api_error)?;
+                let prompt = openwiki::bootstrap::writer_prompt(
+                    &fixture.maintenance,
+                    "ja",
+                    Some(&reference.prompt_path(&fixture.store)),
                 );
+                assert!(prompt.contains("force=true"));
+                assert_eq!(prompt.matches("Knowledge organisation:").count(), 1);
+                assert!(prompt.contains("restructuring is not required"));
+                assert!(!prompt.contains("fictional job-processing product"));
+                assert!(prompt.chars().count() < 12_000);
+                assert!(!prompt.contains("Coverage gap 19"));
                 if !self.refute {
                     std::fs::write(
                         fixture.maintenance.join("openwiki/index.md"),
@@ -237,18 +294,26 @@ impl WorkflowAgentExecutor for FakeBootstrap<'_> {
                     )
                     .unwrap();
                 }
-                let report = json!({"version":1,"summary":"Checked the finding","resolutions":[{
-                    "findingIndex":0,"disposition":if self.refute {"refuted"} else {"fixed"},
-                    "reason":"Verified against source.rs","wikiPaths":["openwiki/index.md"],"evidencePaths":["source.rs"]
-                }]}).to_string();
+                let resolutions: Vec<_> = (0..review.findings.len()).map(|index| json!({
+                    "findingIndex":index,"disposition":if self.refute {"refuted"} else {"fixed"},
+                    "reason":"現在の実装を検証し、根拠とともに処置を記録。".repeat(40),"wikiPaths":["openwiki/index.md"],"evidencePaths":["source.rs"]
+                })).collect();
+                let report = json!({"version":1,"summary":"Checked every finding","resolutions":resolutions}).to_string();
+                assert!(report.len() > 12_000);
                 let report =
                     openwiki::bootstrap::RefinementReport::parse(&report, &review).unwrap();
                 report.validate_files(&fixture.maintenance).unwrap();
-                serde_json::to_string(&report).unwrap()
+                let reference = reports::save_refinement(
+                    &fixture.store,
+                    identity(BootstrapReportKind::Refine),
+                    &report,
+                    &review,
+                )
+                .unwrap();
+                serde_json::to_string(&reference).unwrap()
             }
             _ => panic!("unexpected agent node"),
         };
-        let session_id = request.session_id.unwrap();
         if self.fail == Some(format!("tamper_{}", request.node_id).as_str()) {
             std::fs::write(
                 fixture.store.document_inventory_path(request.run_id, None),
@@ -257,7 +322,6 @@ impl WorkflowAgentExecutor for FakeBootstrap<'_> {
             .unwrap();
         }
         fixture.inventory(request.run_id).await?;
-        let agent_run_id = Uuid::new_v4();
         // The fake host supplies durable identities; real host protocol and
         // sandbox behaviour have separate adapter/Native Audit tests.
         sqlx::query("INSERT INTO agent_runs (id, session_id, workspace_id, request_id, idempotency_key, correlation_id, schema_version, payload_version, runtime_profile_id, provider_id, workspace_mode, workspace_path, request_envelope) VALUES (?, ?, ?, ?, ?, ?, 1, 1, 'codex:default', 'codex', 'isolated_worktree', ?, '{}')")
@@ -281,6 +345,25 @@ impl WorkflowAgentExecutor for FakeBootstrap<'_> {
             std::fs::write(f.store.document_inventory_path(run_id, None), "{}").unwrap();
         }
         f.inventory(run_id).await?;
+        if matches!(
+            self.fail,
+            Some("tamper_pass_report" | "tamper_refine_report")
+        ) {
+            let phase = if self.fail == Some("tamper_pass_report") {
+                BootstrapReportKind::Review
+            } else {
+                BootstrapReportKind::Refine
+            };
+            std::fs::write(f.store.bootstrap_report_path(run_id, phase), "{}").unwrap();
+        }
+        crate::workflow_runtime::bootstrap::validate_publication_reports(
+            &f.pool,
+            &f.store,
+            InventoryIdentity::new(f.repository_id, f.workspace_id, run_id, f.source.clone()),
+            &f.maintenance,
+        )
+        .await
+        .map_err(orchestration_api_error)?;
         let result = openwiki::publish_validated_wiki(
             &git::GitService::new(),
             &f.store,
@@ -683,6 +766,22 @@ async fn bootstrap_pass_and_refine_use_existing_runner_and_publish_once() {
             calls.len()
         );
         assert_eq!(executor.publications.load(Ordering::SeqCst), 1);
+        for node in run.nodes.iter().filter(|node| {
+            matches!(node.node_id.as_str(), "review" | "refine")
+                && node.status == DbNodeExecutionStatus::Succeeded
+        }) {
+            let raw = node.output_text.as_ref().unwrap();
+            assert!(raw.len() < 4096);
+            let reference = ReportReference::parse(raw).unwrap();
+            assert_eq!(reference.finding_count, 20);
+            assert_eq!(reference.identity.agent_run_id, node.agent_run_id.unwrap());
+            assert!(
+                std::fs::metadata(reference.prompt_path(&f.store))
+                    .unwrap()
+                    .len()
+                    > 12_000
+            );
+        }
         if refute {
             assert_eq!(
                 git(&f.root, &["show", "main:openwiki/index.md"]),
@@ -749,6 +848,110 @@ async fn bootstrap_phase_failures_never_reach_publication_or_reuse_retry() {
                 .is_err()
         );
     }
+}
+
+#[tokio::test]
+async fn report_tampering_blocks_refine_or_publication_without_touching_target() {
+    for (fail, refine) in [
+        ("tamper_review_report", true),
+        ("tamper_pass_report", false),
+        ("tamper_refine_report", true),
+    ] {
+        let f = Fixture::new().await;
+        let run_id = f.reserve().await;
+        let executor = FakeBootstrap {
+            fixture: &f,
+            refine,
+            refute: false,
+            fail: Some(fail),
+            calls: Mutex::new(Vec::new()),
+            publications: AtomicUsize::new(0),
+        };
+        let _ = drive_repository_workflow(&f.pool, run_id, &executor).await;
+        let run = get_workflow_run_response(&f.pool, run_id).await.unwrap();
+        assert_ne!(run.status, WorkflowRunStatus::Succeeded, "{fail}");
+        assert_eq!(executor.publications.load(Ordering::SeqCst), 0, "{fail}");
+        assert!(f.store.publication(run_id).unwrap().is_none());
+        assert_eq!(git(&f.root, &["rev-parse", "main"]), f.source);
+        if fail == "tamper_review_report" {
+            assert!(
+                !executor
+                    .calls
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|c| c.node_id == "refine")
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn legacy_review_remains_readable_but_reference_identity_is_checked_against_db() {
+    let f = Fixture::new().await;
+    let run_id = f.reserve().await;
+    let executor = FakeBootstrap {
+        fixture: &f,
+        refine: false,
+        refute: false,
+        fail: None,
+        calls: Mutex::new(Vec::new()),
+        publications: AtomicUsize::new(0),
+    };
+    drive_repository_workflow(&f.pool, run_id, &executor)
+        .await
+        .unwrap();
+    let source = InventoryIdentity::new(f.repository_id, f.workspace_id, run_id, f.source.clone());
+    let (review, reference) =
+        crate::workflow_runtime::bootstrap::load_review_phase(&f.pool, &f.store, source.clone())
+            .await
+            .unwrap();
+    // A legacy inline node can use the same report transport without a migration.
+    sqlx::query(
+        "UPDATE node_executions SET output_text = ? WHERE run_id = ? AND node_id = 'review'",
+    )
+    .bind(serde_json::to_string(&review).unwrap())
+    .bind(run_id)
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        crate::workflow_runtime::bootstrap::load_review_phase(&f.pool, &f.store, source.clone())
+            .await
+            .unwrap()
+            .0,
+        review
+    );
+    let mut wrong = reference.clone();
+    wrong.identity.source.repository_id = Uuid::new_v4();
+    sqlx::query(
+        "UPDATE node_executions SET output_text = ? WHERE run_id = ? AND node_id = 'review'",
+    )
+    .bind(serde_json::to_string(&wrong).unwrap())
+    .bind(run_id)
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    assert!(
+        crate::workflow_runtime::bootstrap::load_review_phase(&f.pool, &f.store, source.clone())
+            .await
+            .is_err()
+    );
+    wrong = reference;
+    wrong.identity.session_id = Uuid::new_v4();
+    sqlx::query(
+        "UPDATE node_executions SET output_text = ? WHERE run_id = ? AND node_id = 'review'",
+    )
+    .bind(serde_json::to_string(&wrong).unwrap())
+    .bind(run_id)
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    assert!(
+        crate::workflow_runtime::bootstrap::load_review_phase(&f.pool, &f.store, source)
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]

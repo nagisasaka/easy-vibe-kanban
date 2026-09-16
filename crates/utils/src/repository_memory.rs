@@ -12,6 +12,15 @@ use ts_rs::TS;
 use uuid::Uuid;
 
 const MAX_RECORD_BYTES: u64 = 128 * 1024;
+/// Resource guard for full Bootstrap reports, independent of Workflow handoffs.
+pub const MAX_BOOTSTRAP_REPORT_BYTES: usize = 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BootstrapReportKind {
+    Review,
+    Refine,
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -449,6 +458,7 @@ impl RepositoryMemoryStore {
             "source-publications",
             "wiki-setups",
             "document-inventories",
+            "bootstrap-reports",
             "locks",
         ] {
             real_directory(&store.root.join(directory))?;
@@ -485,6 +495,41 @@ impl RepositoryMemoryStore {
     pub fn read_document_inventory(&self, run_id: Uuid, chunk: Option<u32>) -> io::Result<Vec<u8>> {
         self.read_optional(&self.document_inventory_path(run_id, chunk))?
             .ok_or_else(|| invalid("Document inventory record is missing"))
+    }
+
+    pub fn bootstrap_report_path(&self, run_id: Uuid, kind: BootstrapReportKind) -> PathBuf {
+        self.root
+            .join("bootstrap-reports")
+            .join(run_id.to_string())
+            .join(match kind {
+                BootstrapReportKind::Review => "review.json",
+                BootstrapReportKind::Refine => "refine.json",
+            })
+    }
+
+    /// Host-published once, retained with the existing persistent shared folder.
+    /// The caller freezes its digest in NodeExecution, outside agent-writable files.
+    pub fn save_bootstrap_report<T: Serialize>(
+        &self,
+        run_id: Uuid,
+        kind: BootstrapReportKind,
+        report: &T,
+    ) -> io::Result<()> {
+        let path = self.bootstrap_report_path(run_id, kind);
+        real_directory(path.parent().unwrap())?;
+        self.publish_limited(&path, report, false, MAX_BOOTSTRAP_REPORT_BYTES as u64)
+    }
+
+    pub fn read_bootstrap_report(
+        &self,
+        run_id: Uuid,
+        kind: BootstrapReportKind,
+    ) -> io::Result<Vec<u8>> {
+        self.read_optional_limited(
+            &self.bootstrap_report_path(run_id, kind),
+            MAX_BOOTSTRAP_REPORT_BYTES as u64,
+        )?
+        .ok_or_else(|| invalid("Bootstrap report is missing"))
     }
 
     pub fn wiki_setup(&self, workspace_id: Uuid) -> io::Result<Option<WikiSetupCheckpoint>> {
@@ -837,6 +882,10 @@ impl RepositoryMemoryStore {
     }
 
     fn read_optional(&self, path: &Path) -> io::Result<Option<Vec<u8>>> {
+        self.read_optional_limited(path, MAX_RECORD_BYTES)
+    }
+
+    fn read_optional_limited(&self, path: &Path, limit: u64) -> io::Result<Option<Vec<u8>>> {
         reject_symlinks(path)?;
         let mut options = OpenOptions::new();
         options.read(true);
@@ -856,20 +905,30 @@ impl RepositoryMemoryStore {
             return Err(invalid("Memory record is not a regular file"));
         }
         let mut bytes = Vec::new();
-        file.take(MAX_RECORD_BYTES + 1).read_to_end(&mut bytes)?;
-        if bytes.len() > MAX_RECORD_BYTES as usize {
+        file.take(limit + 1).read_to_end(&mut bytes)?;
+        if bytes.len() > limit as usize {
             return Err(invalid("Memory record is too large"));
         }
         Ok(Some(bytes))
     }
 
     fn publish<T: Serialize>(&self, path: &Path, value: &T, replace: bool) -> io::Result<()> {
+        self.publish_limited(path, value, replace, MAX_RECORD_BYTES)
+    }
+
+    fn publish_limited<T: Serialize>(
+        &self,
+        path: &Path,
+        value: &T,
+        replace: bool,
+        limit: u64,
+    ) -> io::Result<()> {
         reject_symlinks(path)?;
         let bytes = serde_json::to_vec_pretty(value)?;
-        if bytes.len() > MAX_RECORD_BYTES as usize {
+        if bytes.len() > limit as usize {
             return Err(invalid("Memory record is too large"));
         }
-        if !replace && let Some(existing) = self.read_optional(path)? {
+        if !replace && let Some(existing) = self.read_optional_limited(path, limit)? {
             return if existing == bytes {
                 Ok(())
             } else {
@@ -886,7 +945,7 @@ impl RepositoryMemoryStore {
             temporary.persist(path).map_err(|error| error.error)?;
         } else if let Err(error) = temporary.persist_noclobber(path)
             && (error.error.kind() != io::ErrorKind::AlreadyExists
-                || self.read_optional(path)?.as_ref() != Some(&bytes))
+                || self.read_optional_limited(path, limit)?.as_ref() != Some(&bytes))
         {
             return Err(error.error);
         }
@@ -928,6 +987,46 @@ fn invalid(error: impl std::fmt::Display) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_report_limit_does_not_expand_other_shared_records() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = RepositoryMemoryStore::at_persistent(temp.path()).unwrap();
+        let run = Uuid::new_v4();
+        let large = "x".repeat(160 * 1024);
+        store
+            .save_bootstrap_report(run, BootstrapReportKind::Review, &large)
+            .unwrap();
+        assert!(
+            store
+                .read_bootstrap_report(run, BootstrapReportKind::Review)
+                .unwrap()
+                .len()
+                > 128 * 1024
+        );
+        assert!(store.save_document_inventory(run, None, &large).is_err());
+        let too_large = "x".repeat(MAX_BOOTSTRAP_REPORT_BYTES + 1);
+        assert!(
+            store
+                .save_bootstrap_report(run, BootstrapReportKind::Refine, &too_large)
+                .is_err()
+        );
+        assert!(
+            !store
+                .bootstrap_report_path(run, BootstrapReportKind::Refine)
+                .exists()
+        );
+        std::fs::write(
+            store.bootstrap_report_path(run, BootstrapReportKind::Review),
+            &too_large,
+        )
+        .unwrap();
+        assert!(
+            store
+                .read_bootstrap_report(run, BootstrapReportKind::Review)
+                .is_err()
+        );
+    }
 
     #[test]
     fn changed_branch_without_wiki_is_uninitialized_despite_previous_success() {

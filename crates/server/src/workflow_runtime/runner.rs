@@ -2443,10 +2443,13 @@ where
                 .upstream_outputs
                 .first()
                 .ok_or_else(|| ApiError::BadRequest("Missing validated coverage review".into()))?;
-            let review =
-                services::services::openwiki::bootstrap::CoverageReview::parse(&raw.output_text)
-                    .map_err(orchestration_api_error)?;
-            let (selected, skipped) = match review.verdict {
+            let verdict = services::services::openwiki::bootstrap::reports::review_verdict(
+                &raw.output_text,
+                run_id,
+                workspace_id,
+            )
+            .map_err(orchestration_api_error)?;
+            let (selected, skipped) = match verdict {
                 services::services::openwiki::bootstrap::CoverageVerdict::Pass => {
                     ("pass", "refine")
                 }
@@ -2455,7 +2458,7 @@ where
                 }
             };
             let output =
-                json!({"selected_target_node_ids":[selected], "review":review}).to_string();
+                json!({"selected_target_node_ids":[selected], "verdict":verdict}).to_string();
             mark_node_succeeded(pool, run_id, &node.id, iteration, Some(&output), None).await?;
             mark_skipped_targets(pool, run_id, &[skipped.into()]).await?;
             Ok(RunStep::Continue)

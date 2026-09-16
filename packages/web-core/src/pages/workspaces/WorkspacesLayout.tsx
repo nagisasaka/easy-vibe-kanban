@@ -7,7 +7,13 @@ import {
   type ReactNode,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Group, Layout, Panel, Separator } from 'react-resizable-panels';
+import {
+  Group,
+  Layout,
+  Panel,
+  Separator,
+  useGroupCallbackRef,
+} from 'react-resizable-panels';
 import type { CreateModeInitialState } from '@/shared/types/createMode';
 import { useWorkspaceContext } from '@/shared/hooks/useWorkspaceContext';
 import { usePageTitle } from '@/shared/hooks/usePageTitle';
@@ -29,6 +35,12 @@ import {
   type WorkspacesMainContainerHandle,
 } from './WorkspacesMainContainer';
 import { RightSidebar } from './RightSidebar';
+import { PreservedChatPanel } from './PreservedChatPanel';
+import {
+  WorkspaceWikiNavigation,
+  WorkspaceWikiArticle,
+} from '@/features/wiki/ui/WorkspaceWikiPanel';
+import { WorkspaceWikiProvider } from '@/features/wiki/ui/WorkspaceWikiProvider';
 import { ChangesPanelContainer } from './ChangesPanelContainer';
 import { CreateChatBoxContainer } from '@/shared/components/CreateChatBoxContainer';
 import { PreviewBrowserContainer } from './PreviewBrowserContainer';
@@ -46,6 +58,7 @@ import {
   PERSIST_KEYS,
   usePaneSize,
   useWorkspacePanelState,
+  useUiPreferencesStore,
   RIGHT_MAIN_PANEL_MODES,
   type RightMainPanelMode,
 } from '@/shared/stores/useUiPreferencesStore';
@@ -118,7 +131,54 @@ export function WorkspacesLayout() {
       : 'create-mode-seed-default';
 
   const isMobile = useIsMobile();
-  const [mobileTab] = useMobileActiveTab();
+  // Use workspace-specific panel state (pass undefined when in create mode).
+  const {
+    isLeftSidebarVisible,
+    isLeftMainPanelVisible,
+    isRightSidebarVisible,
+    rightMainPanelMode,
+    setLeftSidebarVisible,
+    setLeftMainPanelVisible,
+    setRightMainPanelMode,
+  } = useWorkspacePanelState(isCreateMode ? undefined : workspaceId);
+  const [mobileTab, setMobileTab] = useMobileActiveTab();
+  const closeWiki = useUiPreferencesStore((s) => s.closeWiki);
+  const [wikiMobileNavigation, setWikiMobileNavigation] = useState(true);
+  useEffect(() => setWikiMobileNavigation(true), [workspaceId]);
+  const wikiActive = rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.WIKI;
+  const wikiButtonClass =
+    'rounded-sm border px-base py-half text-normal hover:bg-panel';
+  const wikiActions = (
+    <>
+      {isMobile ? (
+        <button
+          type="button"
+          className={wikiButtonClass}
+          onClick={() => setWikiMobileNavigation(true)}
+        >
+          Wiki pages
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={wikiButtonClass}
+          onClick={() => setLeftMainPanelVisible(!isLeftMainPanelVisible)}
+        >
+          {isLeftMainPanelVisible ? 'Focus Wiki' : 'Show chat alongside'}
+        </button>
+      )}
+      <button
+        type="button"
+        className={wikiButtonClass}
+        onClick={() => {
+          closeWiki(workspaceId);
+          if (isMobile) setMobileTab('chat');
+        }}
+      >
+        Return to workspace
+      </button>
+    </>
+  );
   const mainContainerRef = useRef<WorkspacesMainContainerHandle>(null);
 
   const handleScrollToBottom = useCallback(
@@ -134,17 +194,6 @@ export function WorkspacesLayout() {
     },
     [appNavigation]
   );
-
-  // Use workspace-specific panel state (pass undefined when in create mode)
-  const {
-    isLeftSidebarVisible,
-    isLeftMainPanelVisible,
-    isRightSidebarVisible,
-    rightMainPanelMode,
-    setLeftSidebarVisible,
-    setLeftMainPanelVisible,
-    setRightMainPanelMode,
-  } = useWorkspacePanelState(isCreateMode ? undefined : workspaceId);
 
   const {
     config,
@@ -187,13 +236,44 @@ export function WorkspacesLayout() {
     50
   );
 
+  const splitSize =
+    typeof rightMainPanelSize === 'number' &&
+    Number.isFinite(rightMainPanelSize) &&
+    rightMainPanelSize >= 12 &&
+    rightMainPanelSize <= 88
+      ? rightMainPanelSize
+      : 50;
   const defaultLayout: Layout =
-    typeof rightMainPanelSize === 'number'
-      ? {
-          'left-main': 100 - rightMainPanelSize,
-          'right-main': rightMainPanelSize,
-        }
-      : { 'left-main': 50, 'right-main': 50 };
+    rightMainPanelMode === null
+      ? { 'left-main': 100, 'right-main': 0 }
+      : {
+          'left-main': isLeftMainPanelVisible ? 100 - splitSize : 0,
+          'right-main': isLeftMainPanelVisible ? splitSize : 100,
+        };
+
+  const [mainGroup, setMainGroup] = useGroupCallbackRef();
+  useEffect(() => {
+    if (!mainGroup || isMobile) return;
+    // Keep both Panels registered; only change their allocated space after
+    // Group registration. Chat state and geometry survive focus/return.
+    const frame = requestAnimationFrame(() => {
+      mainGroup.setLayout(
+        rightMainPanelMode === null
+          ? { 'left-main': 100, 'right-main': 0 }
+          : {
+              'left-main': isLeftMainPanelVisible ? 100 - splitSize : 0,
+              'right-main': isLeftMainPanelVisible ? splitSize : 100,
+            }
+      );
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [
+    mainGroup,
+    isMobile,
+    rightMainPanelMode,
+    isLeftMainPanelVisible,
+    splitSize,
+  ]);
 
   const layoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -205,10 +285,19 @@ export function WorkspacesLayout() {
 
   const onLayoutChange = useCallback(
     (layout: Layout) => {
-      if (isLeftMainPanelVisible && rightMainPanelMode !== null) {
+      const size = layout['right-main'];
+      // Ignore collapsed and transitional layouts: those are not a user's
+      // preferred chat/article split and may arrive during a focus switch.
+      if (
+        isLeftMainPanelVisible &&
+        rightMainPanelMode !== null &&
+        Number.isFinite(size) &&
+        size >= 12 &&
+        size <= 88
+      ) {
         if (layoutTimerRef.current) clearTimeout(layoutTimerRef.current);
         layoutTimerRef.current = setTimeout(() => {
-          setRightMainPanelSize(layout['right-main']);
+          setRightMainPanelSize(size);
         }, 150);
       }
     },
@@ -283,6 +372,36 @@ export function WorkspacesLayout() {
                   )}
                 </div>
 
+                {/* Wiki and chat stay mounted when changing mobile tabs. */}
+                <div
+                  className={cn(
+                    'flex-1 min-h-0 overflow-hidden',
+                    mobileTab !== 'wiki' && 'hidden'
+                  )}
+                >
+                  <div
+                    className={cn(
+                      'h-full flex flex-col',
+                      !wikiMobileNavigation && 'hidden'
+                    )}
+                  >
+                    <div className="p-base border-b text-high">Wiki pages</div>
+                    <WorkspaceWikiNavigation
+                      showReload
+                      onReturnToChat={() => {
+                        closeWiki(workspaceId);
+                        setMobileTab('chat');
+                      }}
+                      onSelectPage={() => setWikiMobileNavigation(false)}
+                    />
+                  </div>
+                  <div
+                    className={cn('h-full', wikiMobileNavigation && 'hidden')}
+                  >
+                    <WorkspaceWikiArticle actions={wikiActions} />
+                  </div>
+                </div>
+
                 {/* Changes tab */}
                 <div
                   className={cn(
@@ -332,7 +451,9 @@ export function WorkspacesLayout() {
                 >
                   {selectedWorkspace && !isCreateMode && (
                     <RightSidebar
-                      rightMainPanelMode={rightMainPanelMode}
+                      rightMainPanelMode={
+                        wikiActive ? null : rightMainPanelMode
+                      }
                       selectedWorkspace={selectedWorkspace}
                       repos={repos}
                     />
@@ -346,20 +467,26 @@ export function WorkspacesLayout() {
     );
 
     return (
-      <div className="flex flex-1 min-h-0 h-full">
-        <div className="flex-1 min-w-0 h-full">
-          {isCreateMode ? (
-            <CreateModeProvider
-              key={createModeProviderKey}
-              initialState={createModeSeed.state}
-            >
-              {mobileContent}
-            </CreateModeProvider>
-          ) : (
-            mobileContent
-          )}
+      <WorkspaceWikiProvider
+        workspace={selectedWorkspace}
+        repos={repos}
+        enabled={!isCreateMode && mobileTab === 'wiki'}
+      >
+        <div className="flex flex-1 min-h-0 h-full">
+          <div className="flex-1 min-w-0 h-full">
+            {isCreateMode ? (
+              <CreateModeProvider
+                key={createModeProviderKey}
+                initialState={createModeSeed.state}
+              >
+                {mobileContent}
+              </CreateModeProvider>
+            ) : (
+              mobileContent
+            )}
+          </div>
         </div>
-      </div>
+      </WorkspaceWikiProvider>
     );
   }
 
@@ -373,78 +500,85 @@ export function WorkspacesLayout() {
           >
             <div className="flex h-full">
               <Group
+                groupRef={setMainGroup}
                 orientation="horizontal"
                 className="flex-1 min-w-0 h-full"
                 defaultLayout={defaultLayout}
                 onLayoutChange={onLayoutChange}
               >
-                {isLeftMainPanelVisible && (
-                  <Panel
-                    id="left-main"
-                    minSize={MAIN_PANEL_MIN_SIZE}
-                    className="min-w-0 h-full overflow-hidden"
-                  >
-                    {isCreateMode ? (
-                      <CreateChatBoxContainer
-                        onWorkspaceCreated={handleWorkspaceCreated}
-                      />
-                    ) : (
-                      <WorkspacesMainContainer
-                        ref={mainContainerRef}
-                        selectedWorkspace={selectedWorkspace ?? null}
-                        selectedSession={selectedSession}
-                        selectedSessionId={selectedSessionId}
-                        sessions={sessions}
-                        repos={repos}
-                        onSelectSession={selectSession}
-                        isLoading={isLoading}
-                        isSessionsLoading={isSessionsLoading}
-                        isNewSessionMode={isNewSessionMode}
-                        onStartNewSession={startNewSession}
+                <PreservedChatPanel visible={isLeftMainPanelVisible}>
+                  {isCreateMode ? (
+                    <CreateChatBoxContainer
+                      onWorkspaceCreated={handleWorkspaceCreated}
+                    />
+                  ) : (
+                    <WorkspacesMainContainer
+                      ref={mainContainerRef}
+                      selectedWorkspace={selectedWorkspace ?? null}
+                      selectedSession={selectedSession}
+                      selectedSessionId={selectedSessionId}
+                      sessions={sessions}
+                      repos={repos}
+                      onSelectSession={selectSession}
+                      isLoading={isLoading}
+                      isSessionsLoading={isSessionsLoading}
+                      isNewSessionMode={isNewSessionMode}
+                      onStartNewSession={startNewSession}
+                    />
+                  )}
+                </PreservedChatPanel>
+
+                <Separator
+                  id="main-separator"
+                  aria-hidden={
+                    !isLeftMainPanelVisible || rightMainPanelMode === null
+                  }
+                  tabIndex={
+                    isLeftMainPanelVisible && rightMainPanelMode !== null
+                      ? 0
+                      : -1
+                  }
+                  className={cn(
+                    'bg-transparent hover:bg-brand/50 transition-colors cursor-col-resize',
+                    isLeftMainPanelVisible && rightMainPanelMode !== null
+                      ? 'w-1'
+                      : 'w-0 invisible'
+                  )}
+                />
+
+                <Panel
+                  id="right-main"
+                  minSize={MAIN_PANEL_MIN_SIZE}
+                  collapsible
+                  collapsedSize="0%"
+                  className="min-w-0 h-full overflow-hidden"
+                >
+                  {wikiActive && <WorkspaceWikiArticle actions={wikiActions} />}
+                  {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.CHANGES &&
+                    selectedWorkspace?.id && (
+                      <ChangesPanelContainer
+                        className=""
+                        workspaceId={selectedWorkspace.id}
                       />
                     )}
-                  </Panel>
-                )}
-
-                {isLeftMainPanelVisible && rightMainPanelMode !== null && (
-                  <Separator
-                    id="main-separator"
-                    className="w-1 bg-transparent hover:bg-brand/50 transition-colors cursor-col-resize"
-                  />
-                )}
-
-                {rightMainPanelMode !== null && (
-                  <Panel
-                    id="right-main"
-                    minSize={MAIN_PANEL_MIN_SIZE}
-                    className="min-w-0 h-full overflow-hidden"
-                  >
-                    {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.CHANGES &&
-                      selectedWorkspace?.id && (
-                        <ChangesPanelContainer
-                          className=""
-                          workspaceId={selectedWorkspace.id}
-                        />
-                      )}
-                    {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.FILES &&
-                      selectedWorkspace?.id && (
-                        <WorkspaceFilesSurfaceContainer
-                          className=""
-                          workspaceId={selectedWorkspace.id}
-                        />
-                      )}
-                    {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.LOGS && (
-                      <LogsContentContainer className="" />
+                  {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.FILES &&
+                    selectedWorkspace?.id && (
+                      <WorkspaceFilesSurfaceContainer
+                        className=""
+                        workspaceId={selectedWorkspace.id}
+                      />
                     )}
-                    {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.PREVIEW &&
-                      selectedWorkspace?.id && (
-                        <PreviewBrowserContainer
-                          workspaceId={selectedWorkspace.id}
-                          className=""
-                        />
-                      )}
-                  </Panel>
-                )}
+                  {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.LOGS && (
+                    <LogsContentContainer className="" />
+                  )}
+                  {rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.PREVIEW &&
+                    selectedWorkspace?.id && (
+                      <PreviewBrowserContainer
+                        workspaceId={selectedWorkspace.id}
+                        className=""
+                      />
+                    )}
+                </Panel>
               </Group>
 
               {isRightSidebarVisible && !isCreateMode && (
@@ -464,26 +598,34 @@ export function WorkspacesLayout() {
   );
 
   return (
-    <div className="flex flex-1 min-h-0 h-full">
-      {isLeftSidebarVisible && (
-        <div className="w-[300px] shrink-0 h-full overflow-hidden">
-          <WorkspacesSidebarContainer onScrollToBottom={handleScrollToBottom} />
-        </div>
-      )}
-
-      <div className="flex-1 min-w-0 h-full">
-        {isCreateMode ? (
-          <CreateModeProvider
-            key={createModeProviderKey}
-            initialState={createModeSeed.state}
-          >
-            {mainContent}
-          </CreateModeProvider>
-        ) : (
-          mainContent
+    <WorkspaceWikiProvider
+      workspace={selectedWorkspace}
+      repos={repos}
+      enabled={!isCreateMode && wikiActive}
+    >
+      <div className="flex flex-1 min-h-0 h-full">
+        {isLeftSidebarVisible && (
+          <div className="w-[300px] shrink-0 h-full overflow-hidden">
+            <WorkspacesSidebarContainer
+              onScrollToBottom={handleScrollToBottom}
+            />
+          </div>
         )}
+
+        <div className="flex-1 min-w-0 h-full">
+          {isCreateMode ? (
+            <CreateModeProvider
+              key={createModeProviderKey}
+              initialState={createModeSeed.state}
+            >
+              {mainContent}
+            </CreateModeProvider>
+          ) : (
+            mainContent
+          )}
+        </div>
       </div>
-    </div>
+    </WorkspaceWikiProvider>
   );
 }
 

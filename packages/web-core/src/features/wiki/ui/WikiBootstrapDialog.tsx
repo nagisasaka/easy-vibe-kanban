@@ -16,11 +16,13 @@ export function WikiBootstrapDialog({
   repository,
   initialLanguage,
   onClose,
+  onReturnToChat,
 }: {
   workspaceId: string;
   repository: string;
   initialLanguage: string;
   onClose: () => void;
+  onReturnToChat?: () => void;
 }) {
   const [language, setLanguage] = useState(initialLanguage);
   const [instructions, setInstructions] = useState('');
@@ -28,6 +30,10 @@ export function WikiBootstrapDialog({
   const [occupied, setOccupied] = useState(false);
   const [message, setMessage] = useState('');
   const [prepared, setPrepared] = useState(false);
+  const close = () => {
+    onClose();
+    if (prepared) onReturnToChat?.();
+  };
   const submit = () => {
     const code = language.trim();
     if (
@@ -65,7 +71,7 @@ export function WikiBootstrapDialog({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open) close();
       }}
     >
       <DialogContent>
@@ -124,7 +130,7 @@ export function WikiBootstrapDialog({
         <div className="flex justify-end gap-base">
           <button
             type="button"
-            onClick={onClose}
+            onClick={close}
             className="rounded border px-base py-half"
           >
             {prepared ? 'Return to chat' : 'Cancel'}

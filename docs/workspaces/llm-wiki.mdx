@@ -48,7 +48,8 @@ repair Git-managed Wiki files automatically.
 
 ## Create knowledge from an existing project
 
-In the Workspace's **LLM Wiki** panel, select a repository and choose
+Open **Wiki** in the Workspace toolbar (or **Open Wiki** in the right sidebar),
+select the **LLM Wiki** format and a repository, then choose
 **Create Wiki from existing code** (or **Supplement Wiki from code** when
 pages already exist). Choose an output language and optionally describe areas
 to investigate or exclude, then select **Set in chat**.
@@ -167,14 +168,27 @@ updated: 2026-09-09
 
 ## View and configure the Wiki
 
-Open a Workspace's right sidebar and expand **LLM Wiki**. The source label is
-**Current workspace**, so the Viewer includes unmerged changes in the current
-worktree.
+Open **Wiki** in the Workspace toolbar or **Open Wiki** in the right sidebar.
+The right sidebar contains repository/format selection, search and the page
+tree; the main area displays the article. Select **LLM Wiki** for `.llm-wiki/`
+or **OpenWiki** for the separate `openwiki/` format.
+
+The article identifies the repository, actual workspace branch and
+**Current workspace** source, including unmerged worktree changes. It does not
+claim to display the target/base branch.
+
+Use **Show chat alongside** for a resizable chat/Wiki split and **Focus Wiki**
+for reading. **Return to workspace** restores your previous main panel. The
+chat stays mounted during these desktop view switches, retaining its selected
+session, unsent draft and conversation state. After a browser reload, the
+return action falls back to showing chat if the previous layout is unavailable.
+On mobile, switch between **Chat** and **Wiki**; select a page to read it and
+use **Wiki pages** to return to navigation.
 
 - Select the repository when the Workspace contains more than one.
 - After automatic initialisation, choose or enter an output-language tag and
   select **Save** to update the setting.
-- Open `index.md` or a topic page from the page list.
+- Open `index.md` or a topic page from the directory tree.
 - Search paths, titles, summaries, tags, sources and full page text.
 - Follow ordinary relative Markdown links or `[[wikilinks]]` within the Wiki.
 - Use reload after an agent or Git operation changes the files.
