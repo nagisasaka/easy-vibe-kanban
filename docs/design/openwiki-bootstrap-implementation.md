@@ -157,6 +157,62 @@ Validation of the phase-completion revision:
 - A fresh paid-Codex Generate/Review/Refine execution remains a manual smoke test;
   automated tests do not assert model reasoning quality or complete coverage.
 
+## Writer MCP startup contract
+
+The 2026-09-16 regeneration exposed a startup gap: the fresh Refiner's tool-catalog
+query returned no OpenWiki tools even though Native Audit recorded successful
+server startup. It launched its own stdio MCP bridge, so its changes could not
+produce the registered root-thread MCP events required by EVK's completion proof. Publication
+correctly failed. The optional-server startup grace is the suspected trigger,
+not a reproduced Codex internal failure; a ready notification alone does not prove
+that the model received the tools.
+
+Maintenance writers now enable and require the registered `openwiki` server in
+their thread-local Codex configuration, with a ten-second startup timeout. This
+uses Codex's supported required-server startup contract rather than lengthening
+the optional grace for every user MCP server. The independent Reviewer remains
+ReadOnly with OpenWiki disabled. User configuration and OpenWiki are not modified.
+
+After thread start/resume and before the first turn or Goal activation, EVK queries
+`mcpServerStatus/list` with the exact thread ID and `toolsAndAuthOnly`. All six
+pinned lifecycle tools must be present on the `openwiki` server. Pagination is
+supported, with cycle/page-count protection and a fifteen-second overall discovery
+deadline. Missing tools (including user allow/deny-list filtering), RPC failure or
+timeout fail launch explicitly through the existing AgentRun failure/cleanup path;
+no model turn or Wiki operation is started by the preflight. It is a capability
+check, not a test invocation of `begin` or a new completion proof. Codex's required
+server setting protects initial model-tool construction; the inventory check is
+an additional guard, not proof that a model actually invoked a tool.
+
+Generate, Refine and ordinary Sync share this launch path. Their writer prompt
+requires the registered Codex MCP route and forbids replacement shell/stdio/SDK
+bridges; unavailable tools must be reported without authoring Wiki changes.
+This does not force an update for a valid no-change Refine. Completion, ownership,
+source checks, Reviewer isolation and publication remain unchanged. Historical
+failed runs are not reclassified or published.
+
+The transport regression fixture exercises the actual launch and JSON-RPC code
+with delayed/paginated inventories, missing or filtered tools, a ready server with
+no tools, failed startup, invalid pagination, timeout and cancellation. It also
+covers fresh/resumed threads, chat/plan/Goal entrypoints, and Reviewer/ordinary-chat
+isolation without model calls. Real Wiki regeneration and model-visible tool use
+remain a separate acceptance check; this change does not claim that reproduction.
+
+Validation of this revision:
+
+- `cargo test -p executors -p services -p server --lib`: 514 passed, six ignored.
+  The ignored subprocess fixture is invoked by the transport tests; installed-tool
+  probes are opt-in rather than requirements for the normal test suite.
+- `cargo test -p executors installed_openwiki_mcp_preflight --lib -- --ignored`:
+  passed against the installed Codex/OpenWiki in 5.39 seconds. It creates an
+  ephemeral thread and reads the tool inventory, without starting a model turn,
+  invoking OpenWiki tools, generating Wiki files or publishing changes.
+- `pnpm run format`, `pnpm run check`, `pnpm run lint`, and `git diff --check`:
+  passed. No shared Rust/TypeScript API types changed.
+- No real-model regeneration or UI acceptance run was performed for this revision.
+  A fresh Bootstrap on a disposable target branch is still needed to verify the
+  model's registered MCP use and end-to-end publication after a server restart.
+
 ## Full review reports without handoff quotas
 
 This revision supersedes the original limit of 12 findings and 12,000 UTF-8 bytes

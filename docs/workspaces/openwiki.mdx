@@ -291,6 +291,18 @@ If the source branch advanced, retry against its new integrated state. If Codex
 exited without successful `openwiki_finish` (or a proven `openwiki_begin` no-op),
 inspect its tool errors rather than accepting its final prose as proof.
 
+Maintenance writers require OpenWiki's registered Codex MCP tools before starting
+their first turn. EVK uses a ten-second MCP startup timeout and a fifteen-second
+tool-discovery deadline. An **OpenWiki MCP preflight** error means the writer did
+not start: check the pinned installation, executable availability, and MCP tool
+allow/deny settings, then start a new Bootstrap after cleanup (or retry normal
+Sync). A server's `ready` status alone is insufficient when lifecycle tools are
+missing. Do not ask the agent to bypass the error with its own MCP process or
+stdio bridge: EVK cannot accept those calls as its audited completion proof.
+The independent Reviewer still has no OpenWiki writer tools; a valid no-change
+Refine still requires no update. Existing failed runs are not automatically
+published by this fix.
+
 OpenWiki 0.5.1 also emits setup artifacts for other operating modes. EVK does not
 publish its generated GitHub Actions/native-provider updater or its additions to
 `AGENTS.md` and `CLAUDE.md`. Before launching Codex, EVK records your original

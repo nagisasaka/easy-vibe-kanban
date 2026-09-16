@@ -506,6 +506,22 @@ mod tests {
     }
 
     #[test]
+    fn all_writers_require_the_audited_mcp_route_without_forcing_an_operation() {
+        let root = Path::new("/fixture/repo");
+        for prompt in [
+            writer_prompt(root, "ja", None),
+            writer_prompt(root, "ja", Some(Path::new("/shared/review.json"))),
+            super::super::OpenWikiAdapter::maintenance_prompt(root, false, "ja", "{}"),
+        ] {
+            assert!(prompt.contains("only through the registered openwiki MCP server"));
+            assert!(prompt.contains("Do not launch another OpenWiki MCP process"));
+            assert!(prompt.contains("stop and report the integration failure"));
+            assert!(prompt.contains("does not require an operation"));
+        }
+        assert!(!review_prompt(root, "ja").contains("Invoke OpenWiki lifecycle tools"));
+    }
+
+    #[test]
     fn all_roles_share_one_bounded_knowledge_organisation_policy() {
         let root = Path::new("/fixture/repo");
         for prompt in [

@@ -934,6 +934,15 @@ impl Codex {
             // thread. This also works with custom CODEX_HOME and a parent
             // workspace cwd, where project-level discovery alone is insufficient.
             let config = params.config.get_or_insert_with(HashMap::new);
+            // Writer tools are a prerequisite, not an optional integration.
+            // Codex may omit slow optional servers from its initial tool catalog.
+            // Keep this thread-local; never enable writer tools for the reviewer.
+            config.insert("mcp_servers.openwiki.enabled".into(), Value::Bool(true));
+            config.insert("mcp_servers.openwiki.required".into(), Value::Bool(true));
+            config.insert(
+                "mcp_servers.openwiki.startup_timeout_sec".into(),
+                Value::from(10),
+            );
             config.insert(
                 "mcp_servers.openwiki.command".into(),
                 Value::String("openwiki".into()),
@@ -1124,6 +1133,10 @@ impl Codex {
         selected_skills: Vec<SelectedSkill>,
         client: Arc<AppServerClient>,
     ) -> Result<(), ExecutorError> {
+        let requires_openwiki = thread_start_params.config.as_ref().is_some_and(|config| {
+            config.get("mcp_servers.openwiki.required") == Some(&Value::Bool(true))
+                && config.get("mcp_servers.openwiki.enabled") != Some(&Value::Bool(false))
+        });
         if client.execution_mode() == ExecutionMode::Goal {
             let skills = crate::knowledge_skills::augment_for_wikillm(
                 &combined_prompt,
@@ -1153,6 +1166,11 @@ impl Codex {
         };
 
         client.register_session(&thread_id).await?;
+        if requires_openwiki {
+            // A configured/ready server is not proof that the required tools
+            // are exposed. Check before either a normal turn or Goal activation.
+            client.ensure_openwiki_tools().await?;
+        }
         if client.execution_mode() == ExecutionMode::Goal {
             client.start_goal(thread_id, combined_prompt).await?;
             return Ok(());

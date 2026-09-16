@@ -58,6 +58,8 @@ use crate::{
     profile::ExecutionMode,
 };
 
+mod openwiki;
+
 struct PendingPlan {
     item_id: String,
     text: String,
