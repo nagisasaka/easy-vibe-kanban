@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:35e93e4f1d3ba9dae9ba0f9ff2e53e3c6d21d96be7b78809b41dc0f448eed4e2",
+  "claims": [
+    {
+      "id": "claim_94623b4df5d444f5b2804c9e2c2025c7",
+      "statement": "ローカルWorkspaceのcontainer_refはファイルシステム上の作業パスであり、WorktreeとDirectFolderを区別する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/db/src/models/workspace.rs#L35-L53",
+          "version": "repo-lines-v1:sha256:c9a6107d2e428a884205e569c18fc42f4fe8ac12d83c762d8389397d44c80403:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjNjFmZmFhOTE3ZmQ1MTYwYjBmODIwYWE4MWE3ZDdkMzAyOGRjNzljODc0MTcyZmIyNWE3ZTdkY2Y1ZGFlZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAwMzAzZTViY2M1NGVkNjg3NTUzMmYyNjk2YzJmNTMyMzY4NWViMjA4NTg5YjI0NWQ3MjVhOTdmYTUwNjYyOWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiYzc4YWY3ODFiMDYyMTBmZjM0OWY2NzBlMmRkZTg5YmRmNzhhYTIxOGRmZDBhYmZmNmU4Mjc2MTZmYzk3MTIifQ"
+        },
+        {
+          "resource": "repo://crates/local-deployment/src/container.rs#L1283-L1322",
+          "version": "repo-lines-v1:sha256:7c284a8a08f11c23711d2f90f31df621797b381f7dab21c60969810ca5683294:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1ODc5NTZhYThlYzI1MjY5YTk0ODcwMzg3OGMyNTUyMDExOTcyMTJjNDE5YTliMDU1ODU0ZTgzOTE2OGYxZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhNDM4YjE5OTJlYTlhYTRjMDhjNDZkYjg2ZWZjNmFjZjUxYjNiYTBlZjI2MTJiYjZmZTZhYzg2MTU1ZTRmODAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0ZWIzN2NhNGM5YTFmMTQ1ZmNmYzE5MGUzYTI5ODY0Nzg1ZTAzOTYzOGYwM2MxNGM3OGMwZGE5MTFkZDVlN2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlMjVmMmJhNmFjMzZmMzAyZjE5M2E4ZjJjMzI5OGMxNGQyZjdiMGI3NGU1MjZhZTc4MzdjMGZmMTZmY2Q1NDUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5198dfbf09374c548afc63119116d2b7",
+      "statement": "Repoは実行設定と既定値を持ち、WorkspaceRepoは選択したRepoとtarget branchをWorkspaceに結ぶ。",
+      "evidence": [
+        {
+          "resource": "repo://crates/db/src/models/repo.rs#L36-L54",
+          "version": "repo-lines-v1:sha256:6ee2c6379ec38e9d2a2f14c331f8d61f80271ee66c19c34f65083d6e35e4c614:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiNDMxYmJmN2YxYmRkM2VhMWI5YzU5M2IxMjYwZjM3ZDY2ZWM5MWM0MDRhYzRlYTg5NWNhNGJjYThlZjA3NmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRkYTAwYjg1N2E3NzdiMjc0MGZkMWY4NDFiMWVkNDM3MDZmMDk3OWFhMjcxOWY5NWMyYzkyYzBjZGFhMzliZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIyNTU1Y2E2ZGIzZmZjMmU2MTIwNmU5MGYzMDk0YThhY2VjOGJjNGM3ODBiNmVjN2E1NjdmMGFlMWIyNzg1MTUifQ"
+        },
+        {
+          "resource": "repo://crates/db/src/models/workspace_repo.rs#L11-L34",
+          "version": "repo-lines-v1:sha256:b3b660dd9f9032727cd54ee4b4fed5fc3fb09866b3ae9a2171e5159fe1299947:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiNDMxYmJmN2YxYmRkM2VhMWI5YzU5M2IxMjYwZjM3ZDY2ZWM5MWM0MDRhYzRlYTg5NWNhNGJjYThlZjA3NmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyNWViNDAxYTQ5NjM4MzgzZDlmYTg4MDE3NWYwNjg3YTFlOWVmNmRmYWFjODdmMDU3ZTZmNWEzMTc5OTFiNzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM4MGNjMTRhODQ1ODZkOWUxM2E4MWVjNTE2YWM3NWFmYTA5ZWQyYWE2MjRhYzk1MjljYzIwMGYwNTBjMzMzZjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ad16100f9475412d86ac33aeadfa4f15",
+      "statement": "managed WorkspaceはRepoごとにworktreeを作り、追加はbranch存在と重複を検証し、途中失敗時は作成済みworktreeをcleanupする。",
+      "evidence": [
+        {
+          "resource": "repo://crates/workspace-manager/src/workspace_manager.rs#L133-L162",
+          "version": "repo-lines-v1:sha256:8c501f461950c7ea3bf4af6b6edac974183c3665b88243ab823b104b6fd09ff3:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0MzkwNTM4OTNiNmM1MzM2MjA4MjAwNDg2Mjc2Nzc0MjVhZmI1MTZiYmU1MzM2ZmIyODE3OTA2NGMyNTU3YmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwNzFjNmU5MjJkNjRlM2MyZDEyZDFiNDAwODRjMzFjYzRlNzgwN2ZiNDJlN2Y3MjI5Y2M4ODYwNWU3ZmM4YjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE2MmVlNTdlNDFhOGMyMGFlMDE2NGRmMjYxNDM5ZGNjNDk5ZDM1MjA4MzQxNTE1MTZkMDQ3ZThkZWFlOGE0NjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5NWJhMzA4MDUzMmM2YzUyMjM2MTA0MzQ1NmUwMTgwMGU1ZDIzYjA1NzE1ZGYxNTQ2N2JjYWEyMDQ5Yjg4M2EifQ"
+        },
+        {
+          "resource": "repo://crates/workspace-manager/src/workspace_manager.rs#L528-L606",
+          "version": "repo-lines-v1:sha256:d65e040688648dc746de2c4de7e0ba2e04e3550a8d62193bf2fb4eb6233c4293:eyJzZWxlY3RlZExpbmVDb3VudCI6NzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1YjFkY2IzOTJiMmRiMGYyZjExNmNjNDQ3ZGY3OGM3MDMwOWE5NzA4M2M0OGQxZGM1OTE4OWI3MzU0ZGNlYzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5YjE5ODJlOGRkNzQ4MTE4MTQ2YjM5YTJkMDA2MmY0MDgxZTM0Nzc5Yjg2NzVjMjM0YzRmYjEyNGRjMzkzOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJhZDRlNTVkM2IxNjQ1ZmE1NWFhZDQwMzg3Y2FhNjQ2YjZhNDljMjVmMWIzYWQyMzg0ZDEwNDJmM2ZmYjZjYjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFiNWZhN2Y1ZTg3Y2IzY2QwMTRmZTMzZjVlYWM4MWY3YzU3NjBjNDI0NWRkMTg2YjJmMDJlYWVhNWM3YzVlZGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bdc6d36a087b4071892052ff089c4e30",
+      "statement": "Container path削除可否はownershipで決まり、Externalは削除できない。",
+      "evidence": [
+        {
+          "resource": "repo://crates/db/src/models/workspace.rs#L137-L148",
+          "version": "repo-lines-v1:sha256:cd3b141f8e763f1e2cf2e3cdccb1b43a90c0f180de46d10d8b78becddea287d1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4NGY1ZDkxNzk5N2Q1MjFiZDA1YzY5ZGQ0YzJmNzAxNzg0MzQzMTMxN2M1OTFlYjE1ODdmMzY0NWVjNjg3ZTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVkZjE4ZWJkNGEwZjQyY2UxMTE1MWVjMzIyZjdmMTgzMjY5NzMwNzViMTI0MmQ4M2RlNjA4MmVlOGQ3NTQ4YWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ3OTFiNDgzY2ZjNjA3NWNhYWFjMTE1Nzc4OWVlOWRhYWY3NTI4NjNjOTY5NTgxNDMyMTNkMWM4NDgxNzEwZmYifQ"
+        },
+        {
+          "resource": "repo://crates/db/src/models/workspace.rs#L876-L886",
+          "version": "repo-lines-v1:sha256:9fe376b5d77e192d6a102281f0d82ba20fe57c5d08d694b50808eb3964fd0a84:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyYjVlZGY1OTQ5Y2ZlYTY3ODIyY2Y2OTExMzIzNjNkNjhkNmYxZTE2OWY1ZTBkNGY3YzE0ZTVmYTFlNmQ0ZTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlODBiNmM2NGY5YTY5MmY2ZDA2ZjIxYTBkMTM0Yzg5MWQ5OTEyZGRkN2I2Mjc5MjAxNzU4NmVmNTNhMDU5YWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwMGRiMDQwZjI5MDliZjk3OGZmMGE5NTZhNTVlODNjNjUzNDE4ZGU2YmI2OGY4MDQxZGE5NzZmOGQzZDIyNzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_781b9deedb9e4faea98a8c15ebdaf904",
+      "statement": "DirectFolderは選択先がGitなら現在branchとRepo membershipを保持して親をcontainer_refにし、非Gitなら選択先をルートにする。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/workspaces/create.rs#L107-L168",
+          "version": "repo-lines-v1:sha256:d84739618f0758d005f3737bc206953d314ba9cdc08d44ba0d7fb34a03377dea:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkMTk2Y2M2MWU1NzMyZGFjNmY4YTUzODczMTZkMTE0MzVhMjdjMGExYWQzOGEwNjJiYmRhY2MwMmJjNjlkYTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE4ZjkyOGNjMzJjMjNiYmM3NjAxZTUxYjgzYTQ2YWUwNjdhYjliNmIwOGZhYTZhNWUzZTE4YWNkNzQ4NTZhNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU2ODI4MzRhNzhmNzY2ZmRjNWEwYzYwYzJkM2I2NjE1ZDU0MzZiMmY1YmRjZjlhYTQ1NGVmNzM2NDg2MjdmN2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_34b9fe648a4b4208b6022027f4e81785",
+      "statement": "worktree保存先overrideは指定先のアプリ所有子ディレクトリを使い、共有資源の既定保存先を変更しない。",
+      "evidence": [
+        {
+          "resource": "repo://crates/utils/src/path.rs#L140-L157",
+          "version": "repo-lines-v1:sha256:921d0bb5bd7bd6cb2876632355046f761cd4b4a90962e6cf887a6f604d8842cc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkMGVjMzRlZjFkNWZhZmVjNTc1ZGE3MjVjMzMyYzVkOTQ0MTg4NDFmYzE4ZTZmN2IxYmQ4MWQxZTZlMWU0NmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlMjQ4ZjY3YzczMDUwYmQ2YTRjZGNiNjQxMmMyNGE1YjZlY2QwOGQzZjAyM2Y1OTExMGE1Nzc0MWU4YmJhMzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM1ZGVlY2JhYTM4NzcyYzhiM2FkMzMzYzkxNjIyY2JmNDRhMjNmMWJiOGQ5MDkwY2U1OWZkY2YzNWIwMWY3NWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM5ZjE2OWExYmIxNzRkMDcwNjkxOTMxODUzN2I2ZjkzYTU5MzY2ZThiZjQyN2RkNzFiMDE0NWQ5NDgyNjlhNGUifQ"
+        },
+        {
+          "resource": "repo://crates/worktree-manager/src/worktree_manager.rs#L511-L523",
+          "version": "repo-lines-v1:sha256:63de17b39b3b9b8cd5d7358515667c156a8d9f23c63345823ff8d3c1ee3fd15f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5NDgwYjdmMzMyNjdlNzFmOTk2MzZmNzQ3ZThkNTA5ZjhiZTIxYzE3NWNmZTQ1OGIyZjAxZmUwNmU5MGYzN2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiNzA0MjFmMmU5ODBjN2RiNjkyNDI3MzAxZTFlMTJjYmQyNjQyODY0MDJhYzVkZWE1ODE1MWNlYWU0YWIwOTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxNzgxNTcyZjI5OWYzYzZhYjM2N2U3ZWMyNGQ0MDFlOGQ5ZTcxZmY4ZjEwZjUwMWEwMmI0MDg0ZjAzMDZiYmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cc94532be7634279be3ecf126a160e56",
+      "statement": "DirectFolderでは初回の自動setup対象を空とし、managedで全setupがparallelなら並行分岐を使う。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/workspaces/create.rs#L448-L486",
+          "version": "repo-lines-v1:sha256:43b616e606f9a8b0d21b21403e8b6c790e60672229e3bd98929b8d2d0219b205:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjODYyMzljOWM1NjRjMmUxZDVjYWRkY2E4YTk2NGY0NmQ1MDkzODJjY2YyNTQ3NDY3N2NhOWVkNzc5Mzg2OWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4ZDBiYTk1YTE2NzEyYzY4NzFhYTYzNDk0YmQzMDE3NmFlN2I5N2JhNzJhODhhNTg5MDVjMzY3OWZhNWNiZjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlMWRiYzBlM2E1NDdiOTc5OTRkODQxOWI3NzYwOWY4NzMyM2MwODAyNjU1OWE3ZGIxYTc3ZjBhZTY2ZWE1ZTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRhZDdhNTllZmZmMTI1ZDMwNTNhY2RiN2RlOGJiMzk5OTViMjFhNWU4ZDE5ZDhhN2EzYmQ2YjcwNzY2YjlkYmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_39203c8500dc43649ab89c225d2a8bcb",
+      "statement": "同じ登録RepoのWorkspaceはpersistent/cacheリンク先を共有し、worktree削除後も共有データを保持する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/workspace-manager/src/shared_resources.rs#L171-L224",
+          "version": "repo-lines-v1:sha256:1d5b8a1b02e22db4ef6eeee0aa396cbb015116a9cf1090ec0b2f4c33d755cea3:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NjE4Y2Q2MTc5MTY1Njg1ZjBjZWI5M2I2ZGFkYTMwNDA1NzY2MTNkNWQ3M2E5N2FhNDc5OGQ0MGZhZWM0ODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlNzVjNzBkOTQ2MzYyNWUxMDc5ZmQ4ZmM4ZWU2MmFkMmU5MmM0MmJlYWFiZmQ4NWI3OGQ4ZTBhNDk3OWI5NGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEwMGRiMDQwZjI5MDliZjk3OGZmMGE5NTZhNTVlODNjNjUzNDE4ZGU2YmI2OGY4MDQxZGE5NzZmOGQzZDIyNzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwMGRiMDQwZjI5MDliZjk3OGZmMGE5NTZhNTVlODNjNjUzNDE4ZGU2YmI2OGY4MDQxZGE5NzZmOGQzZDIyNzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_26538aeb862f4cfb8170539d9f8c2314",
+      "statement": "共有資源配置はtracked mountや異なる既存宛先を拒否し、Gitローカルexcludeを追加して利用者のパスを上書きしない。",
+      "evidence": [
+        {
+          "resource": "repo://crates/workspace-manager/src/shared_resources.rs#L41-L126",
+          "version": "repo-lines-v1:sha256:d0a0727cf02fa10ab0d104e3767e0232655fbbde06056d069cfd2cbe7749215f:eyJzZWxlY3RlZExpbmVDb3VudCI6ODYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmYTlmNjkxYjNiNzVjZWM1NjgxMjgwOGI3Yjg3OWQwOTE2ZWYyMGQyZjhhYzQyZGVhN2JhNjkwNGMxNDAyMWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4OTc3MWZlMWI2NjI4ODc1YWEyM2U3ZGJlNGFhNzE0NjFkMDBjZGZiNjZkZGYxMWI5ZDgyMGFjNTg5N2ZkZjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIwNDdhZTM0OWE2NWVkNjY4NDIwM2IzNjhhNWY2OWI0YWQ1ZDYxNzZhZDYxMzViM2NhYTM3Njg4NDFhODUxNDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_307a3783ec9842f8a3a8eb441dc9abc6",
+      "statement": "Archive状態更新後のarchive処理失敗はログとなり状態更新を取り消さない。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/workspaces/core.rs#L43-L87",
+          "version": "repo-lines-v1:sha256:d278d067d15801fe72aea67e9de476278049f7f3a6b28dc1169fb8d5300fb803:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxNzBkYWU4ZTE3NDk0MDk2ZTYyY2IwOGE3ZWMyM2I5NDE5ZWJjMzA1YjhmOTA0NTYwNDBjNWY2NDBmMDQ2M2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2OTNiOGNmZTkwNTZmNzA2YTg0ZDNkYmNiY2RmYTUzZjlkYTY0YWU4MTU1MzM3MWQxOWQ2YWUxZGZiMTI2NWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmZmMwNzYxMjYwZTk2MDljODZkOWNlNWFkYjJiZjRkMDdiNzRjNjU0MGI1MTA0MDEwODQ4MzE1OTFjYmE0Y2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0ZTRiNTA4YWM5MzM0ODAyMzE1ODcxOWQ4NzgwYjRhMjk2NzdiNDhjYzVhN2Q2YTY0ODFjYTk0MmQxNTgzYzgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a83d7dc9629a4bd5bc6f56b9149ff114",
+      "statement": "明示Workspace削除はtransaction内で活動中AgentRun、process registry、orchestration関連を検査し、DB削除後にbackground cleanupして202を返す。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/workspaces/core.rs#L141-L182",
+          "version": "repo-lines-v1:sha256:dead07178fb079a652c526c91f6d22dbd3f2a3c2b3125a749f701a80356f4fba:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwZDMwMjI5YWUxZTk5ZWMxNzZkM2JiMDUxNTQxZjdiODMxNjM1MjA4MjZlN2NhNDVkYmUxZDI2MzlhNDAxYTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkNTc3ZDE2ODhhNmM2OGRkZTVlZGYwMzk1YmQ4OGM1ZGNlNTQxN2E3MmE1ZDBhMmFjZDhlYzMyNjY1ZTQyOTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5OWJkZWZlZWFjYTYzNDBlMDI5MGRjODZlODg5Yzg5ZDVlMTg5YWE1YmE0NGI1ODViM2I3MDczNGY0YTYyZDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMwYmU0ZmNlMzJmN2E1ZGYwYzY0MzJlNTdlN2JmZDRiNjczYWMxNWZmMGIxYjAzMTNhNjYxN2VlMzVlODRlMzgifQ"
+        },
+        {
+          "resource": "repo://crates/workspace-manager/src/workspace_manager.rs#L233-L349",
+          "version": "repo-lines-v1:sha256:78cfe44be994cd832b2509aeb62fbc1c5a25a5cd9c79fc43e02f147f14fcdfc8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI5ZjMzODY4NDY0YjE3YjM2MGVhYjZmZThjYjc0MWVlNzY4OWQ2ZjdjZDJmM2JlZmQ3OTJmMWIwMmQ1NTA4ZDcyIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTQ2NTIyMzM3MzdjZmEzMTQzZDRmMmJhY2IwODMwMDU4ZGZlZGU2NzMxOTAwOWRjNTAxZGFiOTU4MmQ2MWZmIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIxOWU3NjM1NWNmMTE5OTQ4MGMzZjk5ODM2YjE0ODZjODQxZDg5MWZhYWQ5MDRjNjA4ZTA5MzAyMmQzNzU3YWVlIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJiYTQyYjg0MmY4ZTBhNWJjY2QxZDRmNGUxNDRmNzhmYzg0NzQ3MzU0ZTk0ZmIwYWYzNDhmMGZmNzFmMmUwNzcyIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_228decc215c34967a3f4b0104b88a302",
+      "statement": "期限cleanupは30分間隔、managed対象、旧ExecutionProcess状態と1/72時間の閾値で選び、明示削除のAgentRun/registry guardとは異なる。",
+      "evidence": [
+        {
+          "resource": "repo://crates/db/src/models/workspace.rs#L326-L385",
+          "version": "repo-lines-v1:sha256:a974af2708f4a4e170f0567099119f972b84d8469e701e85085b9483f575f82b:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4MDFhOTkwNzZjM2ZkZDdlZjdjYzU4YWIzYjhmZjI2Y2Q4YjhmYzU2NzVhOTFjMzVhNzIzMDJiMTEzNTI3NzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg3YWFmZDFjYWU0ODM1NWIxOTBiYTA0ZmUxMWJmYmMxNGI3MGE2YWI4OTBlYmU1OTg3YTliYzY2YTA1M2U3ZDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlYjAxNDdjYmNjMDAyZjBlYWZmYjZlMjVjNjAxNzQ1NWUyZGMyYTU1MGQwYzc3MGE3NWMzNTkwODUzYzU3MTYifQ"
+        },
+        {
+          "resource": "repo://crates/local-deployment/src/container.rs#L519-L605",
+          "version": "repo-lines-v1:sha256:7f6e43b7ac180c82cb51ec1f24d4b5dce62bc973f1de65baf4714a956885a439:eyJzZWxlY3RlZExpbmVDb3VudCI6ODcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2MzI4MTdiMDgyMGI4MTJkZjVhZGFmZmJjNzEyMzBjYmM1YTlkMDU3NGQ1N2NiYjIxN2YyOTA3ODAwYTFlYmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YzEzNTkwNjY1NjMyM2QxYzVlYTQxNjU0ZWU2NmFmYjU4NWFjZGNmYWVhY2ExMjFkNWUzMGJmMTkzZWVkZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFhNDUxZjYzODg0YzliMTMxMmM1ZmM0YjkzNGRmNGUzN2NhOGQ1NGM4MzY2Y2RjZmI4YzgxYTAzM2MyMGY1NTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY5ZTdmNmM5NDM1NTMxOWMxOTE0MzJmNTM5ZmZjMGUzNmNhNDI0ZDVmMTE0ZjUxNmJjNGYzNDliYmE2ZTcxZTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_065003542429422eb767139b08c48dca",
+      "statement": "明示 Workspace 削除は External の container 保護とは独立に Session の process logs と Native Audit を background 削除する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/workspace-manager/src/workspace_manager.rs#L174-L205",
+          "version": "repo-lines-v1:sha256:4e890d9ebd2de40fa4f3b0beec88f4267079272b0cac26e783484edbf78f8f96:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViNjhlNTNlNGU1MmYxZTI0ZTI3ZGNlZWQwYjJiN2M0NzUyNTIyMDM2NjAxOTJjOWYyMjY1ZjgxZTc1Njc2MTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5YjE5ODJlOGRkNzQ4MTE4MTQ2YjM5YTJkMDA2MmY0MDgxZTM0Nzc5Yjg2NzVjMjM0YzRmYjEyNGRjMzkzOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZiMjBlNzhiOGRlMmI1ZDBlYzRlNDgwN2I0ZTNhODFmYzIyYjczMTQ4Mzg2ZWVmNzM1ZjZjYzFlMTIyYjRkZWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVmZWEyNmM2ZjBhZjU0N2ZhNGRmZDE5MWQwMDYwYjdhMmQ4MTJjOTFjMDliYWFhNjlmYzRkZTQ2ZjQzZjI5YjEifQ"
+        },
+        {
+          "resource": "repo://crates/workspace-manager/src/workspace_manager.rs#L436-L515",
+          "version": "repo-lines-v1:sha256:9dbe5c7e65cbdb6f420ea6efca3f76164e6c17cfd427f7e359ecfff4d22de1aa:eyJzZWxlY3RlZExpbmVDb3VudCI6ODAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1YjUzNGEwNWNhMzNmNzUwZThjYjkyODFiNGNlYmUzNmZiMDRiZjAzOWEwMmM1YzBhNDA0MWQ4NGYxMzQ4ODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlNzBhYTI5Zjg2ZmFmOTAxZjA4NjAxNjQ4OWQ1OWIzNDUyNjhiNTU1YmJmYmFkYzE1MjViYmIzOGVlNDU5NjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmZTdjZGZmNmEwYTU4NjczNDQ3NTM5ZTMzMTYyNTU0ZjkwN2FjODA1MjI5ZjA4ZGNhNDJmMGU3NjQxMThlNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU2MDhjZTExZjY5MjYyZTRmYjkwNGU0ZWMyOWRmMmIzODZhMmQ4Yzk3ZTU2N2YxMWE3ZjgyNzJiMjU0ODYxMmQifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-15T17:45:17.356Z"
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:037c90a784f7c4763bd9426c9ee5c73c77c21bad98de22a8d04ffe6cdeb51413",
+  "claims": [
+    {
+      "id": "claim_040b4779a7b24b2da362496e3236ffd7",
+      "statement": "ローカルserverのDeploymentImplはLocalDeploymentに固定され、Remoteはルートworkspaceから除外された独立サーバーである。",
+      "evidence": [
+        {
+          "resource": "repo://Cargo.toml#L1-L36",
+          "version": "repo-lines-v1:sha256:ec487ccf52137c42d35c25a167acb822bc6e297d7008ed70a6682a5d52456020:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzNGUxMDJjODYxZjk5NGQyYWFjZTkxMTRkMzkyZGJjMTYyMTkwZTAwYmU4ZmUzNTdkNDcyMTUwY2E0Mzk2MTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwNjViNWEzYTk2M2Q4ZDQxNDAyZmQ0Y2UwZTUyZjIxOGI0Mjg5NTk3N2MxMTA2ZTQyNmI1ZmYyZTg3OTNkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVlOTc2YTBiZmFiOTcxMzE0N2FiODVkZTMyZTcxMmQ1NDZiNTJiN2M5NzI0YzI5NDczMzY3YTVmMDljZjVjNGMifQ"
+        },
+        {
+          "resource": "repo://crates/server/src/lib.rs#L9-L12",
+          "version": "repo-lines-v1:sha256:4723625fa2b96871a2f2fcfc834795b589ff6607e86d9746028cd20fdd4fdfd5:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGY0NjFlNWUwZjZlODNlNDU5M2QxYTk5MWQ2OGYwZGExYzgwOTI3ZTNiMDU2MTJmOTdmYjNkY2NkZjFjNmNkNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmE4M2U5ZWI3MGYzN2EzNjMyMmI4ODE0Y2JiMDE3NzJmZmM0MzdmODY2OWNkZDFhYzc3MTZkMzc5ODQyMjlkYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGY0MGM4OTE2YzRlZDVmY2ZmM2QyNjY2YzM0NzcyNmM0MmU2NjUyYzllZjE2OWVjMGQzYzcwZTEzODkzOWZhOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8a7c258489134244ae3bf4084f4f0916",
+      "statement": "LocalDeploymentはDB、WorkspaceManager、AgentRunPort、Git、preview、relayなどを組み立てる所有境界である。",
+      "evidence": [
+        {
+          "resource": "repo://crates/local-deployment/src/lib.rs#L57-L89",
+          "version": "repo-lines-v1:sha256:4f2906005729a76680c442315744989e223b23bfd1c59ab4f2ad04bc85972f99:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5MDZjYWZiZDM3ODM1NmQ2ZTI1NWJiMGE4NWNjYWMyMzMzMDZmMjQwNmViN2QwMzM1MjRhNDc5OGM5MDM0YzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU1NjNlODI4MGZiYWUxODNkMTEyNWQyMWNhZDFhNTY3YjMxOTFkZTYxNzU5OTgwOGM1Y2MxYzU2ZWNlY2VkMTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4NDQ1MWJlMzA3OTA5ZDA3OWQyNmI1ZDNhYWJmNTgwYTE0NzlhMjM1M2E5YmU5ZWI4N2U2MDRhMDkyMDk1OGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c7a6740a06f244bf9598869c32859317",
+      "statement": "ローカルDBはdb.v2.sqliteを使い、通常poolをDELETE journal・5秒busy timeoutで構成しmigrationを実行する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/db/src/lib.rs#L12-L15",
+          "version": "repo-lines-v1:sha256:a4ab273ae8a812ee1e6c8f17b3d72582c734f13351f7e2eef6fd762a60025222:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzAzYmE2MDg4MmU1ZjM3NmZhYTNjMWU5MTk2Y2I1MzM0NGNiNGNjNThlYTBhZDNlMWE2YmEyZDg3NDRmMWE5MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmExNWI4ZmE0NzkwYWU2N2VmYWQ2ZjBkMTAwZDVlNzg2MmU3MWE1NGY1NDg2NGQ2YTI4YzkxYjY4YWU4NGVjYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODYyNzNlMDBhYjJkOTU2YjJjNzkxMDVhOGZmMTE0NTJiMGIyOTExOTYyMTdlZTlmMDgyYTI2ZjdjNTU3OTEyMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2U1M2Q3NTcwOWY5Y2Y5NWJjZWY0MjlmYzIzODExMzgzNGEyNThmOWY3NzE3YWFmODZlYmE5NWQxNTliMzNiZSJ9"
+        },
+        {
+          "resource": "repo://crates/db/src/lib.rs#L254-L268",
+          "version": "repo-lines-v1:sha256:5c8ecb00cca319c10859bebeb9885b96610727007038e0a54227e90701e1a3fe:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjZGVhMTY1MTZkZGI2YTFlMGE4NGY3ZGU1ZTBmYTk1ZWExNWUzNmNkNzJhYTBhNGQ0OTRlN2Y2MTA3YTlhMDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4ZWFiNGI3NzFkZThkNjYxYWI4NGQ4ZDc0NDhhMGVkNTc0YzhlMDY0NmZhYjk1YzYzYTYwYzI4ODhiMmMyN2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMwZGQ2ODBlMjMwZmZlNzZmNmQ3YzM4OTg0ZmIwZWE3YzQxZThkYTQxZDljOGFlYzBkODU3YTllOWUwNjI1MzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgyMmZlNmNlNDgxYjBlMWU2MDJjNjVhODEyNTA5NzYxNGRmZmEyYTViNDM3YjY3ZDcyMzM3YWMwZTg4YWViZDMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6e4d0977b8624dfeadc61033d462f233",
+      "statement": "Remoteの起動はPostgreSQL migrationとElectric role/publication準備を認証サービス構築より先に行う。",
+      "evidence": [
+        {
+          "resource": "repo://crates/remote/src/app.rs#L33-L58",
+          "version": "repo-lines-v1:sha256:7557a375cc720f3a57af09672d934c07e843c127267bd1d142cd9f222b3d9646:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1NjZhYjRlODNjZjEwZjljZmJiMjNkZmZiYWNhN2U5Y2ZiMWRkODA2NzI0MmVmZDMzZTYxNjFlZTkyNmU3ZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhMWExOTZiYjA2YWY2YWViZTI3MGY3ZGU0ZDhkYmIyNmQyMWVkZDVhYWRmMDFkZTk1MWNmNDA2MGVmNGI4NDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3NTEwNGUyYzc2NmRjMDkwOWU3ZDg5NWYyYjM3M2I5MWZhNGNjZjk5ODcyYTlmY2Y0NmRhZGJmZDI1MDgxNzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0YTcxNTg5NDYwNjc0ZjYwZGZiZDAyNmMxOTk4N2RmYjAyNTY1YTM2NGI2NjVkODMxOWExYzdiY2U1MzE5NzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_73d18aa5467c494f97398731bd82eac1",
+      "statement": "standaloneとembeddedの起動はprocess所有回復後にbootstrap fence、direct command、setup gate、orchestration、Workflow、OpenWiki monitorを順に扱う。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/main.rs#L87-L133",
+          "version": "repo-lines-v1:sha256:5fc776a5e8cd3665d06f0fe51b6338187784e5972a04d7455baae9520e589557:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3MmM4ZjNlN2QzNTA0ZTYzNTRmY2ZhODhhZDRmMGExNzNjMzQxNzI2NDdhODRmODdjYjJmNzMyNjkzMmY2YTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1NmJlMmVlMTcwMDQwNjhjMTg2YmU4MjNlMzJjYzUxMWM0OWE4MDc1ZWYxYWQwMDI5MjJkZTBjNTk5OGMzMTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM5M2Q2M2FlMmU1NTU4YzMzMDJkM2NiYzQwMzhhZTlkNTY4MzVlZTdlMmViN2Q1ZTBiMzI2YjYwNzczZWY0NTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZjNzhlNTM5NTdiOTFiM2E4YTM4MmQwNTc5MTU2ZjJiNWFmODkxOWMzMWVhOWY1M2ZjMjY0MjgxZjljOTBjZjUifQ"
+        },
+        {
+          "resource": "repo://crates/server/src/startup.rs#L170-L223",
+          "version": "repo-lines-v1:sha256:9643826668e5a0ede0ade1561eda8a44ae7ac22c3ecfed88a06c90259a0db257:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4MTcwYThkZjBjODJhZTAyNjc1NTZjZjI4NTAxNGIwZTc4MzFmNWJlZjk3MDRhMjQ4MzMyYmJhM2NhMzM0MmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhY2RjZjFlODVlMzFjNzRhZjM5MjRkOWYzNGUzMTExNzdmM2YwYWFkZTRmMmI0NTA2N2Q3YTkyNDhjOWYwZmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjNDNkNTI0MjhkYzY2YjJlNTE4ZmFkZTE1MTI2Yzc4MjY5YTkwNGI1ZjAzZmFiOTU1NjQzMzJjMDQyZmUxMWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJlYzU1NGJlYmI0NjhkNWNlYmRkMGZkZWM4NzFjZTBmZTBiMzI0YjExMjU2ZDU2MTM4NzliMmVmMWM0ZDI3MzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_487161e6d5ca4b87b8f33f560cc3298f",
+      "statement": "standaloneはmainとpreviewに別listenerを作り、backend portはBACKEND_PORT優先、次にPORT、未指定は自動割当で、既定hostは127.0.0.1である。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/main.rs#L146-L171",
+          "version": "repo-lines-v1:sha256:e6958640f384c7870aa7f7a9a7d35406c72369fb486097085a65e395a8b8c867:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxYWRjZTMwMTgwNjAxZmZlMDg0ZTMxZGE5MDQzNDIwMzQ2OTMyYzY4ZjAzMWM4ZDFiMTM1YjI1ZTI4NTJmYTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlmMjY4NTMwOTVmYWZiMTFkODNiYzBlMTIwNWM1OWUwNGNlMzJlOWNjZTM0MjQ3YWMwNTYyYmIxNjY3NjI1NzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllMjQ1ZGM3ZWJlZDI0Yjk5NzUwNDJkNGM4MGRhODQ3OThhNTE5YjM1Mzk3ZTQ3NGUwZmMzZTUwMmU1NmY0YmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4OWZmMzdjNjY2NGViYzU2M2QxNDU3OGQ2ZGJmNDgwYmFhODBhMjkzZjNkMTIxZTQyYmRkN2Y1M2M0NTdkNDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8638c995b9b643619c6d5910108ddc4e",
+      "statement": "embedded startはlocalhostのOS割当portを使用し、IPv6のhostname不一致回避という理由が記録されている。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/startup.rs#L107-L142",
+          "version": "repo-lines-v1:sha256:a0012849c43d19630476e0606ed3579a04aabc8e10db067b38e0e379eb9fa9d4:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzMmFhYzYyOTc5NzU0YzA1ZjM5MzA1YzQ5NDMyZTJhODQyZmYxMDA1YWQ3NjE0ZmVjODcwZDg3MzA0NjQwZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0NzVlOTRhOTA0YWM0OWIzMTU0ZDQ2NzJhNjZlODYyOWI4NmRhYzc0ZTNlMjkzN2JlNjkyN2FlM2RhMTFjNTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ5MTAzYzE5MTdjNzE1MjkwOTJjZmE3NDhjZWM0YjNiNDBhYWViMDEyOWYwY2QwZmMyMjc4MWE0N2Q5MTkzMzAifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-15T16:13:17.964Z"
+  }
+}
