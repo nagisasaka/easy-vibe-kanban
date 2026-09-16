@@ -104,7 +104,8 @@ async fn setup_workflow_pool() -> SqlitePool {
             id             BLOB PRIMARY KEY,
             workflow_id    BLOB NOT NULL,
             attempt_id     BLOB,
-            issue_id       BLOB NOT NULL,
+            issue_id       BLOB,
+            repository_id  BLOB,
             workspace_id   BLOB,
             trigger_source TEXT NOT NULL DEFAULT 'manual',
             input_text     TEXT NOT NULL,
@@ -909,10 +910,6 @@ impl StartedAgentExecutor {
             requests: Mutex::new(Vec::new()),
         }
     }
-
-    fn execution_process_id(&self) -> Uuid {
-        self.execution_process_id
-    }
 }
 
 #[async_trait::async_trait]
@@ -1285,7 +1282,10 @@ async fn list_project_workflows_seeds_system_templates_and_returns_project_templ
         .await
         .expect("list workflows");
 
-    let built_in_count = workflow::templates::built_in_templates().len();
+    let built_in_count = workflow::templates::built_in_templates()
+        .iter()
+        .filter(|template| template.id != workflow::templates::OPENWIKI_BOOTSTRAP_ID)
+        .count();
     assert_eq!(workflows.len(), built_in_count + 1);
     assert!(
         workflows
@@ -1822,7 +1822,7 @@ async fn workflow_runner_trigger_creates_run_workspace_and_node_executions() {
     .expect("trigger workflow run");
 
     assert_eq!(run.workflow_id, workflow_id);
-    assert_eq!(run.issue_id, issue_id);
+    assert_eq!(run.issue_id, Some(issue_id));
     assert_eq!(run.workspace_id, Some(workspace_id));
     assert_eq!(run.nodes.len(), 3);
     assert_eq!(
@@ -3067,7 +3067,7 @@ async fn workflow_human_retry_failed_agent_node_resumes_without_rerunning_start(
 }
 
 #[tokio::test]
-async fn workflow_human_retry_failed_transform_node_uses_updated_graph() {
+async fn workflow_human_retry_failed_transform_node_preserves_run_graph_snapshot() {
     let pool = setup_workflow_pool().await;
     let project_id = Uuid::new_v4();
     let issue_id = Uuid::new_v4();
@@ -3123,9 +3123,26 @@ async fn workflow_human_retry_failed_transform_node_uses_updated_graph() {
         .await
         .expect("retry transform node");
 
-    assert_eq!(retried.status, WorkflowRunStatus::Succeeded);
+    // Editing a template cannot alter the frozen definition of an existing
+    // run. Retry retains its original failing transform; a new run uses the fix.
+    assert_eq!(retried.status, WorkflowRunStatus::Failed);
+    let new_run = trigger_workflow_run(
+        &pool,
+        workflow_id,
+        TriggerWorkflowRequest {
+            issue_id,
+            workspace_id: None,
+            trigger_source: "manual".into(),
+            input_text: "No ticket here".into(),
+        },
+        &workspace,
+        &agent,
+    )
+    .await
+    .expect("new run uses edited template");
+    assert_eq!(new_run.status, WorkflowRunStatus::Succeeded);
     assert_eq!(
-        retried.output_text.as_deref(),
+        new_run.output_text.as_deref(),
         Some("Fixed: No ticket here")
     );
 }
@@ -3181,7 +3198,7 @@ async fn workflow_run_rejects_condition_without_router_config() {
 }
 
 #[tokio::test]
-async fn workflow_human_recovery_marks_stale_running_nodes_failed() {
+async fn workflow_recovery_does_not_invent_canonical_ownership_for_legacy_rows() {
     let pool = setup_workflow_pool().await;
     let project_id = Uuid::new_v4();
     let issue_id = Uuid::new_v4();
@@ -3234,7 +3251,7 @@ async fn workflow_human_recovery_marks_stale_running_nodes_failed() {
         .await
         .expect("get recovered run");
 
-    assert_eq!(recovered, 1);
+    assert_eq!(recovered, 0);
     assert_eq!(run.status, WorkflowRunStatus::Running);
     assert_eq!(
         node_status(&run.nodes, "agent"),
@@ -3244,7 +3261,7 @@ async fn workflow_human_recovery_marks_stale_running_nodes_failed() {
 }
 
 #[tokio::test]
-async fn recovery_syncs_attempt_status_for_stale_running_run() {
+async fn recovery_preserves_unowned_legacy_attempt_status() {
     let pool = setup_workflow_pool().await;
     let project_id = Uuid::new_v4();
     let issue_id = Uuid::new_v4();
@@ -3320,7 +3337,7 @@ async fn recovery_syncs_attempt_status_for_stale_running_run() {
     let recovered = recover_stale_workflow_runs(&pool)
         .await
         .expect("recover stale workflow runs");
-    assert_eq!(recovered, 1);
+    assert_eq!(recovered, 0);
 
     let attempt_status: String =
         sqlx::query_scalar("SELECT status FROM workflow_attempts WHERE id = ?")

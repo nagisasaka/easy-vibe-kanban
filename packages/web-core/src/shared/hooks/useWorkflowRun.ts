@@ -42,7 +42,13 @@ export function useWorkflowRun(
       if (refetchIntervalMs === false) return false;
       const data = query.state.data as WorkflowRunResponse | undefined;
       if (!data) return false;
-      const isRunning = data.status === 'running' || data.status === 'pending';
+      const isRunning = [
+        'running',
+        'pending',
+        'cancelling',
+        'awaiting_human',
+        'awaiting_arena',
+      ].includes(data.status);
       return isRunning ? refetchIntervalMs : false;
     },
     refetchOnWindowFocus: false,

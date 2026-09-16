@@ -241,8 +241,7 @@ pub(crate) async fn validate_queued_follow_up_profile(
     agent_run::validate_session_provider_binding(
         pool,
         session.id,
-        provider,
-        &runtime_profile_id,
+        (provider, &runtime_profile_id),
         None,
         executor_config,
         selected_skills,
@@ -285,8 +284,7 @@ pub async fn start_coding_agent_execution_for_session(
         prompt,
         selected_skills,
         executor_config,
-        resume_session_id,
-        resume_scope_path,
+        (resume_session_id, resume_scope_path),
         agent_run::AgentRunDispatch::Immediate,
     )
     .await
@@ -307,8 +305,7 @@ pub(crate) async fn reserve_coding_agent_execution_for_session(
         prompt,
         selected_skills,
         executor_config,
-        resume_session_id,
-        resume_scope_path,
+        (resume_session_id, resume_scope_path),
         agent_run::AgentRunDispatch::Reserved,
     )
     .await
@@ -320,10 +317,10 @@ async fn prepare_coding_agent_execution_for_session(
     prompt: String,
     selected_skills: Option<Vec<SelectedSkill>>,
     executor_config: ExecutorConfig,
-    resume_session_id: Option<String>,
-    resume_scope_path: Option<String>,
+    resume: (Option<String>, Option<String>),
     dispatch: agent_run::AgentRunDispatch,
 ) -> Result<AgentRunPortSnapshot, ApiError> {
+    let (resume_session_id, resume_scope_path) = resume;
     let pool = &deployment.db().pool;
 
     let workspace = Workspace::find_by_id(pool, session.workspace_id)
@@ -385,8 +382,7 @@ async fn prepare_coding_agent_execution_for_session(
     agent_run::validate_session_provider_binding(
         pool,
         session.id,
-        provider,
-        &runtime_profile_id,
+        (provider, &runtime_profile_id),
         explicit_provider_session.as_ref(),
         &executor_config,
         selected_skills.as_ref(),
@@ -401,10 +397,8 @@ async fn prepare_coding_agent_execution_for_session(
         }
     };
 
-    if has_explicit_resume {
-        if let Some(reference) = provider_session.as_ref() {
-            agent_run::bind_provider_session(pool, session.id, reference).await?;
-        }
+    if has_explicit_resume && let Some(reference) = provider_session.as_ref() {
+        agent_run::bind_provider_session(pool, session.id, reference).await?;
     }
 
     let mut prompt = prompt;
@@ -476,24 +470,6 @@ pub(crate) async fn fail_reserved_coding_agent_execution(
         .fail_reserved(agent_run_id, message)
         .await
         .map_err(agent_run::agent_run_port_error)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::native_history_scope_path;
-
-    #[test]
-    fn native_history_scope_uses_only_the_explicit_working_directory() {
-        let path = native_history_scope_path(Some("  F:/repo  ")).expect("scope path");
-
-        assert_eq!(path.to_string_lossy(), "F:/repo");
-    }
-
-    #[test]
-    fn native_history_scope_rejects_missing_or_blank_working_directory() {
-        assert!(native_history_scope_path(None).is_none());
-        assert!(native_history_scope_path(Some("  ")).is_none());
-    }
 }
 
 pub async fn run_setup_script(
@@ -575,4 +551,22 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .nest("/{session_id}/queue", queue::router(deployment));
 
     Router::new().nest("/sessions", sessions_router)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::native_history_scope_path;
+
+    #[test]
+    fn native_history_scope_uses_only_the_explicit_working_directory() {
+        let path = native_history_scope_path(Some("  F:/repo  ")).expect("scope path");
+
+        assert_eq!(path.to_string_lossy(), "F:/repo");
+    }
+
+    #[test]
+    fn native_history_scope_rejects_missing_or_blank_working_directory() {
+        assert!(native_history_scope_path(None).is_none());
+        assert!(native_history_scope_path(Some("  ")).is_none());
+    }
 }

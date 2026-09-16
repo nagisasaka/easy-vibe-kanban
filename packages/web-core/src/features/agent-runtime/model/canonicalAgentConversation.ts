@@ -179,7 +179,20 @@ function appendRunEntries(
     : [];
   const state = run.timeline?.state ?? run.summary.state;
   const runActive = isCanonicalRunActive(state);
+  const liveIds = new Set(
+    run.timeline?.transientEvents.map((event) => event.event_id)
+  );
   const toolIndexes = new Map<string, number>();
+  const agentEntries = new Map<
+    string,
+    {
+      index: number;
+      content: string[];
+      path: string;
+      parent: string | null;
+      status: ToolStatus;
+    }
+  >();
   const approvalIndexes = new Map<string, number>();
   const inputIndexes = new Map<string, number>();
   let previousMessage:
@@ -193,6 +206,71 @@ function appendRunEntries(
   for (const event of events) {
     const payload = event.payload;
     switch (payload.type) {
+      case 'agent_activity': {
+        // Child observations can interleave with a parent's message deltas.
+        // They belong to a separate card, not a new parent message boundary.
+        const activity = payload.data.activity;
+        let agent = agentEntries.get(activity.thread_id);
+        if (!agent) {
+          agent = {
+            index: output.length,
+            content: [],
+            path: activity.agent_path ?? activity.thread_id,
+            parent: activity.parent_thread_id,
+            status: { status: 'created' },
+          };
+          agentEntries.set(activity.thread_id, agent);
+          output.push(
+            normalizedPatch(event, {
+              entry_type: { type: 'system_message' },
+              content: '',
+              timestamp: event.timestamp,
+            })
+          );
+        }
+        if (activity.agent_path) agent.path = activity.agent_path;
+        if (activity.parent_thread_id) agent.parent = activity.parent_thread_id;
+        if (activity.content)
+          agent.content.push(`### ${activity.kind}\n\n${activity.content}`);
+        if (activity.kind === 'completed' && agent.status.status !== 'failed')
+          agent.status = { status: 'success' };
+        else if (['failed', 'interrupted'].includes(activity.kind))
+          agent.status = { status: 'failed' };
+        else if (['started', 'running'].includes(activity.kind))
+          agent.status = { status: 'created' };
+        const status = agent.status;
+        const entry = normalizedPatch(
+          event,
+          {
+            entry_type: {
+              type: 'tool_use',
+              tool_name: 'Agent',
+              action_type: {
+                action: 'task_create',
+                description: `${agent.parent ?? '?'} → ${agent.path} · ${activity.kind === 'completed' && status.status === 'failed' ? 'failed' : activity.kind}`,
+                subagent_type: agent.path,
+                result: {
+                  type: { type: 'markdown' },
+                  value: agent.content.join('\n\n'),
+                },
+              },
+              status,
+            },
+            content: agent.path,
+            timestamp: event.timestamp,
+          },
+          runActive && status.status === 'created'
+        );
+        entry.patchKey = output[agent.index].patchKey;
+        entry.canonical = output[agent.index].canonical;
+        mergeEventIdentity(
+          entry,
+          event,
+          runActive && status.status === 'created'
+        );
+        output[agent.index] = entry;
+        break;
+      }
       case 'message': {
         const message = payload.data.message;
         const entryType =
@@ -211,9 +289,11 @@ function appendRunEntries(
             const previousContent = previous.content.content;
             previous.content = {
               ...previous.content,
-              content: message.content.startsWith(previousContent)
-                ? message.content
-                : `${previousContent}${message.content}`,
+              content:
+                !liveIds.has(event.event_id) &&
+                message.content.startsWith(previousContent)
+                  ? message.content
+                  : `${previousContent}${message.content}`,
               timestamp: event.timestamp,
             };
             mergeEventIdentity(previous, event, runActive);
@@ -450,6 +530,10 @@ function appendRunEntries(
       case 'lifecycle_changed':
       case 'provider_extension':
         resetMessageMerge();
+        break;
+      case 'goal_updated':
+      case 'goal_cleared':
+        // Goal progress has its own UI and must not split a streaming message.
         break;
     }
   }

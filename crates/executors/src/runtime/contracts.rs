@@ -432,9 +432,22 @@ pub struct AgentLiveEvent {
     pub payload: AgentLiveEventPayload,
 }
 
+/// A semantic observation of a delegated agent, never a parent Run transition.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct AgentActivity {
+    pub thread_id: String,
+    pub parent_thread_id: Option<String>,
+    pub agent_path: Option<String>,
+    pub kind: String,
+    pub content: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum AgentEventPayload {
+    AgentActivity {
+        activity: AgentActivity,
+    },
     LifecycleChanged {
         status: AgentRunStatus,
     },
@@ -538,6 +551,7 @@ impl AgentEventPayload {
 }
 
 const KNOWN_AGENT_EVENT_TYPES: &[&str] = &[
+    "agent_activity",
     "lifecycle_changed",
     "session_observed",
     "message",

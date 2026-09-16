@@ -25,6 +25,8 @@ import { ApprovalFeedbackProvider } from '@/features/workspace-chat/model/contex
 import { forwardWheelToScroller } from '@/features/workspace-chat/ui/forwardWheelToScroller';
 import { useDiffStats } from '@/shared/stores/useWorkspaceDiffStore';
 import { useIsMobile } from '@/shared/hooks/useIsMobile';
+import { useHostId } from '@/shared/providers/HostIdProvider';
+import { WorkspaceWorkflowLink } from '@/features/workflow/ui/WorkspaceWorkflowLink';
 
 /**
  * Isolated component that reads diffStats from WorkspaceContext.
@@ -130,13 +132,13 @@ export const WorkspacesMainContainer = forwardRef<
     repos,
     onSelectSession,
     isLoading,
-    isSessionsLoading: _isSessionsLoading,
     isNewSessionMode,
     onStartNewSession,
   },
   ref
 ) {
   const containerRef = useRef<HTMLElement>(null);
+  const hostId = useHostId();
   const conversationListRef = useRef<ConversationListHandle>(null);
 
   const workspaceWithSession = useMemo(() => {
@@ -251,7 +253,13 @@ export const WorkspacesMainContainer = forwardRef<
   );
 
   const contextBarContent = workspaceWithSession ? (
-    <ContextBarContainer containerRef={containerRef} />
+    <>
+      <WorkspaceWorkflowLink
+        workspaceId={workspaceWithSession.id}
+        hostId={hostId}
+      />
+      <ContextBarContainer containerRef={containerRef} />
+    </>
   ) : null;
 
   // Mobile-only pending-approval banner between transcript and composer. Gated

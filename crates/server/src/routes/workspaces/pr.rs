@@ -274,6 +274,17 @@ pub async fn create_pr(
         Ok(true) => {}
     }
 
+    services::services::repository_memory::prepare_workspace_source(
+        pool,
+        git,
+        &repo,
+        &workspace,
+        &worktree_path,
+        &workspace_repo.target_branch,
+    )
+    .await
+    .map_err(|error| ApiError::BadRequest(error.to_string()))?;
+
     if let Err(e) = git.push_to_remote(&worktree_path, &workspace.branch, false) {
         tracing::error!("Failed to push branch to remote: {}", e);
         match e {

@@ -2,6 +2,7 @@
 
 use std::{
     fs,
+    io::Read,
     path::{Component, Path, PathBuf},
 };
 
@@ -10,6 +11,7 @@ use thiserror::Error;
 use ts_rs::TS;
 
 pub const WIKI_DIR: &str = ".llm-wiki";
+pub mod openwiki;
 pub const DEFAULT_OUTPUT_LANGUAGE: &str = "en";
 const MAX_PAGE_BYTES: u64 = 512 * 1024;
 const MAX_PAGES: usize = 2_000;
@@ -168,12 +170,39 @@ fn canonical_child(root: &Path, child: &Path) -> Result<PathBuf, WikiError> {
 }
 
 fn read_markdown(root: &Path, path: &Path, display: &str) -> Result<WikiPage, WikiError> {
+    read_markdown_with(root, path, display, parse_page)
+}
+
+fn read_markdown_with(
+    root: &Path,
+    path: &Path,
+    display: &str,
+    parse: fn(&str, &str) -> Result<WikiPage, WikiError>,
+) -> Result<WikiPage, WikiError> {
     let canonical = canonical_child(root, path)?;
     let metadata = fs::metadata(&canonical)?;
     if !metadata.is_file() || metadata.len() > MAX_PAGE_BYTES {
         return Err(WikiError::UnsafePath(display.to_string()));
     }
-    parse_page(display, &fs::read_to_string(canonical)?)
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options.open(canonical)?;
+    if !file.metadata()?.is_file() {
+        return Err(WikiError::UnsafePath(display.to_string()));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_PAGE_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_PAGE_BYTES {
+        return Err(WikiError::UnsafePath(display.to_string()));
+    }
+    let text = String::from_utf8(bytes)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+    parse(display, &text)
 }
 
 pub fn load_snapshot(repo_root: &Path) -> Result<WikiSnapshot, WikiError> {

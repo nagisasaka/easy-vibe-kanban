@@ -330,7 +330,7 @@ impl DirectProvider {
                 runtime: None,
                 protocol: Some("rust-v0.144.1"),
                 adapter: "codex-adapter-v1",
-                mapper: "codex-mapper-v2",
+                mapper: "codex-mapper-v3",
             },
             Self::ClaudeCode => DirectAdapterVersions {
                 executable: "claude",
@@ -531,7 +531,20 @@ impl DirectProvider {
     pub fn mapper(self) -> DirectProviderMapper {
         DirectProviderMapper {
             provider: self,
+            semantics: if self == Self::Codex {
+                MapperSemantics::V3
+            } else {
+                MapperSemantics::V2
+            },
+            scope: Default::default(),
+        }
+    }
+
+    pub fn semantic_mapper(self) -> DirectProviderMapper {
+        DirectProviderMapper {
+            provider: self,
             semantics: MapperSemantics::V2,
+            scope: Default::default(),
         }
     }
 
@@ -541,6 +554,7 @@ impl DirectProvider {
         DirectProviderMapper {
             provider: self,
             semantics: MapperSemantics::V1,
+            scope: Default::default(),
         }
     }
 }
@@ -691,6 +705,7 @@ pub fn require_capability(
 /// Typed provider semantics produced by the one native-frame decode.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypedProviderEvent {
+    AgentActivity(crate::runtime::AgentActivity),
     Lifecycle(AgentRunStatus),
     SessionObserved(String),
     Message {
@@ -788,6 +803,27 @@ pub struct DecodedProviderEvent {
     pub typed: TypedProviderEvent,
 }
 
+/// Per-stream provider scoping. Common runtime callers do not inspect native
+/// thread identifiers or provider-specific notification names.
+pub struct ProviderStreamScope {
+    provider: DirectProvider,
+    codex: super::codex::agent_scope::AgentScope,
+}
+
+impl ProviderStreamScope {
+    pub fn new(provider: DirectProvider) -> Self {
+        Self {
+            provider,
+            codex: Default::default(),
+        }
+    }
+    pub fn apply(&mut self, event: &mut DecodedProviderEvent) {
+        if self.provider == DirectProvider::Codex {
+            self.codex.apply(event);
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ProviderFrameClassification {
     Event {
@@ -839,23 +875,30 @@ impl DirectProvider {
 
 /// Replay mapper used by `AuditBundle::replay`; all four adapters share the
 /// canonical envelope construction while retaining provider-specific names.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct DirectProviderMapper {
     pub provider: DirectProvider,
     semantics: MapperSemantics,
+    scope: std::sync::Mutex<super::codex::agent_scope::AgentScope>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MapperSemantics {
     V1,
     V2,
+    V3,
 }
 
 impl NativeAuditReplayMapper for DirectProviderMapper {
     fn versions(&self) -> NativeAuditVersionSet {
         let mut versions = self.provider.version_set();
-        if self.semantics == MapperSemantics::V1 {
-            versions.mapper_version = versions.mapper_version.replace("-v2", "-v1");
+        let suffix = match self.semantics {
+            MapperSemantics::V1 => "v1",
+            MapperSemantics::V2 => "v2",
+            MapperSemantics::V3 => "v3",
+        };
+        if let Some((prefix, _)) = versions.mapper_version.rsplit_once('-') {
+            versions.mapper_version = format!("{prefix}-{suffix}");
         }
         versions
     }
@@ -870,13 +913,21 @@ impl NativeAuditReplayMapper for DirectProviderMapper {
         manifest: &NativeAuditManifest,
     ) -> Result<Vec<AgentEvent>, NativeAuditError> {
         let typed = classify_payload(self.provider, event)?;
-        let decoded = DecodedProviderEvent {
+        let mut decoded = DecodedProviderEvent {
             raw: event.clone(),
             typed,
         };
         match self.semantics {
             MapperSemantics::V1 => map_typed_event_v1(self.provider, &decoded, manifest),
             MapperSemantics::V2 => {
+                Ok(project_typed_event(self.provider, &decoded, manifest)?.durable_events)
+            }
+            MapperSemantics::V3 => {
+                let mut scope = self.scope.lock().expect("replay scope lock");
+                if event.sequence == 1 {
+                    *scope = Default::default();
+                }
+                scope.apply(&mut decoded);
                 Ok(project_typed_event(self.provider, &decoded, manifest)?.durable_events)
             }
         }
@@ -936,6 +987,33 @@ fn classify_payload(
     };
 
     if provider == DirectProvider::Codex
+        && payload.get("id").is_some()
+        && let Some(message) = payload.pointer("/error/message").and_then(Value::as_str)
+    {
+        return Ok(TypedProviderEvent::Error(
+            AgentRuntimeError::new(AgentRuntimeErrorKind::Unknown, message)
+                .with_provider(Some(provider.id())),
+        ));
+    }
+
+    if provider == DirectProvider::Codex
+        && let Some(message) = payload
+            .pointer("/LaunchError/error")
+            .and_then(Value::as_str)
+    {
+        return Ok(TypedProviderEvent::Error(
+            AgentRuntimeError::new(
+                AgentRuntimeErrorKind::Unknown,
+                message
+                    .split("\n\nCodex launch context:")
+                    .next()
+                    .unwrap_or(message),
+            )
+            .with_provider(Some(provider.id())),
+        ));
+    }
+
+    if provider == DirectProvider::Codex
         && let Some(classified) = classify_codex_payload(payload, event.sequence)
     {
         return classified;
@@ -961,7 +1039,7 @@ fn classify_payload(
         | "session_observed" => value(&["session_id", "sessionId", "thread_id", "threadId"])
             .and_then(Value::as_str)
             .map(|id| TypedProviderEvent::SessionObserved(id.to_string()))
-            .ok_or_else(|| NativeAuditError::MalformedFrame(event.sequence)),
+            .ok_or(NativeAuditError::MalformedFrame(event.sequence)),
         "thinking" | "reasoning" | "thought" => {
             Ok(TypedProviderEvent::Thinking(text().unwrap_or_default()))
         }
@@ -1616,6 +1694,9 @@ fn project_typed_event(
     }
 
     let payload = match &event.typed {
+        TypedProviderEvent::AgentActivity(activity) => AgentEventPayload::AgentActivity {
+            activity: activity.clone(),
+        },
         TypedProviderEvent::Lifecycle(status) => {
             AgentEventPayload::LifecycleChanged { status: *status }
         }
@@ -1756,8 +1837,107 @@ pub fn encode_stdio_rpc(request: &Value) -> Result<Vec<u8>, serde_json::Error> {
     Ok(bytes)
 }
 
+/// Provider-neutral repository memory guidance. Codex receives this through
+/// persistent developer instructions; other providers receive a self-contained
+/// prompt suffix. Do not change slash-command parsing or Codex Goal objectives.
+pub fn prompt_with_repository_memory(
+    provider: DirectProvider,
+    prompt: &str,
+    env: &crate::env::ExecutionEnv,
+) -> String {
+    if provider != DirectProvider::Codex
+        && !prompt.trim_start().starts_with('/')
+        && let Some(instructions) = env.get("EVK_REPOSITORY_MEMORY_INSTRUCTIONS")
+    {
+        return format!("{prompt}\n\n## EVK repository memory context\n{instructions}");
+    }
+    prompt.to_owned()
+}
+
+/// Control-only calls must never sweep pre-existing dirty source into a commit.
+/// Keep provider slash parsing here, not in the repository-memory service.
+pub fn memory_source_completion_allowed(
+    provider: DirectProvider,
+    intent: DirectIntent,
+    prompt: &str,
+) -> bool {
+    if intent == DirectIntent::Review {
+        return false;
+    }
+    if provider == DirectProvider::Codex {
+        use super::codex::slash_commands::{CodexGoalCommand, CodexSlashCommand};
+        return matches!(
+            CodexSlashCommand::parse(prompt),
+            None | Some(CodexSlashCommand::Init)
+                | Some(CodexSlashCommand::Goal(
+                    CodexGoalCommand::Set { .. } | CodexGoalCommand::Resume
+                ))
+        );
+    }
+    !prompt.trim_start().starts_with('/')
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn repository_memory_does_not_commit_on_compaction_review_or_control_commands() {
+        for prompt in [
+            "/compact",
+            "/compact keep design",
+            "/status",
+            "/goal",
+            "/goal pause",
+            "/review",
+        ] {
+            assert!(
+                !memory_source_completion_allowed(
+                    DirectProvider::Codex,
+                    DirectIntent::FollowUp,
+                    prompt
+                ),
+                "{prompt}"
+            );
+        }
+        for prompt in [
+            "implement feature",
+            "/goal implement feature",
+            "/goal resume",
+            "/init",
+        ] {
+            assert!(
+                memory_source_completion_allowed(
+                    DirectProvider::Codex,
+                    DirectIntent::FollowUp,
+                    prompt
+                ),
+                "{prompt}"
+            );
+        }
+        assert!(!memory_source_completion_allowed(
+            DirectProvider::Codex,
+            DirectIntent::Review,
+            "review code"
+        ));
+    }
+
+    #[test]
+    fn codex_native_and_launch_errors_preserve_actionable_reason() {
+        let provider = DirectProvider::Codex;
+        for payload in [
+            serde_json::json!({"id":4,"error":{"code":-32600,"message":"goal objective must be at most 4000 characters"}}),
+            serde_json::json!({"LaunchError":{"error":"goal objective must be at most 4000 characters\n\nCodex launch context:\nprivate paths"}}),
+        ] {
+            let event = provider
+                .decode_native_frame(&frame(provider, payload))
+                .unwrap();
+            let projected = provider
+                .map_provider_event(&event, &fixture_manifest(provider))
+                .unwrap();
+            assert!(
+                matches!(&projected[0].payload, crate::runtime::AgentEventPayload::Error { error } if error.message == "goal objective must be at most 4000 characters")
+            );
+        }
+    }
     use chrono::DateTime;
     use serde_json::json;
 
@@ -1782,8 +1962,8 @@ mod tests {
             "application/json",
             Uuid::from_u128(10),
             serde_json::to_string(&payload).unwrap().as_bytes(),
-            Some(serde_json::json!({ "provider": provider.id() })),
         )
+        .with_metadata(Some(serde_json::json!({ "provider": provider.id() })))
     }
 
     fn launch_env() -> ExecutionEnv {
@@ -2160,7 +2340,7 @@ mod tests {
                 runtime_version: versions.runtime.map(str::to_owned),
                 protocol_version: versions.protocol.map(str::to_owned),
                 adapter_version: versions.adapter.to_string(),
-                mapper_version: versions.mapper.to_string(),
+                mapper_version: provider.semantic_mapper().versions().mapper_version,
                 created_at: Utc::now(),
             },
         )
@@ -2208,7 +2388,7 @@ mod tests {
             .unwrap()
             .to_path_buf();
         let bundle = crate::runtime::AuditBundle::read(&directory).unwrap();
-        let replay = bundle.replay(&provider.mapper()).unwrap();
+        let replay = bundle.replay(&provider.semantic_mapper()).unwrap();
         assert_eq!(replay.provider_events.len(), 1_001);
         assert_eq!(replay.agent_events.len(), 1);
         assert!(matches!(
@@ -2687,6 +2867,69 @@ mod tests {
     }
 
     #[test]
+    fn scoped_audit_replay_preserves_raw_frames_and_parent_answer() {
+        let provider = DirectProvider::Codex;
+        let root = tempfile::tempdir().unwrap();
+        let versions = provider.versions();
+        let mut writer = crate::runtime::NativeAuditWriter::create_in(
+            root.path(),
+            crate::runtime::NativeAuditMetadata {
+                session_id: Uuid::new_v4(),
+                agent_run_id: Uuid::new_v4(),
+                turn_id: Uuid::new_v4(),
+                run_attempt_id: Uuid::new_v4(),
+                run_attempt_number: 1,
+                provider_id: provider.id().into(),
+                runtime_profile_id: "default".into(),
+                workspace_path: root.path().display().to_string(),
+                runtime_version: None,
+                protocol_version: versions.protocol.map(str::to_owned),
+                adapter_version: versions.adapter.into(),
+                mapper_version: versions.mapper.into(),
+                created_at: Utc::now(),
+            },
+        )
+        .unwrap();
+        let mut frames = vec![
+            json!({"result":{"thread":{"id":"root"}}}),
+            json!({"method":"item/completed","params":{"threadId":"root","item":{"type":"agentMessage","id":"parent","text":"parent answer"}}}),
+            json!({"method":"item/completed","params":{"threadId":"root","item":{"type":"subAgentActivity","id":"s","kind":"started","agentThreadId":"child","agentPath":"/root/research"}}}),
+        ];
+        for _ in 0..1000 {
+            frames.push(json!({"method":"item/agentMessage/delta","params":{"threadId":"child","itemId":"c","delta":"a"}}));
+        }
+        frames.push(json!({"method":"item/completed","params":{"threadId":"child","item":{"type":"agentMessage","id":"c","text":"child answer"}}}));
+        for value in &frames {
+            writer
+                .append_native_output(
+                    NativeAuditChannel::Stdout,
+                    "application/json",
+                    Uuid::nil(),
+                    &serde_json::to_vec(value).unwrap(),
+                )
+                .unwrap();
+        }
+        let manifest = writer.close().unwrap();
+        let path = root.path().join(&manifest.manifest_relative_path);
+        let bundle = crate::runtime::AuditBundle::read(path.parent().unwrap()).unwrap();
+        let mapper = provider.mapper();
+        let first = bundle.replay(&mapper).unwrap();
+        assert_eq!(first.provider_events.len(), frames.len());
+        for (raw, expected) in first.provider_events.iter().zip(frames) {
+            assert_eq!(raw.payload_json.as_ref(), Some(&expected));
+        }
+        assert_eq!(first.agent_events.len(), 4);
+        assert_eq!(
+            first.state.terminal_output.as_ref().unwrap().content,
+            "parent answer"
+        );
+        assert_eq!(
+            bundle.replay(&mapper).unwrap().agent_events,
+            first.agent_events
+        );
+    }
+
+    #[test]
     fn checked_in_native_fixtures_replay_for_every_v1_provider() {
         for provider in DirectProvider::ALL {
             let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -2712,7 +2955,20 @@ mod tests {
     #[test]
     fn mapper_v2_does_not_relabel_legacy_audit_bundles() {
         for provider in DirectProvider::ALL {
-            assert!(provider.mapper().versions().mapper_version.ends_with("-v2"));
+            assert!(provider.mapper().versions().mapper_version.ends_with(
+                if provider == DirectProvider::Codex {
+                    "-v3"
+                } else {
+                    "-v2"
+                }
+            ));
+            assert!(
+                provider
+                    .semantic_mapper()
+                    .versions()
+                    .mapper_version
+                    .ends_with("-v2")
+            );
             assert!(
                 provider
                     .legacy_mapper()

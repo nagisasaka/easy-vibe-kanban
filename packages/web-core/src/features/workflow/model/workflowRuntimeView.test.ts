@@ -6,6 +6,7 @@ import type {
 } from 'shared/types';
 import {
   getDefaultWorkflowRuntimeNodeId,
+  canCancelWorkflowRun,
   getWorkflowNodeActionGate,
   getWorkflowNodeRuntimeSummary,
   getWorkflowNodeWork,
@@ -65,6 +66,21 @@ const baseRun = {
 } satisfies WorkflowRunResponse;
 
 describe('workflow runtime view', () => {
+  it('allows owned workflow cancellation without identities for future phases, but not terminal or cancelling runs', () => {
+    const run = { ...baseRun, repository_id: 'repo-1', issue_id: null };
+    const view = getWorkflowRuntimeView(run);
+    expect(view.authority).toBe('unknown');
+    expect(canCancelWorkflowRun(run, view)).toBe(true);
+    expect(canCancelWorkflowRun(baseRun, view)).toBe(false);
+    for (const status of [
+      'succeeded',
+      'failed',
+      'canceled',
+      'cancelling',
+    ] as const) {
+      expect(canCancelWorkflowRun({ ...run, status }, view)).toBe(false);
+    }
+  });
   it('uses the backend projection when present', () => {
     const runtimeView = {
       run_id: 'run-1',
@@ -106,6 +122,42 @@ describe('workflow runtime view', () => {
     expect(
       getWorkflowRuntimeView({ ...baseRun, runtime_view: runtimeView })
     ).toMatchObject({ node_work: [{ runtime_authority: 'current' }] });
+
+    const actionable = {
+      ...runtimeView,
+      node_work: runtimeView.node_work.map((work) => ({
+        ...work,
+        can_retry: true,
+        can_approve: true,
+        can_reject: true,
+        can_select_arena_winner: true,
+        can_select_condition_branch: true,
+        can_cancel_node: true,
+      })),
+    };
+    const repositoryView = getWorkflowRuntimeView({
+      ...baseRun,
+      issue_id: null,
+      repository_id: 'repo-1',
+      runtime_view: actionable,
+    });
+    expect(getWorkflowNodeActionGate(repositoryView.node_work[0])).toEqual({
+      canOpenSession: true,
+      canRetry: false,
+      canApprove: false,
+      canReject: false,
+      canSelectArenaWinner: false,
+      canSelectConditionBranch: false,
+      canCancelNode: false,
+    });
+    const issueView = getWorkflowRuntimeView({
+      ...baseRun,
+      runtime_view: actionable,
+    });
+    expect(getWorkflowNodeActionGate(issueView.node_work[0]).canRetry).toBe(
+      true
+    );
+    expect(actionable.node_work[0].can_retry).toBe(true);
   });
 
   it('builds a fallback projection from node executions', () => {
@@ -149,7 +201,7 @@ describe('workflow runtime view', () => {
     });
   });
 
-  it('marks running nodes without canonical identity as starting and unknown', () => {
+  it('keeps runtime health unknown without canonical identity even before the slow threshold', () => {
     const starting = {
       ...node('exec-1', 'starting', 'agent', 'running'),
       started_at: '2026-06-25T00:09:30Z',
@@ -174,7 +226,7 @@ describe('workflow runtime view', () => {
       getWorkflowNodeRuntimeSummary(getWorkflowNodeWork(view, 'starting')!)
     ).toMatchObject({
       status: 'starting',
-      runtimeHealth: 'starting',
+      runtimeHealth: 'unknown',
       activeSlow: false,
       startingChildCount: 1,
     });

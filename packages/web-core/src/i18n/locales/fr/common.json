@@ -198,15 +198,6 @@
     },
     "loadingEarlierMessages": "Chargement des messages précédents"
   },
-  "folderPicker": {
-    "legend": "Cliquez sur les noms de dossiers pour naviguer • Utilisez les boutons d'action pour sélectionner",
-    "manualPathLabel": "Saisir le chemin manuellement :",
-    "go": "Aller",
-    "searchLabel": "Rechercher dans le répertoire actuel :",
-    "selectCurrent": "Sélectionner l'actuel",
-    "gitRepo": "dépôt git",
-    "selectPath": "Sélectionner le chemin"
-  },
   "branchSelector": {
     "placeholder": "Sélectionner une branche",
     "searchPlaceholder": "Rechercher des branches...",

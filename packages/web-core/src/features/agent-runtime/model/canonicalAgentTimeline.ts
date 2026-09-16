@@ -79,6 +79,10 @@ function itemFromEvent(event: AgentEventEnvelope): CanonicalAgentTimelineItem {
   let status: AgentRunStatus | null = null;
 
   switch (payload.type) {
+    case 'agent_activity':
+      kind = 'tool';
+      content = payload.data.activity.content;
+      break;
     case 'message':
       kind = 'message';
       content = payload.data.message.content;
@@ -180,7 +184,7 @@ export function mergeCanonicalAgentTimeline(
   const mergedEvents = [...previous.events, ...freshEvents].sort(eventSort);
   const completedMessageIds = new Set(
     freshEvents.flatMap((event) =>
-      event.payload.type === 'message' && event.payload.data.final_output
+      event.payload.type === 'message'
         ? [event.payload.data.message.message_id]
         : []
     )
@@ -238,7 +242,6 @@ export function mergeAgentLiveEvent(
       previous.events.some(
         (event) =>
           event.payload.type === 'message' &&
-          event.payload.data.final_output &&
           event.payload.data.message.message_id === messageId
       )
     ) {

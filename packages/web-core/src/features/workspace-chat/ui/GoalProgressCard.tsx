@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
 import { AgentGoalStatus, type AgentGoalState } from 'shared/types';
+import { watchGoalElapsed } from '../model/goalElapsed';
 
 interface GoalProgressCardProps {
   goal: AgentGoalState;
+  isRunActive: boolean;
   busy?: boolean;
   controllable?: boolean;
   error?: string | null;
   onPause: () => void;
   onResume: () => void;
+  onResumeSaved?: () => void;
+  resumeSavedDisabled?: boolean;
   onEdit: (objective: string) => void;
   onClear: () => void;
   onInterruptTurn: () => void;
@@ -33,11 +37,14 @@ function formatDuration(totalSeconds: number) {
 
 export function GoalProgressCard({
   goal,
+  isRunActive,
   busy = false,
   controllable = true,
   error,
   onPause,
   onResume,
+  onResumeSaved,
+  resumeSavedDisabled = false,
   onEdit,
   onClear,
   onInterruptTurn,
@@ -51,14 +58,13 @@ export function GoalProgressCard({
   }, [goal.objective]);
 
   useEffect(() => {
-    setElapsed(Number(goal.time_used_seconds));
-    if (goal.status !== AgentGoalStatus.active) return;
-    const timer = window.setInterval(
-      () => setElapsed((value) => value + 1),
-      1000
+    return watchGoalElapsed(
+      Number(goal.time_used_seconds),
+      goal.status === AgentGoalStatus.active,
+      isRunActive,
+      setElapsed
     );
-    return () => window.clearInterval(timer);
-  }, [goal.status, goal.time_used_seconds]);
+  }, [goal.status, goal.time_used_seconds, isRunActive]);
 
   const canResume = [
     AgentGoalStatus.paused,
@@ -73,9 +79,11 @@ export function GoalProgressCard({
     <section className="border-border bg-primary mb-base rounded-md border p-base">
       <div className="flex flex-wrap items-center justify-between gap-base">
         <div className="flex items-center gap-base">
-          <span className="text-sm font-medium text-high">Goal</span>
+          <span className="text-sm font-medium text-high">
+            {isRunActive ? 'Goal' : 'Saved Goal'}
+          </span>
           <span className="bg-secondary rounded-full px-base py-half text-xs text-normal">
-            {STATUS_LABELS[goal.status]}
+            {isRunActive ? STATUS_LABELS[goal.status] : 'No active run'}
           </span>
         </div>
         <div className="flex flex-wrap gap-base text-xs text-low">
@@ -83,11 +91,24 @@ export function GoalProgressCard({
             Tokens: {String(goal.tokens_used)} /{' '}
             {goal.token_budget == null ? 'Auto' : String(goal.token_budget)}
           </span>
-          <span>Elapsed: {formatDuration(elapsed)}</span>
+          <span>
+            {isRunActive ? 'Elapsed' : 'Recorded time'}:{' '}
+            {formatDuration(
+              isRunActive ? elapsed : Number(goal.time_used_seconds)
+            )}
+          </span>
         </div>
       </div>
 
-      {isEditing ? (
+      {!isRunActive && (
+        <p className="mt-base text-xs text-low">
+          No agent is running for this Goal. Last recorded Goal status:{' '}
+          {STATUS_LABELS[goal.status]}. The time shown is the last reported
+          value.
+        </p>
+      )}
+
+      {isEditing && isRunActive && controllable ? (
         <div className="mt-base space-y-base">
           <textarea
             value={draft}
@@ -128,7 +149,7 @@ export function GoalProgressCard({
         </p>
       )}
 
-      {!isEditing && controllable && (
+      {!isEditing && controllable && isRunActive && (
         <div className="mt-base flex flex-wrap gap-base">
           {goal.status === AgentGoalStatus.active && (
             <button
@@ -178,6 +199,25 @@ export function GoalProgressCard({
           </button>
         </div>
       )}
+      {!isRunActive &&
+        goal.status !== AgentGoalStatus.complete &&
+        onResumeSaved && (
+          <div className="mt-base space-y-base">
+            <button
+              type="button"
+              className={buttonClass}
+              disabled={busy || resumeSavedDisabled}
+              onClick={onResumeSaved}
+            >
+              Resume Goal
+            </button>
+            <p className="text-xs text-low">
+              Continue the saved Goal in this Codex session without replacing
+              its objective or resetting usage. Codex checks whether it still
+              exists.
+            </p>
+          </div>
+        )}
       {error && <p className="mt-base text-xs text-error">{error}</p>}
     </section>
   );

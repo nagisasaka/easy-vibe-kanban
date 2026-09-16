@@ -8,6 +8,10 @@ Agents can consult it when previous knowledge is useful and update it when a
 completed task produces reusable knowledge. Wiki changes are ordinary Git
 changes on the current feature branch.
 
+For a single-writer canonical Wiki maintained after source integration, see
+[OpenWiki repository memory](/workspaces/openwiki). The two storage formats and
+update policies are separate; neither is automatically migrated into the other.
+
 ## Add LLM Wiki to a task
 
 Open the task create or edit panel and select **LLM Wiki** under **Pipeline**.
@@ -41,6 +45,81 @@ language `en`; you can change it in the Viewer after initialisation.
 If an existing Wiki is incomplete or invalid, the run fails before the agent
 starts. The application reports the validation error but does not overwrite or
 repair Git-managed Wiki files automatically.
+
+## Create knowledge from an existing project
+
+Open **Wiki** in the Workspace toolbar (or **Open Wiki** in the right sidebar),
+select the **LLM Wiki** format and a repository, then choose
+**Create Wiki from existing code** (or **Supplement Wiki from code** when
+pages already exist). Choose an output language and optionally describe areas
+to investigate or exclude, then select **Set in chat**.
+
+The complete investigation request appears as an editable draft in the current
+idle chat. Nothing is automatically sent. Existing text requires explicit
+replacement confirmation. Finish queued, approval, review, attachment, or edit
+actions before preparing the request.
+
+For Codex, the composer selects **Goal** execution mode and the draft contains
+the task text without a `/goal` command. A Plan permission setting switches to
+Supervised so the agent can write the Wiki. Other agents receive a normal
+prompt with a notice that automatic Goal activation is unavailable. Review and
+edit the draft before sending; choosing **Code** opts out of Goal execution.
+
+Codex Goal objectives are limited to 4,000 characters. The built-in Wiki
+request fits this limit and retains delegated research, independent critique,
+repair and re-verification. Additional preferences can exceed the limit: the
+composer reports the character count and keeps your draft instead of sending
+it. The check includes instructions added by the parallel-agent limit setting.
+Shorten the text rather than expecting automatic truncation. Runtime rejection
+reasons are retained in the execution history and failed-run error.
+
+This operation uses a self-contained prompt rather than requiring another
+installed Skill. It instructs the agent to inventory the project, investigate
+major areas, verify claims against code and tests, cite sources, and report
+uninvestigated areas. Existing pages are supplemented instead of discarded.
+After sending, the agent prepares a missing Wiki and saves the selected language;
+invalid existing layouts must be fixed separately. These filesystem operations
+are agent instructions, not a new server-side initializer or repair endpoint.
+The normal task Pipeline and automatic preflight are unchanged.
+
+Follow progress in the conversation. When the agent finishes, reload the Wiki
+panel to inspect the generated pages and ordinary Git changes. Review source
+citations and stated limitations: a first draft does not guarantee complete
+coverage or correctness.
+
+### Continue a saved Goal
+
+If the execution ends before the Goal is complete, the chat displays **Saved
+Goal** with its last reported status and recorded time. This does not mean an
+agent is still running.
+
+Choose **Resume Goal** in the same idle Codex session to continue. This starts a
+new AgentRun on the existing Codex thread and checks its current Goal before
+activating it. It preserves the objective, token budget and usage accounting;
+it also leaves your chat draft untouched. If Codex no longer has the Goal, or
+has already completed it, the execution reports an error instead of creating
+a replacement. Usage and budget limits still apply.
+
+When Codex marks the Goal complete during a turn, the app keeps that execution
+open until the turn finishes, allowing tool results and the final answer to
+arrive. A complete Goal and a running AgentRun can therefore briefly coexist.
+If the turn fails or is interrupted, the app retains that execution outcome
+instead of treating the Goal status as proof of a successful turn.
+
+Goal startup distinguishes the saved state received while reconnecting from
+the Goal activated by the current run. A replayed “no Goal” notification does
+not end a new request. The Codex adapter confirms activation using the matching
+RPC response before accepting Goal notifications as completion signals, and
+only the selected thread can control the run's lifecycle.
+
+Plan approval and other approval waits run outside the RPC reader, so Plan
+with Goal can receive the response to its Goal activation request. RPC
+acknowledgements have a 30-second timeout; this does not limit Goal execution
+time or how long you can consider an approval. A missing acknowledgement is
+reported as a failure, not a successful execution.
+
+Use **Create Wiki from existing code** when you want to prepare a new request,
+not when you only want to continue an unfinished Goal.
 
 ## Repository format
 
@@ -89,14 +168,27 @@ updated: 2026-09-09
 
 ## View and configure the Wiki
 
-Open a Workspace's right sidebar and expand **LLM Wiki**. The source label is
-**Current workspace**, so the Viewer includes unmerged changes in the current
-worktree.
+Open **Wiki** in the Workspace toolbar or **Open Wiki** in the right sidebar.
+The right sidebar contains repository/format selection, search and the page
+tree; the main area displays the article. Select **LLM Wiki** for `.llm-wiki/`
+or **OpenWiki** for the separate `openwiki/` format.
+
+The article identifies the repository, actual workspace branch and
+**Current workspace** source, including unmerged worktree changes. It does not
+claim to display the target/base branch.
+
+Use **Show chat alongside** for a resizable chat/Wiki split and **Focus Wiki**
+for reading. **Return to workspace** restores your previous main panel. The
+chat stays mounted during these desktop view switches, retaining its selected
+session, unsent draft and conversation state. After a browser reload, the
+return action falls back to showing chat if the previous layout is unavailable.
+On mobile, switch between **Chat** and **Wiki**; select a page to read it and
+use **Wiki pages** to return to navigation.
 
 - Select the repository when the Workspace contains more than one.
 - After automatic initialisation, choose or enter an output-language tag and
   select **Save** to update the setting.
-- Open `index.md` or a topic page from the page list.
+- Open `index.md` or a topic page from the directory tree.
 - Search paths, titles, summaries, tags, sources and full page text.
 - Follow ordinary relative Markdown links or `[[wikilinks]]` within the Wiki.
 - Use reload after an agent or Git operation changes the files.

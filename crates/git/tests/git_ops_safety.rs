@@ -60,6 +60,40 @@ fn configure_user(repo: &Repository) {
     cfg.set_str("user.email", "test@example.com").unwrap();
 }
 
+#[test]
+fn temporary_diff_includes_new_files_without_staging_excluded_resources() {
+    let tmp = TempDir::new().unwrap();
+    let svc = GitService::new();
+    svc.initialize_repo_with_main_branch(tmp.path()).unwrap();
+    let repo = Repository::open(tmp.path()).unwrap();
+    configure_user(&repo);
+    let head = svc.get_head_info(tmp.path()).unwrap().oid.parse().unwrap();
+    write_file(tmp.path(), "openwiki/index.md", "New Wiki\n");
+    write_file(tmp.path(), "openwiki/pages/[topic].md", "Literal path\n");
+    write_file(tmp.path(), "openwiki/node_modules/hidden.txt", "excluded\n");
+    write_file(tmp.path(), ".evk-shared/private.txt", "excluded\n");
+    let paths = svc.get_diff_file_paths(tmp.path(), &head).unwrap();
+    assert_eq!(
+        paths,
+        [
+            "openwiki/index.md".to_string(),
+            "openwiki/pages/[topic].md".to_string()
+        ]
+        .into_iter()
+        .collect()
+    );
+    let patch = String::from_utf8(svc.get_diff_patch(tmp.path(), &head).unwrap()).unwrap();
+    assert!(patch.contains("New Wiki"));
+    assert!(patch.contains("Literal path"));
+    assert!(!patch.contains("excluded"));
+    assert!(
+        GitCli::new()
+            .git(tmp.path(), ["diff", "--cached", "--name-only"])
+            .unwrap()
+            .is_empty()
+    );
+}
+
 fn push_ref(repo: &Repository, local: &str, remote: &str) {
     let mut remote_handle = repo.find_remote("origin").unwrap();
     let mut opts = PushOptions::new();

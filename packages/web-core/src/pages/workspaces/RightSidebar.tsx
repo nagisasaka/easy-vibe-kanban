@@ -6,7 +6,7 @@ import { PreviewControlsContainer } from './PreviewControlsContainer';
 import { GitPanelContainer } from './GitPanelContainer';
 import { TerminalPanelContainer } from '@/shared/components/TerminalPanelContainer';
 import { WorkspaceNotesContainer } from './WorkspaceNotesContainer';
-import { WorkspaceWikiPanel } from '@/features/wiki/ui/WorkspaceWikiPanel';
+import { WorkspaceWikiNavigation } from '@/features/wiki/ui/WorkspaceWikiPanel';
 import { useDiffs } from '@/shared/stores/useWorkspaceDiffStore';
 import { ArrowsOutSimpleIcon } from '@phosphor-icons/react';
 import { useLogsPanel } from '@/shared/hooks/useLogsPanel';
@@ -54,6 +54,10 @@ export const RightSidebar = memo(function RightSidebar({
   const setRightMainPanelMode = useUiPreferencesStore(
     (s) => s.setRightMainPanelMode
   );
+  const openWiki = useUiPreferencesStore((s) => s.openWiki);
+  const setLeftMainPanelVisible = useUiPreferencesStore(
+    (s) => s.setLeftMainPanelVisible
+  );
   const { expandTerminal, isTerminalExpanded } = useLogsPanel();
   const { target: selectedFileTarget, openTarget: openFileTarget } =
     useWorkspaceFilesSelection(selectedWorkspace?.id);
@@ -86,7 +90,6 @@ export const RightSidebar = memo(function RightSidebar({
     PERSIST_KEYS.notesSection,
     false
   );
-  const [wikiExpanded] = usePersistedExpanded(PERSIST_KEYS.wikiSection, false);
 
   const hasUpperContent =
     rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.CHANGES ||
@@ -128,20 +131,6 @@ export const RightSidebar = memo(function RightSidebar({
         expanded: terminalExpanded,
         content: <TerminalPanelContainer />,
         actions: [{ icon: ArrowsOutSimpleIcon, onClick: expandTerminal }],
-      },
-      {
-        title: 'LLM Wiki',
-        persistKey: PERSIST_KEYS.wikiSection,
-        visible: Boolean(selectedWorkspace),
-        expanded: wikiExpanded,
-        content: selectedWorkspace ? (
-          <WorkspaceWikiPanel
-            key={selectedWorkspace.id}
-            workspace={selectedWorkspace}
-            repos={repos}
-          />
-        ) : null,
-        actions: [],
       },
       {
         title: t('common:sections.notes'),
@@ -227,6 +216,7 @@ export const RightSidebar = memo(function RightSidebar({
           });
         }
         break;
+      case RIGHT_MAIN_PANEL_MODES.WIKI:
       case null:
         break;
     }
@@ -240,11 +230,6 @@ export const RightSidebar = memo(function RightSidebar({
     gitExpanded,
     terminalExpanded,
     notesExpanded,
-    wikiExpanded,
-    changesExpanded,
-    filesExpanded,
-    processesExpanded,
-    devServerExpanded,
     isTerminalVisible,
     isTerminalExpanded,
     hasUpperContent,
@@ -256,8 +241,33 @@ export const RightSidebar = memo(function RightSidebar({
     t,
   ]);
 
+  if (rightMainPanelMode === RIGHT_MAIN_PANEL_MODES.WIKI) {
+    return (
+      <aside
+        aria-label="Wiki navigation"
+        className="h-full min-h-0 border-l bg-secondary flex flex-col"
+      >
+        <div className="p-base border-b text-high shrink-0">Wiki pages</div>
+        <WorkspaceWikiNavigation
+          onReturnToChat={() =>
+            setLeftMainPanelVisible(true, selectedWorkspace?.id)
+          }
+        />
+      </aside>
+    );
+  }
+
   return (
     <div className="h-full border-l bg-secondary overflow-y-auto">
+      {selectedWorkspace && (
+        <button
+          type="button"
+          className="w-full p-base text-left text-normal hover:bg-panel border-b"
+          onClick={() => openWiki(selectedWorkspace.id)}
+        >
+          Open Wiki
+        </button>
+      )}
       <div className="divide-y border-b">
         {sections
           .filter((section) => section.visible)

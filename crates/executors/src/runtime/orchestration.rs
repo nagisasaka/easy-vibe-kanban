@@ -101,6 +101,10 @@ impl OrchestrationRetryPolicy {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct OrchestrationPlanNode {
     pub node_key: String,
+    // Product validation (for example an audited tool protocol) must confirm
+    // success before a successful child may become a durable handoff source.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub requires_product_validation: bool,
     pub stable_order: u32,
     pub dependencies: Vec<String>,
     pub join: OrchestrationJoinPolicy,

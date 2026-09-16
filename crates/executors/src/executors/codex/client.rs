@@ -3,7 +3,7 @@ use std::{
     io,
     path::PathBuf,
     sync::{
-        Arc, Mutex as StdMutex, OnceLock,
+        Arc, Mutex as StdMutex, OnceLock, Weak,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -24,18 +24,18 @@ use codex_app_server_protocol::{
     SkillsListParams, SkillsListResponse, ThreadCompactStartParams, ThreadCompactStartResponse,
     ThreadGoalClearParams, ThreadGoalClearResponse, ThreadGoalGetParams, ThreadGoalGetResponse,
     ThreadGoalSetParams, ThreadGoalSetResponse, ThreadGoalStatus, ThreadItem, ThreadReadParams,
-    ThreadReadResponse, ThreadResumeParams, ThreadResumeResponse, ThreadSettingsUpdateParams,
+    ThreadReadResponse, ThreadResumeParams, ThreadSettingsUpdateParams,
     ThreadSettingsUpdateResponse, ThreadStartParams, ThreadStartResponse,
     ToolRequestUserInputAnswer, ToolRequestUserInputQuestion, ToolRequestUserInputResponse,
-    TurnCompletedNotification, TurnInterruptParams, TurnStartParams, TurnStartResponse, TurnStatus,
-    TurnSteerParams, TurnSteerResponse, UserInput,
+    TurnInterruptParams, TurnStartParams, TurnStartResponse, TurnStatus, TurnSteerParams,
+    TurnSteerResponse, UserInput,
 };
 use codex_protocol::{
     config_types::{CollaborationMode, ModeKind, Settings},
     openai_models::ReasoningEffort as ProtocolReasoningEffort,
 };
 use futures::TryFutureExt;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{self, Value};
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt, BufWriter},
@@ -44,7 +44,10 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use workspace_utils::approvals::{ApprovalStatus, QuestionStatus};
 
-use super::jsonrpc::{JsonRpcCallbacks, JsonRpcControlFlow, JsonRpcPeer};
+use super::{
+    goal_lifecycle::GoalLifecycle,
+    jsonrpc::{JsonRpcCallbacks, JsonRpcControlFlow, JsonRpcPeer},
+};
 use crate::{
     approvals::{ExecutorApprovalError, ExecutorApprovalService},
     env::RepoContext,
@@ -55,9 +58,40 @@ use crate::{
     profile::ExecutionMode,
 };
 
+mod openwiki;
+
 struct PendingPlan {
     item_id: String,
     text: String,
+}
+
+// Resume is a control operation, not a history importer. Decode only the
+// required control fields; new display-only history variants must not prevent
+// resuming a valid provider thread. The complete response remains in Audit.
+#[derive(Debug, Deserialize)]
+pub struct ResumedThread {
+    pub thread: ResumedThreadIdentity,
+    pub model: String,
+    #[serde(rename = "reasoningEffort")]
+    pub reasoning_effort: Option<ProtocolReasoningEffort>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResumedThreadIdentity {
+    pub id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CompletedTurnNotification {
+    turn: CompletedTurn,
+}
+
+#[derive(Debug, Deserialize)]
+struct CompletedTurn {
+    id: String,
+    status: TurnStatus,
+    #[serde(default)]
+    error: Option<Value>,
 }
 
 pub struct AppServerClient {
@@ -71,7 +105,8 @@ pub struct AppServerClient {
     plan_mode: bool,
     execution_mode: ExecutionMode,
     goal_token_budget: Option<i64>,
-    goal_active: AtomicBool,
+    goal_lifecycle: StdMutex<GoalLifecycle>,
+    self_ref: Weak<AppServerClient>,
     resolved_model: OnceLock<String>,
     reasoning_effort: StdMutex<Option<ProtocolReasoningEffort>>,
     pending_plan: Mutex<Option<PendingPlan>>,
@@ -80,6 +115,9 @@ pub struct AppServerClient {
     commit_reminder: bool,
     commit_reminder_prompt: String,
     commit_reminder_sent: AtomicBool,
+    memory_compaction_thread: Mutex<Option<String>>,
+    memory_compaction_reload: AtomicBool,
+    memory_compaction_finished: AtomicBool,
     cancel: CancellationToken,
 }
 
@@ -106,7 +144,7 @@ impl AppServerClient {
         commit_reminder_prompt: String,
         cancel: CancellationToken,
     ) -> Arc<Self> {
-        Arc::new(Self {
+        Arc::new_cyclic(|weak| Self {
             rpc: OnceLock::new(),
             log_writer,
             approvals,
@@ -114,7 +152,8 @@ impl AppServerClient {
             plan_mode,
             execution_mode,
             goal_token_budget,
-            goal_active: AtomicBool::new(false),
+            goal_lifecycle: StdMutex::new(GoalLifecycle::default()),
+            self_ref: weak.clone(),
             resolved_model: OnceLock::new(),
             reasoning_effort: StdMutex::new(reasoning_effort),
             pending_plan: Mutex::new(None),
@@ -126,6 +165,9 @@ impl AppServerClient {
             commit_reminder,
             commit_reminder_prompt,
             commit_reminder_sent: AtomicBool::new(false),
+            memory_compaction_thread: Mutex::new(None),
+            memory_compaction_reload: AtomicBool::new(false),
+            memory_compaction_finished: AtomicBool::new(false),
             cancel,
         })
     }
@@ -136,6 +178,15 @@ impl AppServerClient {
 
     pub fn set_resolved_model(&self, model: String) {
         let _ = self.resolved_model.set(model);
+    }
+
+    fn adopt_thread_settings(&self, model: String, effort: Option<ProtocolReasoningEffort>) {
+        // The app-server resolves user/project config, profiles and explicit
+        // overrides. Keep its result, including an intentional default (None),
+        // before constructing any collaboration mode or continuation. Our
+        // initially absent override must not clear an inherited xhigh/max/etc.
+        self.set_resolved_model(model);
+        self.set_reasoning_effort(effort);
     }
 
     fn rpc(&self) -> &JsonRpcPeer {
@@ -157,33 +208,23 @@ impl AppServerClient {
         )
     }
 
-    fn observe_goal_updated(&self, status: &str) -> Option<ExecutorExitResult> {
+    fn observe_goal_updated(&self, thread: &str, status: &str) -> Option<ExecutorExitResult> {
         if !self.observes_goal_lifecycle() {
             return None;
         }
 
-        let active = matches!(
-            status,
-            "active"
-                | "paused"
-                | "blocked"
-                | "usageLimited"
-                | "usage_limited"
-                | "budgetLimited"
-                | "budget_limited"
-        );
-        let was_active = self.goal_active.swap(active, Ordering::SeqCst);
-        (status == "complete" && was_active).then_some(ExecutorExitResult::Success)
+        self.goal_lifecycle
+            .lock()
+            .unwrap()
+            .observe(thread, status)
+            .then_some(ExecutorExitResult::Success)
     }
 
-    fn observe_goal_cleared(&self) -> Option<ExecutorExitResult> {
-        if !self.observes_goal_lifecycle() {
-            return None;
-        }
-
-        self.goal_active
-            .swap(false, Ordering::SeqCst)
-            .then_some(ExecutorExitResult::Success)
+    fn goal_keeps_run_alive(&self) -> bool {
+        let state = self.goal_lifecycle.lock().unwrap();
+        // A resumed thread may produce a turn before our Goal activation is
+        // acknowledged. That turn cannot certify success of this launch.
+        (self.execution_mode == ExecutionMode::Goal && state.is_observing()) || state.keep_alive()
     }
 
     pub async fn initialize(&self) -> Result<(), ExecutorError> {
@@ -221,22 +262,26 @@ impl AppServerClient {
             request_id: self.next_request_id(),
             params,
         };
-        self.send_request(request, "thread/start").await
+        let response: ThreadStartResponse = self.send_request(request, "thread/start").await?;
+        self.adopt_thread_settings(response.model.clone(), response.reasoning_effort.clone());
+        Ok(response)
     }
 
     pub async fn thread_resume(
         &self,
         params: ThreadResumeParams,
-    ) -> Result<ThreadResumeResponse, ExecutorError> {
+    ) -> Result<ResumedThread, ExecutorError> {
         // A Vibe follow-up continues the same native Codex conversation.
         // `thread/fork` would create another CLI-visible thread on every turn.
         let requested_thread_id = params.thread_id.clone();
+        *self.thread_id.lock().await = Some(requested_thread_id.clone());
         let request = ClientRequest::ThreadResume {
             request_id: self.next_request_id(),
             params,
         };
-        let response: ThreadResumeResponse = self.send_request(request, "thread/resume").await?;
+        let response: ResumedThread = self.send_request(request, "thread/resume").await?;
         ensure_resumed_thread_id(&requested_thread_id, &response.thread.id)?;
+        self.adopt_thread_settings(response.model.clone(), response.reasoning_effort.clone());
         Ok(response)
     }
 
@@ -519,6 +564,24 @@ impl AppServerClient {
         self.send_request(request, "thread/compact/start").await
     }
 
+    /// Public host-driven checkpoint, using the same authenticated session.
+    /// Incremental memory remains essential: automatic compaction has no
+    /// guaranteed pre-compaction callback in the public protocol.
+    pub async fn compact_with_memory_checkpoint(
+        &self,
+        thread_id: String,
+    ) -> Result<(), ExecutorError> {
+        *self.memory_compaction_thread.lock().await = Some(thread_id.clone());
+        // Compaction is a memory-only control operation, not an occasion to
+        // commit pre-existing source changes after the reload turn finishes.
+        self.commit_reminder_sent.store(true, Ordering::SeqCst);
+        self.turn_start_with_mode(thread_id, vec![UserInput::Text {
+            text: "Before explicit context compaction, checkpoint meaningful decisions, user intent, rationale, rejected alternatives and unresolved questions into the host-provided Workspace Memory files. Preserve workspace/task identity; do not save raw conversation or modify source, Wiki or Git history. If nothing meaningful changed, leave memory unchanged. Finish this checkpoint now; EVK will compact next.".into(),
+            text_elements: vec![],
+        }], None).await?;
+        Ok(())
+    }
+
     pub async fn thread_read(
         &self,
         thread_id: String,
@@ -537,6 +600,9 @@ impl AppServerClient {
         &self,
         params: ThreadGoalSetParams,
     ) -> Result<ThreadGoalSetResponse, ExecutorError> {
+        if let Some(objective) = params.objective.as_deref() {
+            super::validate_goal_objective(objective)?;
+        }
         let request = ClientRequest::ThreadGoalSet {
             request_id: self.next_request_id(),
             params,
@@ -549,8 +615,7 @@ impl AppServerClient {
         thread_id: String,
         objective: String,
     ) -> Result<ThreadGoalSetResponse, ExecutorError> {
-        self.goal_active.store(true, Ordering::SeqCst);
-        self.thread_goal_set(ThreadGoalSetParams {
+        self.activate_goal(ThreadGoalSetParams {
             thread_id,
             objective: Some(objective),
             status: Some(ThreadGoalStatus::Active),
@@ -568,6 +633,43 @@ impl AppServerClient {
             params: ThreadGoalGetParams { thread_id },
         };
         self.send_request(request, "thread/goal/get").await
+    }
+
+    pub async fn resume_goal(
+        &self,
+        thread_id: String,
+    ) -> Result<ThreadGoalSetResponse, ExecutorError> {
+        // The UI holds a historical snapshot; the provider owns the current goal.
+        let current = self.thread_goal_get(thread_id.clone()).await?;
+        let params = goal_resume_params(thread_id, current.goal.as_ref().map(|goal| &goal.status))?;
+        self.activate_goal(params).await
+    }
+
+    async fn activate_goal(
+        &self,
+        params: ThreadGoalSetParams,
+    ) -> Result<ThreadGoalSetResponse, ExecutorError> {
+        if let Some(objective) = params.objective.as_deref() {
+            super::validate_goal_objective(objective)?;
+        }
+        let id = self.next_request_id();
+        self.goal_lifecycle
+            .lock()
+            .unwrap()
+            .begin(id.clone(), params.thread_id.clone());
+        let result = self
+            .send_request(
+                ClientRequest::ThreadGoalSet {
+                    request_id: id.clone(),
+                    params,
+                },
+                "thread/goal/set",
+            )
+            .await;
+        if result.is_err() {
+            self.goal_lifecycle.lock().unwrap().fail(&id);
+        }
+        result
     }
 
     pub async fn thread_goal_clear(
@@ -1233,6 +1335,32 @@ pub(crate) fn build_turn_start_params(
     }
 }
 
+fn goal_resume_params(
+    thread_id: String,
+    status: Option<&ThreadGoalStatus>,
+) -> Result<ThreadGoalSetParams, ExecutorError> {
+    match status {
+        None => {
+            return Err(ExecutorError::Io(std::io::Error::other(
+                "No saved Goal exists in this Codex session. Create a new Goal explicitly.",
+            )));
+        }
+        Some(ThreadGoalStatus::Complete) => {
+            return Err(ExecutorError::Io(std::io::Error::other(
+                "This Codex Goal is already complete. Create a new Goal explicitly.",
+            )));
+        }
+        _ => {}
+    }
+    Ok(ThreadGoalSetParams {
+        thread_id,
+        objective: None,
+        status: Some(ThreadGoalStatus::Active),
+        // Omitted, not Some(None): keep the provider's budget and accounting.
+        token_budget: None,
+    })
+}
+
 fn build_thread_settings_update_params(
     thread_id: String,
     effort: Option<ProtocolReasoningEffort>,
@@ -1284,7 +1412,7 @@ fn clear_completed_turn(active_turn_id: &mut Option<String>, completed_turn_id: 
 
 fn parse_turn_completed_params(
     params: Option<&Value>,
-) -> Result<TurnCompletedNotification, ExecutorError> {
+) -> Result<CompletedTurnNotification, ExecutorError> {
     let params = params.ok_or_else(|| {
         ExecutorError::Io(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -1311,7 +1439,20 @@ impl JsonRpcCallbacks for AppServerClient {
     ) -> Result<(), ExecutorError> {
         self.log_writer.log_raw(raw).await?;
         match ServerRequest::try_from(request.clone()) {
-            Ok(server_request) => self.handle_server_request(peer, server_request).await,
+            Ok(server_request) => {
+                let client = self.self_ref.upgrade().expect("live client");
+                let peer = peer.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = client.handle_server_request(&peer, server_request).await {
+                        let _ = client
+                            .log_writer
+                            .log_raw(&format!("Codex server request failed: {error}"))
+                            .await;
+                        peer.request_exit(ExecutorExitResult::Failure);
+                    }
+                });
+                Ok(())
+            }
             Err(err) => {
                 tracing::debug!("Unhandled server request `{}`: {err}", request.method);
                 let response = JSONRPCResponse {
@@ -1327,18 +1468,51 @@ impl JsonRpcCallbacks for AppServerClient {
         &self,
         _peer: &JsonRpcPeer,
         raw: &str,
-        _response: &JSONRPCResponse,
+        response: &JSONRPCResponse,
     ) -> Result<(), ExecutorError> {
-        self.log_writer.log_raw(raw).await
+        self.log_writer.log_raw(raw).await?;
+        if let Some(thread) = response
+            .result
+            .pointer("/thread/id")
+            .and_then(Value::as_str)
+        {
+            let mut target = self.thread_id.lock().await;
+            if target.is_none() {
+                *target = Some(thread.to_owned());
+            }
+        }
+        // Fence activation in wire order, before the RPC future is resolved.
+        let mut state = self.goal_lifecycle.lock().unwrap();
+        if state.awaiting(&response.id) {
+            let goal: ThreadGoalSetResponse = serde_json::from_value(response.result.clone())?;
+            let status = if goal.goal.status == ThreadGoalStatus::Active {
+                "active"
+            } else {
+                "invalid"
+            };
+            state
+                .acknowledge(&response.id, &goal.goal.thread_id, status)
+                .map_err(|message| ExecutorError::Io(io::Error::other(message)))?;
+        }
+        Ok(())
     }
 
     async fn on_error(
         &self,
         _peer: &JsonRpcPeer,
         raw: &str,
-        _error: &JSONRPCError,
+        error: &JSONRPCError,
     ) -> Result<(), ExecutorError> {
-        self.log_writer.log_raw(raw).await
+        self.log_writer.log_raw(raw).await?;
+        let mut state = self.goal_lifecycle.lock().unwrap();
+        if state.awaiting(&error.id) {
+            state.fail(&error.id);
+            return Err(ExecutorError::Io(io::Error::other(format!(
+                "Goal activation failed: {}",
+                error.error.message
+            ))));
+        }
+        Ok(())
     }
 
     async fn on_notification(
@@ -1347,9 +1521,38 @@ impl JsonRpcCallbacks for AppServerClient {
         raw: &str,
         notification: JSONRPCNotification,
     ) -> Result<JsonRpcControlFlow, ExecutorError> {
+        self.process_notification(raw, notification).await
+    }
+
+    async fn on_non_json(&self, raw: &str) -> Result<(), ExecutorError> {
+        self.log_writer.log_raw(raw).await?;
+        Ok(())
+    }
+}
+
+impl AppServerClient {
+    async fn process_notification(
+        &self,
+        raw: &str,
+        notification: JSONRPCNotification,
+    ) -> Result<JsonRpcControlFlow, ExecutorError> {
         self.log_writer.log_raw(raw).await?;
 
         let method = notification.method.as_str();
+        let notification_thread = notification
+            .params
+            .as_ref()
+            .and_then(|params| params.get("threadId"))
+            .and_then(Value::as_str);
+        if method.starts_with("thread/goal/")
+            || method.starts_with("turn/")
+            || method.starts_with("item/")
+        {
+            let target = self.thread_id.lock().await;
+            if notification_thread.is_none() || notification_thread != target.as_deref() {
+                return Ok(JsonRpcControlFlow::Continue);
+            }
+        }
 
         // Detect completed plan items in the notification stream
         if self.plan_mode
@@ -1378,15 +1581,41 @@ impl JsonRpcCallbacks for AppServerClient {
                 .as_ref()
                 .and_then(|params| params.pointer("/goal/status"))
                 .and_then(Value::as_str)
-            && let Some(result) = self.observe_goal_updated(status)
+            && let Some(result) = self.observe_goal_updated(notification_thread.unwrap(), status)
         {
-            return Ok(JsonRpcControlFlow::Exit(result));
+            // Goal persistence completes before the calling tool and final answer.
+            // Dropping the process here would leave that turn interrupted in Codex.
+            return Ok(if self.turn_id.lock().await.is_some() {
+                JsonRpcControlFlow::Continue
+            } else {
+                JsonRpcControlFlow::Exit(result)
+            });
         }
 
         if method == "thread/goal/cleared"
-            && let Some(result) = self.observe_goal_cleared()
+            && let Some(result) = self.observe_goal_updated(notification_thread.unwrap(), "cleared")
         {
-            return Ok(JsonRpcControlFlow::Exit(result));
+            return Ok(if self.turn_id.lock().await.is_some() {
+                JsonRpcControlFlow::Continue
+            } else {
+                JsonRpcControlFlow::Exit(result)
+            });
+        }
+
+        if method == "item/completed"
+            && notification
+                .params
+                .as_ref()
+                .and_then(|params| params.pointer("/item/type"))
+                .and_then(Value::as_str)
+                == Some("contextCompaction")
+            && self.memory_compaction_reload.load(Ordering::SeqCst)
+        {
+            // Drain the compaction turn before asking for a reread; starting a
+            // new turn here races the old turn/completed notification.
+            self.memory_compaction_finished
+                .store(true, Ordering::SeqCst);
+            return Ok(JsonRpcControlFlow::Continue);
         }
 
         // V2 turn completion detection
@@ -1394,6 +1623,11 @@ impl JsonRpcCallbacks for AppServerClient {
             let completed = parse_turn_completed_params(notification.params.as_ref())?;
             {
                 let mut turn_id = self.turn_id.lock().await;
+                // Replayed/duplicate completions cannot finish an approval or
+                // activation transition when no current turn is registered.
+                if turn_id.as_deref() != Some(completed.turn.id.as_str()) {
+                    return Ok(JsonRpcControlFlow::Continue);
+                }
                 clear_completed_turn(&mut turn_id, &completed.turn.id);
             }
 
@@ -1415,14 +1649,46 @@ impl JsonRpcCallbacks for AppServerClient {
                 }
                 TurnStatus::Interrupted => {
                     tracing::debug!("Codex turn interrupted; flushing feedback queue");
-                    let keep_alive = self.flush_pending_feedback().await
-                        || self.goal_active.load(Ordering::SeqCst);
+                    let keep_alive =
+                        self.flush_pending_feedback().await || self.goal_keeps_run_alive();
                     return Ok(turn_completion_control_flow(
                         &TurnStatus::Interrupted,
                         keep_alive,
                     ));
                 }
                 TurnStatus::Completed => {}
+            }
+
+            if let Some(thread_id) = self.memory_compaction_thread.lock().await.take() {
+                self.memory_compaction_reload.store(true, Ordering::SeqCst);
+                let client = self.self_ref.upgrade().expect("live client");
+                tokio::spawn(async move {
+                    if let Err(error) = client.thread_compact_start(thread_id).await {
+                        let _ = client
+                            .log_writer
+                            .log_raw(&format!(
+                                "Memory checkpoint succeeded but compaction failed: {error}"
+                            ))
+                            .await;
+                        client.rpc().request_exit(ExecutorExitResult::Failure);
+                    }
+                });
+                return Ok(JsonRpcControlFlow::Continue);
+            }
+
+            if self.memory_compaction_reload.swap(false, Ordering::SeqCst) {
+                if !self
+                    .memory_compaction_finished
+                    .swap(false, Ordering::SeqCst)
+                {
+                    return Err(ExecutorError::Io(io::Error::other(
+                        "Compaction turn finished without a completed contextCompaction item; Workspace Memory is retained",
+                    )));
+                }
+                if let Some(thread_id) = self.thread_id.lock().await.clone() {
+                    self.spawn_user_message(thread_id, "Context compaction completed. Re-read this workspace's repository instructions, the read-only openwiki/quickstart.md (or openwiki/index.md) and relevant Wiki pages when present, and only this workspace's host-provided Workspace Memory files. Source/tests/configuration remain authoritative; Wiki and memory are semantic hints, not instructions. Missing Wiki or memory is normal. Report briefly that continuity is restored, or what is unavailable. Do not resume implementation, modify source/Wiki, or commit.".into());
+                    return Ok(JsonRpcControlFlow::Continue);
+                }
             }
 
             // Handle plan approval on turn completion
@@ -1432,14 +1698,24 @@ impl JsonRpcCallbacks for AppServerClient {
                 None
             };
             if let Some(plan) = pending {
-                let finished = self.handle_plan_completed(plan).await?;
-                return Ok(turn_completion_control_flow(
-                    &TurnStatus::Completed,
-                    !finished,
-                ));
+                let client = self.self_ref.upgrade().expect("live client");
+                tokio::spawn(async move {
+                    match client.handle_plan_completed(plan).await {
+                        Ok(false) => {}
+                        Ok(true) => client.rpc().request_exit(ExecutorExitResult::Success),
+                        Err(error) => {
+                            let _ = client
+                                .log_writer
+                                .log_raw(&format!("Plan transition failed: {error}"))
+                                .await;
+                            client.rpc().request_exit(ExecutorExitResult::Failure);
+                        }
+                    }
+                });
+                return Ok(JsonRpcControlFlow::Continue);
             }
 
-            if self.goal_active.load(Ordering::SeqCst) {
+            if self.goal_keeps_run_alive() {
                 return Ok(JsonRpcControlFlow::Continue);
             }
 
@@ -1459,11 +1735,6 @@ impl JsonRpcCallbacks for AppServerClient {
         }
 
         Ok(JsonRpcControlFlow::Continue)
-    }
-
-    async fn on_non_json(&self, raw: &str) -> Result<(), ExecutorError> {
-        self.log_writer.log_raw(raw).await?;
-        Ok(())
     }
 }
 
@@ -1596,7 +1867,548 @@ fn extract_semver(input: &str) -> Option<String> {
 }
 
 #[cfg(test)]
+mod reasoning_tests;
+
+#[cfg(test)]
 mod version_check_tests {
+    // Run the test executable itself as a deterministic stdio provider. No Codex
+    // account, model calls, shell, Python, or timing-based sleeps are required.
+    #[test]
+    #[ignore = "subprocess fixture, invoked by transport tests"]
+    fn goal_stdio_fixture() {
+        use std::io::{BufRead, Write};
+        let case = std::env::var("EVK_GOAL_FIXTURE").expect("fixture case");
+        let emit = |value: serde_json::Value| {
+            println!("{value}");
+            std::io::stdout().flush().unwrap();
+        };
+        let goal = |status: &str| {
+            json!({"threadId":"thread-1", "objective":"existing objective", "status":status,
+            "tokenBudget":1000,"tokensUsed":100,"timeUsedSeconds":12,"createdAt":1,"updatedAt":2})
+        };
+        let event = |method: &str, params: serde_json::Value| {
+            emit(json!({"method":method,"params":params}))
+        };
+        for line in std::io::stdin().lock().lines() {
+            let request: serde_json::Value = serde_json::from_str(&line.unwrap()).unwrap();
+            match request["method"].as_str().unwrap() {
+                "fixture/go" if case == "plan" => {
+                    event(
+                        "turn/started",
+                        json!({"threadId":"thread-1","turn":{"id":"plan-turn"}}),
+                    );
+                    event(
+                        "item/completed",
+                        json!({"threadId":"thread-1","turnId":"plan-turn","completedAtMs":1,"item":{"type":"plan","id":"plan-item","text":"approved objective"}}),
+                    );
+                    event(
+                        "turn/completed",
+                        json!({"threadId":"thread-1","turn":{"id":"plan-turn","items":[],"status":"completed","error":null}}),
+                    );
+                }
+                "fixture/go" => {}
+                "thread/goal/get" => {
+                    emit(
+                        json!({"id":request["id"],"result":{"goal": if case == "missing" { serde_json::Value::Null } else { goal("paused") }}}),
+                    );
+                }
+                "thread/goal/set" => {
+                    // Snapshot from resume delivered after activation was sent.
+                    event("thread/goal/cleared", json!({"threadId":"thread-1"}));
+                    event(
+                        "thread/goal/updated",
+                        json!({"threadId":"thread-1","goal":goal("complete")}),
+                    );
+                    if case == "reject" {
+                        emit(
+                            json!({"id":request["id"],"error":{"code":-32602,"message":"activation rejected"}}),
+                        );
+                        continue;
+                    }
+                    if case == "resume" {
+                        assert!(request["params"]["objective"].is_null());
+                        assert!(request["params"].get("tokenBudget").is_none());
+                    }
+                    if case == "cancel" {
+                        continue;
+                    }
+                    emit(json!({"id":request["id"],"result":{"goal":goal("active")}}));
+                    if case == "eof" {
+                        return;
+                    }
+                    // Child-thread notifications must not terminate the parent.
+                    event("thread/goal/cleared", json!({"threadId":"child"}));
+                    event(
+                        "turn/started",
+                        json!({"threadId":"thread-1","turn":{"id":"goal-turn"}}),
+                    );
+                    event(
+                        "thread/goal/updated",
+                        json!({"threadId":"thread-1","goal":goal("complete")}),
+                    );
+                    event(
+                        "item/completed",
+                        json!({"threadId":"thread-1","item":{"type":"agentMessage","text":"FINAL ANSWER AFTER GOAL COMPLETE"}}),
+                    );
+                    event(
+                        "turn/completed",
+                        json!({"threadId":"thread-1","turn":{"id":"goal-turn","items":[],"status":if case == "turn-failed" {"failed"} else {"completed"},"error":null}}),
+                    );
+                }
+                other => panic!("unexpected method: {other}"),
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct Capture(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+    impl tokio::io::AsyncWrite for Capture {
+        fn poll_write(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+            data: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            self.0.lock().unwrap().extend_from_slice(data);
+            std::task::Poll::Ready(Ok(data.len()))
+        }
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+        fn poll_shutdown(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn goal_stdio_lifecycle_orders_activation_plan_resume_failure_and_final_answer() {
+        use super::super::jsonrpc::{ExitSignalSender, JsonRpcPeer};
+        for case in [
+            "start",
+            "resume",
+            "plan",
+            "reject",
+            "missing",
+            "eof",
+            "turn-failed",
+            "cancel",
+        ] {
+            let captured = Capture(Default::default());
+            let cancel = CancellationToken::new();
+            let client = AppServerClient::new(
+                LogWriter::new(captured.clone()),
+                Some(std::sync::Arc::new(
+                    crate::approvals::NoopExecutorApprovalService,
+                )),
+                false,
+                case == "plan",
+                if case == "plan" {
+                    ExecutionMode::PlanWithGoal
+                } else {
+                    ExecutionMode::Goal
+                },
+                None,
+                None,
+                Default::default(),
+                false,
+                String::new(),
+                cancel.clone(),
+            );
+            client.register_session("thread-1").await.unwrap();
+            let mut child = tokio::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "executors::codex::client::version_check_tests::goal_stdio_fixture",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env("EVK_GOAL_FIXTURE", case)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .kill_on_drop(true)
+                .spawn()
+                .unwrap();
+            let (exit_tx, exit_rx) = tokio::sync::oneshot::channel();
+            let peer = JsonRpcPeer::spawn(
+                child.stdin.take().unwrap(),
+                child.stdout.take().unwrap(),
+                client.clone(),
+                ExitSignalSender::new(exit_tx),
+                cancel.clone(),
+            );
+            client.connect(peer.clone());
+            let exercise = async {
+                peer.send(&json!({"method":"fixture/go"})).await.unwrap();
+                if case != "plan" {
+                    if case == "cancel" {
+                        cancel.cancel();
+                    }
+                    let result = if case == "resume" || case == "missing" {
+                        client.resume_goal("thread-1".into()).await
+                    } else {
+                        client
+                            .start_goal("thread-1".into(), "new objective".into())
+                            .await
+                    };
+                    if ["reject", "missing", "cancel"].contains(&case) {
+                        assert!(result.is_err(), "{case}");
+                        peer.request_exit(ExecutorExitResult::Failure);
+                    } else {
+                        assert!(result.is_ok(), "{case}: {result:?}");
+                    }
+                }
+                let exit = exit_rx.await.unwrap();
+                assert_eq!(
+                    matches!(exit, ExecutorExitResult::Success),
+                    ["start", "resume", "plan"].contains(&case),
+                    "{case}"
+                );
+                if ["start", "resume", "plan", "turn-failed"].contains(&case) {
+                    assert!(
+                        String::from_utf8_lossy(&captured.0.lock().unwrap())
+                            .contains("FINAL ANSWER AFTER GOAL COMPLETE"),
+                        "{case}: {}",
+                        String::from_utf8_lossy(&captured.0.lock().unwrap())
+                    );
+                }
+            };
+            tokio::time::timeout(std::time::Duration::from_secs(5), exercise)
+                .await
+                .unwrap_or_else(|_| panic!("fixture stalled: {case}"));
+            cancel.cancel();
+            child.kill().await.ok();
+            child.wait().await.ok();
+        }
+    }
+
+    #[test]
+    #[ignore = "stdio fixture launched by memory_compaction_orders_checkpoint_compact_and_reload"]
+    fn memory_compaction_stdio_fixture() {
+        use std::io::{BufRead, Write};
+        let mut turns = 0;
+        let emit = |value: serde_json::Value| {
+            println!("{value}");
+            std::io::stdout().flush().unwrap();
+        };
+        for line in std::io::stdin().lock().lines() {
+            let request: serde_json::Value = serde_json::from_str(&line.unwrap()).unwrap();
+            let method = request["method"].as_str().unwrap_or_default();
+            let (id, item) = match method {
+                "turn/start" => {
+                    turns += 1;
+                    let text = request["params"]["input"][0]["text"].as_str().unwrap();
+                    if turns == 1 {
+                        assert!(text.contains("checkpoint meaningful decisions"));
+                    } else {
+                        assert_eq!(turns, 2);
+                        assert!(text.contains("Re-read this workspace's repository instructions"));
+                        assert!(text.contains("openwiki/quickstart.md"));
+                        assert!(
+                            text.contains("only this workspace's host-provided Workspace Memory")
+                        );
+                    }
+                    (format!("turn-{turns}"), "agentMessage")
+                }
+                "thread/compact/start" => {
+                    assert_eq!(turns, 1);
+                    ("compaction-turn".into(), "contextCompaction")
+                }
+                other => panic!("Unexpected fixture request {other}"),
+            };
+            let turn = serde_json::json!({"id":id,"items":[],"status":"inProgress","error":null});
+            emit(
+                serde_json::json!({"id":request["id"],"result":if method == "turn/start" { serde_json::json!({"turn":turn}) } else { serde_json::json!({}) }}),
+            );
+            emit(
+                serde_json::json!({"method":"turn/started","params":{"threadId":"memory-thread","turn":turn}}),
+            );
+            emit(
+                serde_json::json!({"method":"item/completed","params":{"threadId":"memory-thread","item":{"id":"item","type":item,"text":"fixture"}}}),
+            );
+            emit(
+                serde_json::json!({"method":"turn/completed","params":{"threadId":"memory-thread","turn":{"id":id,"items":[],"status":"completed","error":null}}}),
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn memory_compaction_orders_checkpoint_compact_and_reload() {
+        use super::super::jsonrpc::{ExitSignalSender, JsonRpcPeer};
+        let cancel = CancellationToken::new();
+        let client = AppServerClient::new(
+            LogWriter::new(tokio::io::sink()),
+            None,
+            false,
+            false,
+            ExecutionMode::Code,
+            None,
+            None,
+            Default::default(),
+            false,
+            String::new(),
+            cancel.clone(),
+        );
+        client.register_session("memory-thread").await.unwrap();
+        client.set_resolved_model("fixture".into());
+        let mut child = tokio::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "executors::codex::client::version_check_tests::memory_compaction_stdio_fixture",
+                "--ignored",
+                "--nocapture",
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::inherit())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let (exit_tx, exit_rx) = tokio::sync::oneshot::channel();
+        client.connect(JsonRpcPeer::spawn(
+            child.stdin.take().unwrap(),
+            child.stdout.take().unwrap(),
+            client.clone(),
+            ExitSignalSender::new(exit_tx),
+            cancel.clone(),
+        ));
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            client
+                .compact_with_memory_checkpoint("memory-thread".into())
+                .await
+                .unwrap();
+            assert!(matches!(
+                exit_rx.await.unwrap(),
+                ExecutorExitResult::Success
+            ));
+        })
+        .await
+        .expect("checkpoint, compaction and reread must finish without a paid model");
+        cancel.cancel();
+        let _ = child.kill().await;
+    }
+
+    fn goal_client() -> std::sync::Arc<AppServerClient> {
+        let client = AppServerClient::new(
+            LogWriter::new(tokio::io::sink()),
+            None,
+            false,
+            false,
+            ExecutionMode::Goal,
+            None,
+            None,
+            Default::default(),
+            false,
+            String::new(),
+            CancellationToken::new(),
+        );
+        *client.thread_id.try_lock().unwrap() = Some("thread-1".into());
+        arm_goal(&client);
+        client
+    }
+
+    fn arm_goal(client: &AppServerClient) {
+        let mut state = client.goal_lifecycle.lock().unwrap();
+        let id = codex_app_server_protocol::RequestId::Integer(99);
+        state.begin(id.clone(), "thread-1".into());
+        state.acknowledge(&id, "thread-1", "active").unwrap();
+    }
+
+    async fn notify(
+        client: &AppServerClient,
+        method: &str,
+        mut params: serde_json::Value,
+    ) -> JsonRpcControlFlow {
+        params["threadId"] = json!("thread-1");
+        if method == "turn/completed" {
+            params["turn"]["items"] = json!([]);
+            params["turn"]["error"] = serde_json::Value::Null;
+        }
+        let raw = json!({"method": method, "params": params}).to_string();
+        client
+            .process_notification(&raw, serde_json::from_str(&raw).unwrap())
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn goal_completion_drains_tool_and_final_answer_before_exit() {
+        let client = goal_client();
+        notify(
+            &client,
+            "thread/goal/updated",
+            json!({"goal":{"status":"active"}}),
+        )
+        .await;
+        notify(&client, "turn/started", json!({"turn":{"id":"turn-1"}})).await;
+        assert!(matches!(
+            notify(
+                &client,
+                "thread/goal/updated",
+                json!({"goal":{"status":"complete"}})
+            )
+            .await,
+            JsonRpcControlFlow::Continue
+        ));
+        for method in [
+            "item/completed",
+            "item/agentMessage/delta",
+            "item/completed",
+        ] {
+            assert!(matches!(
+                notify(&client, method, json!({})).await,
+                JsonRpcControlFlow::Continue
+            ));
+        }
+        assert!(matches!(
+            notify(
+                &client,
+                "turn/completed",
+                json!({"turn":{"id":"old-turn","status":"completed"}})
+            )
+            .await,
+            JsonRpcControlFlow::Continue
+        ));
+        assert!(matches!(
+            notify(
+                &client,
+                "turn/completed",
+                json!({"turn":{"id":"turn-1","status":"completed"}})
+            )
+            .await,
+            JsonRpcControlFlow::Exit(ExecutorExitResult::Success)
+        ));
+    }
+
+    #[tokio::test]
+    async fn idle_goal_completion_exits_without_waiting_for_a_nonexistent_turn() {
+        let client = goal_client();
+        notify(
+            &client,
+            "thread/goal/updated",
+            json!({"goal":{"status":"active"}}),
+        )
+        .await;
+        notify(&client, "turn/started", json!({"turn":{"id":"turn-1"}})).await;
+        assert!(matches!(
+            notify(
+                &client,
+                "turn/completed",
+                json!({"turn":{"id":"turn-1","status":"completed"}})
+            )
+            .await,
+            JsonRpcControlFlow::Continue
+        ));
+        assert!(matches!(
+            notify(
+                &client,
+                "thread/goal/updated",
+                json!({"goal":{"status":"complete"}})
+            )
+            .await,
+            JsonRpcControlFlow::Exit(ExecutorExitResult::Success)
+        ));
+    }
+
+    #[tokio::test]
+    async fn goal_complete_does_not_hide_turn_failure_or_interruption() {
+        for status in ["failed", "interrupted"] {
+            let client = goal_client();
+            notify(
+                &client,
+                "thread/goal/updated",
+                json!({"goal":{"status":"active"}}),
+            )
+            .await;
+            notify(&client, "turn/started", json!({"turn":{"id":"turn-1"}})).await;
+            notify(
+                &client,
+                "thread/goal/updated",
+                json!({"goal":{"status":"complete"}}),
+            )
+            .await;
+            assert!(matches!(
+                notify(
+                    &client,
+                    "turn/completed",
+                    json!({"turn":{"id":"turn-1","status":status}})
+                )
+                .await,
+                JsonRpcControlFlow::Exit(ExecutorExitResult::Failure)
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn clearing_goal_also_drains_an_active_turn_but_exits_when_idle() {
+        for active_turn in [false, true] {
+            let client = goal_client();
+            notify(
+                &client,
+                "thread/goal/updated",
+                json!({"goal":{"status":"active"}}),
+            )
+            .await;
+            if active_turn {
+                notify(&client, "turn/started", json!({"turn":{"id":"turn-1"}})).await;
+            }
+            let result = notify(&client, "thread/goal/cleared", json!({})).await;
+            if active_turn {
+                assert!(matches!(result, JsonRpcControlFlow::Continue));
+                assert!(matches!(
+                    notify(
+                        &client,
+                        "turn/completed",
+                        json!({"turn":{"id":"turn-1","status":"completed"}})
+                    )
+                    .await,
+                    JsonRpcControlFlow::Exit(ExecutorExitResult::Success)
+                ));
+            } else {
+                assert!(matches!(
+                    result,
+                    JsonRpcControlFlow::Exit(ExecutorExitResult::Success)
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn resume_goal_preserves_objective_budget_and_accounting() {
+        use codex_app_server_protocol::ThreadGoalStatus;
+        for status in [
+            ThreadGoalStatus::Active,
+            ThreadGoalStatus::Paused,
+            ThreadGoalStatus::Blocked,
+            ThreadGoalStatus::UsageLimited,
+            ThreadGoalStatus::BudgetLimited,
+        ] {
+            let params =
+                super::goal_resume_params("existing-thread".into(), Some(&status)).unwrap();
+            assert_eq!(params.thread_id, "existing-thread");
+            assert!(params.objective.is_none());
+            assert!(params.token_budget.is_none());
+            assert!(matches!(params.status, Some(ThreadGoalStatus::Active)));
+        }
+    }
+
+    #[test]
+    fn resume_goal_rejects_missing_and_complete_provider_goal() {
+        assert!(super::goal_resume_params("thread".into(), None).is_err());
+        assert!(
+            super::goal_resume_params(
+                "thread".into(),
+                Some(&codex_app_server_protocol::ThreadGoalStatus::Complete)
+            )
+            .is_err()
+        );
+    }
+
     use codex_protocol::{
         config_types::{CollaborationMode, ModeKind, Settings},
         openai_models::ReasoningEffort as ProtocolReasoningEffort,
@@ -1658,9 +2470,9 @@ mod version_check_tests {
                 CancellationToken::new(),
             );
 
-            assert!(client.observe_goal_updated("active").is_none());
-            assert!(!client.goal_active.load(std::sync::atomic::Ordering::SeqCst));
-            assert!(client.observe_goal_cleared().is_none());
+            assert!(client.observe_goal_updated("thread-1", "active").is_none());
+            assert!(!client.goal_keeps_run_alive());
+            assert!(client.observe_goal_updated("thread-1", "cleared").is_none());
         }
     }
 
@@ -1680,18 +2492,20 @@ mod version_check_tests {
             CancellationToken::new(),
         );
 
-        assert!(client.observe_goal_cleared().is_none());
-        assert!(client.observe_goal_updated("active").is_none());
-        assert!(client.goal_active.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(client.observe_goal_updated("thread-1", "cleared").is_none());
+        assert!(client.observe_goal_updated("thread-1", "active").is_none());
+        assert!(client.goal_keeps_run_alive());
+        arm_goal(&client);
+        assert!(client.goal_keeps_run_alive());
         assert!(matches!(
-            client.observe_goal_cleared(),
+            client.observe_goal_updated("thread-1", "cleared"),
             Some(ExecutorExitResult::Success)
         ));
-        assert!(!client.goal_active.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!client.goal_keeps_run_alive());
 
-        assert!(client.observe_goal_updated("active").is_none());
+        assert!(client.observe_goal_updated("thread-1", "active").is_none());
         assert!(matches!(
-            client.observe_goal_updated("complete"),
+            client.observe_goal_updated("thread-1", "complete"),
             Some(ExecutorExitResult::Success)
         ));
     }
@@ -1727,6 +2541,31 @@ mod version_check_tests {
 
         let malformed = json!({ "turn": { "status": "completed" } });
         assert!(parse_turn_completed_params(Some(&malformed)).is_err());
+    }
+
+    #[test]
+    fn control_responses_ignore_new_history_variants_but_validate_identity_and_status() {
+        let history =
+            json!([{"type":"subAgentActivity","kind":"completed"}, {"type":"futureItem"}]);
+        let resumed: super::ResumedThread = serde_json::from_value(json!({
+            "thread":{"id":"thread-1","turns":[{"items":history.clone()}]}, "model":"model"
+        }))
+        .unwrap();
+        assert_eq!(resumed.thread.id, "thread-1");
+        assert!(
+            serde_json::from_value::<super::ResumedThread>(json!({"thread":{},"model":"model"}))
+                .is_err()
+        );
+        assert!(
+            parse_turn_completed_params(Some(
+                &json!({"turn":{"id":"t","status":"completed","items":history}})
+            ))
+            .is_ok()
+        );
+        assert!(
+            parse_turn_completed_params(Some(&json!({"turn":{"id":"t","status":"futureStatus"}})))
+                .is_err()
+        );
     }
 
     #[test]

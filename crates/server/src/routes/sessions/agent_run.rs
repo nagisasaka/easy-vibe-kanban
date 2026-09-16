@@ -321,13 +321,13 @@ pub(super) fn validate_native_resume_identity(
 pub(super) async fn validate_session_provider_binding(
     pool: &SqlitePool,
     session_id: Uuid,
-    provider: DirectProvider,
-    runtime_profile_id: &str,
+    provider_binding: (DirectProvider, &str),
     requested: Option<&ProviderSessionReference>,
     executor_config: &ExecutorConfig,
     selected_skills: Option<&Vec<SelectedSkill>>,
     requested_runtime_scope_path: Option<&Path>,
 ) -> Result<(), ApiError> {
+    let (provider, runtime_profile_id) = provider_binding;
     let existing = sqlx::query_as::<_, (String, Json<ProviderSessionReference>)>(
         r#"
         SELECT provider_id, session_reference
@@ -446,6 +446,20 @@ pub(super) async fn create_agent_run(
     let capability_snapshot =
         direct_provider_capability_snapshot(provider, runtime_profile_id.clone());
     validate_execution_config(&launch.executor_config, &capability_snapshot)?;
+    if provider == DirectProvider::Codex
+        && launch.executor_config.execution_mode == Some(ExecutionMode::Goal)
+        && !launch.prompt.trim_start().starts_with('/')
+    {
+        let objective = format!(
+            "{}{}",
+            launch.prompt,
+            executors::executors::codex::goal_concurrency_constraint(
+                launch.executor_config.goal_max_concurrent_agents
+            )
+        );
+        executors::executors::codex::validate_goal_objective(&objective)
+            .map_err(|error| ApiError::BadRequest(error.to_string()))?;
+    }
     validate_required_capabilities(
         launch.intent,
         launch.provider_session.is_some(),
@@ -872,8 +886,7 @@ mod tests {
             super::validate_session_provider_binding(
                 &pool,
                 session_id,
-                DirectProvider::Codex,
-                &config.profile_id().cache_key(),
+                (DirectProvider::Codex, &config.profile_id().cache_key()),
                 Some(&reference),
                 &config,
                 Some(&skills),
@@ -886,8 +899,7 @@ mod tests {
         let scope_error = super::validate_session_provider_binding(
             &pool,
             session_id,
-            DirectProvider::Codex,
-            &config.profile_id().cache_key(),
+            (DirectProvider::Codex, &config.profile_id().cache_key()),
             Some(&reference),
             &config,
             Some(&skills),
@@ -906,8 +918,7 @@ mod tests {
         let profile_error = super::validate_session_provider_binding(
             &pool,
             session_id,
-            DirectProvider::Codex,
-            &config.profile_id().cache_key(),
+            (DirectProvider::Codex, &config.profile_id().cache_key()),
             Some(&reference),
             &changed_config,
             Some(&skills),
@@ -924,8 +935,7 @@ mod tests {
         let provider_error = super::validate_session_provider_binding(
             &pool,
             session_id,
-            DirectProvider::ClaudeCode,
-            "CLAUDE_CODE",
+            (DirectProvider::ClaudeCode, "CLAUDE_CODE"),
             None,
             &ExecutorConfig::new(BaseCodingAgent::ClaudeCode),
             None,

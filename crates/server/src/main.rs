@@ -86,6 +86,7 @@ async fn main() -> Result<(), VibeKanbanError> {
 
     let deployment = DeploymentImpl::new(shutdown_token.clone()).await?;
     deployment.update_sentry_scope().await?;
+    server::workflow_runtime::bootstrap::fence_interrupted_runs(&deployment).await?;
     // Deployment construction reconciles the durable process owner before
     // returning. Replay commands only after that attachment pass completes;
     // a missing in-memory watcher is not evidence that a provider exited.
@@ -126,6 +127,9 @@ async fn main() -> Result<(), VibeKanbanError> {
     recover_stale_workflow_runs_with_boundary(&deployment.db().pool, &workflow_boundary)
         .await
         .map_err(|err| DeploymentError::Other(anyhow::anyhow!(err.to_string())))?;
+    // Start product recovery only after generic startup has fenced/reconciled
+    // durable commands and leases, avoiding two concurrent recovery owners.
+    routes::openwiki::spawn_recovery_monitor(deployment.clone());
     spawn_scheduled_task_loop(deployment.clone());
     deployment
         .container()

@@ -6,6 +6,34 @@
 
 export type Repo = { id: string, path: string, name: string, display_name: string, setup_script: string | null, cleanup_script: string | null, archive_script: string | null, copy_files: string | null, parallel_setup_script: boolean, dev_server_script: string | null, default_target_branch: string | null, default_working_dir: string | null, created_at: Date, updated_at: Date, };
 
+export type RepositoryMemoryState = { version: number, enabled: boolean, status: RepositoryWikiStatus, target_branch: string | null, source_commit: string | null, wiki_commit: string | null, last_success: string | null, active_run_id: string | null, bootstrap: OpenWikiBootstrapOwner | null, maintenance_workspace_id: string | null, maintenance_session_id: string | null, error: string | null, output_language: string, active_source_commit: string | null, active_event_ids: Array<string>, coding_errors: Array<string>, };
+
+export type OpenWikiBootstrapOwner = { workflow_run_id: string, server_instance_id: string, phase: OpenWikiBootstrapPhase, child: OpenWikiBootstrapChild | null, review_fingerprint: string | null, };
+
+export type OpenWikiBootstrapChild = { session_id: string, agent_run_id: string, node_execution_id: string, node_id: string, };
+
+export type OpenWikiBootstrapPhase = "generating" | "reviewing" | "refining" | "publishing" | "cleaning_up";
+
+export type RepositoryWikiStatus = "disabled" | "uninitialized" | "initializing" | "current" | "stale" | "reconciling" | "error";
+
+export type SemanticChanges = { goal: string, summary: string, behavioral_changes: Array<string>, architectural_changes: Array<string>, invariants_affected: Array<string>, decisions: Array<MemoryDecision>, rejected_alternatives: Array<RejectedAlternative>, unresolved_questions: Array<string>, tests: Array<MemoryTest>, };
+
+export type MemoryDecision = { decision: string, rationale: string | null, };
+
+export type RejectedAlternative = { alternative: string, reason: string | null, };
+
+export type MemoryTest = { command: string | null, result: MemoryTestResult, summary: string | null, };
+
+export type MemoryTestResult = "passed" | "failed" | "not-run";
+
+export type ChangeManifest = { version: number, event_id: string, repository_id: string, workspace_id: string, task_id: string | null, created_at: string, base_commit: string, source_commit: string, target_branch: string | null, changed_paths: Array<string>, goal: string, summary: string, behavioral_changes: Array<string>, architectural_changes: Array<string>, invariants_affected: Array<string>, decisions: Array<MemoryDecision>, rejected_alternatives: Array<RejectedAlternative>, unresolved_questions: Array<string>, tests: Array<MemoryTest>, };
+
+export type WikiReconciliationReceipt = { event_id: string, reconciled_at: string, target_commit: string, wiki_commit: string | null, result: ReconciliationResult, error: string | null, };
+
+export type ReconciliationResult = "updated" | "no_op" | "failed";
+
+export type ConfigureRepositoryMemory = { enabled: boolean, target_branch: string, output_language: string, };
+
 export type Project = { id: string, name: string, default_agent_working_dir: string | null, remote_project_id: string | null, created_at: Date, updated_at: Date, };
 
 export type UpdateRepo = { display_name?: string | null, setup_script?: string | null, cleanup_script?: string | null, archive_script?: string | null, copy_files?: string | null, parallel_setup_script?: boolean | null, dev_server_script?: string | null, default_target_branch?: string | null, default_working_dir?: string | null, };
@@ -202,7 +230,7 @@ export type NodeExecutionStatus = "pending" | "running" | "awaiting_human" | "aw
 
 export type Workflow = { id: string, source: WorkflowSource, project_id: string | null, name: string, description: string | null, graph_json: string, created_at: string, updated_at: string, };
 
-export type WorkflowRun = { id: string, orchestration_run_id: string | null, workflow_id: string, attempt_id: string | null, issue_id: string, workspace_id: string | null, trigger_source: string, input_text: string, output_text: string | null, status: WorkflowRunStatus, started_at: string | null, finished_at: string | null, error_text: string | null, created_at: string, updated_at: string, };
+export type WorkflowRun = { id: string, orchestration_run_id: string | null, workflow_id: string, attempt_id: string | null, issue_id: string | null, repository_id: string | null, workspace_id: string | null, trigger_source: string, input_text: string, output_text: string | null, status: WorkflowRunStatus, started_at: string | null, finished_at: string | null, error_text: string | null, created_at: string, updated_at: string, };
 
 export type WorkflowAttempt = { id: string, project_id: string, issue_id: string, workflow_id: string, latest_run_id: string | null, workspace_id: string | null, name: string, status: WorkflowAttemptStatus, created_at: string, updated_at: string, };
 
@@ -295,7 +323,7 @@ export type WorkflowNodeWorkView = { node_id: string, node_type: string, iterati
 
 export type WorkflowRunRuntimeView = { run_id: string, status: WorkflowRunStatus, active_node_count: number, pending_node_count: number, waiting_node_count: number, failed_node_count: number, completed_node_count: number, node_work: Array<WorkflowNodeWorkView>, };
 
-export type WorkflowRunResponse = { id: string, orchestration_run_id: string | null, workflow_id: string, attempt_id: string | null, issue_id: string, workspace_id: string | null, trigger_source: string, input_text: string, output_text: string | null, status: WorkflowRunStatus, started_at: string | null, finished_at: string | null, error_text: string | null, created_at: string, updated_at: string, nodes: Array<WorkflowNodeExecutionResponse>, runtime_view?: WorkflowRunRuntimeView, };
+export type WorkflowRunResponse = { id: string, orchestration_run_id: string | null, workflow_id: string, attempt_id: string | null, issue_id: string | null, repository_id: string | null, workspace_id: string | null, trigger_source: string, input_text: string, output_text: string | null, status: WorkflowRunStatus, started_at: string | null, finished_at: string | null, error_text: string | null, created_at: string, updated_at: string, nodes: Array<WorkflowNodeExecutionResponse>, runtime_view?: WorkflowRunRuntimeView, };
 
 export type WorkflowNodeExecutionResponse = { id: string, run_id: string, node_id: string, node_type: string, iteration: bigint, status: NodeExecutionStatus, input_text: string | null, output_text: string | null, session_id: string | null, orchestration_node_execution_id: string | null, agent_run_id: string | null, projection_status: ProjectionStatus | null, execution_process_id: string | null, arena_group_id: string | null, tokens_used: bigint | null, cost_estimate: number | null, started_at: string | null, finished_at: string | null, error_text: string | null, created_at: string, updated_at: string, };
 
@@ -1184,7 +1212,9 @@ export type RunAttemptRequest = { schema_version: number, payload_version: numbe
 
 export type NativeAuditReference = { stream_id: string, sequence: bigint, checksum?: string | null, };
 
-export type AgentEventPayload = { "type": "lifecycle_changed", "data": { status: AgentRunStatus, } } | { "type": "session_observed", "data": { provider_session: ProviderSessionReference, } } | { "type": "message", "data": { message: CanonicalMessage, final_output: boolean, } } | { "type": "thinking", "data": { content: string, } } | { "type": "tool_call", "data": { tool_call_id?: string | null, tool_name: string, status: AgentRuntimeToolStatus, arguments?: JsonValue | null, result?: JsonValue | null, } } | { "type": "approval_requested", "data": { approval_id: string, tool_call_id?: string | null, tool_name: string, } } | { "type": "approval_resolved", "data": { approval_id: string, approved: boolean, reason?: string | null, } } | { "type": "input_requested", "data": { input_id: string, prompt: string, } } | { "type": "input_resolved", "data": { input_id: string, answered: boolean, } } | { "type": "token_usage", "data": { input_tokens: bigint, output_tokens: bigint, cached_input_tokens?: bigint | null, } } | { "type": "goal_updated", "data": { goal: AgentGoalState, } } | { "type": "goal_cleared" } | { "type": "error", "data": { error: AgentRuntimeError, } } | { "type": "projection_degraded", "data": { reason: string, } } | { "type": "provider_extension", "data": { provider_namespace: string, provider_event: string, payload: JsonValue, } } | { "type": "unknown", "data": { event_type: string, payload: JsonValue, } };
+export type AgentEventPayload = { "type": "agent_activity", "data": { activity: AgentActivity, } } | { "type": "lifecycle_changed", "data": { status: AgentRunStatus, } } | { "type": "session_observed", "data": { provider_session: ProviderSessionReference, } } | { "type": "message", "data": { message: CanonicalMessage, final_output: boolean, } } | { "type": "thinking", "data": { content: string, } } | { "type": "tool_call", "data": { tool_call_id?: string | null, tool_name: string, status: AgentRuntimeToolStatus, arguments?: JsonValue | null, result?: JsonValue | null, } } | { "type": "approval_requested", "data": { approval_id: string, tool_call_id?: string | null, tool_name: string, } } | { "type": "approval_resolved", "data": { approval_id: string, approved: boolean, reason?: string | null, } } | { "type": "input_requested", "data": { input_id: string, prompt: string, } } | { "type": "input_resolved", "data": { input_id: string, answered: boolean, } } | { "type": "token_usage", "data": { input_tokens: bigint, output_tokens: bigint, cached_input_tokens?: bigint | null, } } | { "type": "goal_updated", "data": { goal: AgentGoalState, } } | { "type": "goal_cleared" } | { "type": "error", "data": { error: AgentRuntimeError, } } | { "type": "projection_degraded", "data": { reason: string, } } | { "type": "provider_extension", "data": { provider_namespace: string, provider_event: string, payload: JsonValue, } } | { "type": "unknown", "data": { event_type: string, payload: JsonValue, } };
+
+export type AgentActivity = { thread_id: string, parent_thread_id: string | null, agent_path: string | null, kind: string, content: string | null, };
 
 export type AgentEventEnvelope = { schema_version: number, payload_version: number, event_id: string, session_id: string, agent_run_id: string, turn_id: string, run_attempt_id: string, run_attempt_number: number, sequence: bigint, correlation_id: string, orchestration_run_id?: string | null, orchestration_node_execution_id?: string | null, timestamp: string, native_refs?: Array<NativeAuditReference>, payload: AgentEventPayload, };
 
@@ -1240,7 +1270,7 @@ export enum RetryBackoffKind { none = "none", fixed = "fixed", exponential = "ex
 
 export type OrchestrationRetryPolicy = { max_run_attempts: number, backoff: RetryBackoffKind, backoff_ms: bigint, retryable_terminal_statuses: Array<AgentRunStatus>, mode: RunAttemptMode, };
 
-export type OrchestrationPlanNode = { node_key: string, stable_order: number, dependencies: Array<string>, join: OrchestrationJoinPolicy, failure_policy: OrchestrationFailurePolicy, remaining_upstreams: RemainingUpstreamsPolicy, each_downstream_execution: EachDownstreamExecution, retry: OrchestrationRetryPolicy, runtime_profile_id?: string | null, provider_id?: string | null, provider_config?: JsonValue | null, };
+export type OrchestrationPlanNode = { node_key: string, requires_product_validation?: boolean, stable_order: number, dependencies: Array<string>, join: OrchestrationJoinPolicy, failure_policy: OrchestrationFailurePolicy, remaining_upstreams: RemainingUpstreamsPolicy, each_downstream_execution: EachDownstreamExecution, retry: OrchestrationRetryPolicy, runtime_profile_id?: string | null, provider_id?: string | null, provider_config?: JsonValue | null, };
 
 export type OrchestrationPlanSnapshot = { schema_version: number, plan_id: string, source_definition_id: string, source_definition_version: string, product_kind: OrchestrationProductKind, workspace_mode: WorkspaceMode, nodes: Array<OrchestrationPlanNode>, created_at: string, };
 

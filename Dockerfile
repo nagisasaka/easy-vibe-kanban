@@ -17,6 +17,7 @@ RUN corepack enable
 RUN pnpm config set store-dir /pnpm/store
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY patches/ patches/
 COPY packages/local-web/package.json packages/local-web/package.json
 COPY packages/ui/package.json packages/ui/package.json
 COPY packages/web-core/package.json packages/web-core/package.json
@@ -63,64 +64,27 @@ COPY rust-toolchain.toml ./
 RUN cargo --version >/dev/null
 
 COPY Cargo.toml Cargo.lock ./
-COPY crates/api-types/Cargo.toml crates/api-types/Cargo.toml
-COPY crates/db/Cargo.toml crates/db/Cargo.toml
-COPY crates/deployment/Cargo.toml crates/deployment/Cargo.toml
-COPY crates/executors/Cargo.toml crates/executors/Cargo.toml
-COPY crates/git/Cargo.toml crates/git/Cargo.toml
-COPY crates/git-host/Cargo.toml crates/git-host/Cargo.toml
-COPY crates/local-deployment/Cargo.toml crates/local-deployment/Cargo.toml
-COPY crates/mcp/Cargo.toml crates/mcp/Cargo.toml
-COPY crates/relay-control/Cargo.toml crates/relay-control/Cargo.toml
-COPY crates/relay-hosts/Cargo.toml crates/relay-hosts/Cargo.toml
-COPY crates/relay-protocol/Cargo.toml crates/relay-protocol/Cargo.toml
-COPY crates/relay-tunnel-core/Cargo.toml crates/relay-tunnel-core/Cargo.toml
-COPY crates/relay-webrtc/Cargo.toml crates/relay-webrtc/Cargo.toml
-COPY crates/relay-ws/Cargo.toml crates/relay-ws/Cargo.toml
-COPY crates/review/Cargo.toml crates/review/Cargo.toml
-COPY crates/server/Cargo.toml crates/server/Cargo.toml
-COPY crates/server-info/Cargo.toml crates/server-info/Cargo.toml
-COPY crates/services/Cargo.toml crates/services/Cargo.toml
-COPY crates/tauri-app/Cargo.toml crates/tauri-app/Cargo.toml
-COPY crates/trusted-key-auth/Cargo.toml crates/trusted-key-auth/Cargo.toml
-COPY crates/utils/Cargo.toml crates/utils/Cargo.toml
-COPY crates/workspace-manager/Cargo.toml crates/workspace-manager/Cargo.toml
-COPY crates/worktree-manager/Cargo.toml crates/worktree-manager/Cargo.toml
-COPY crates/ws-bridge/Cargo.toml crates/ws-bridge/Cargo.toml
-
-COPY crates/api-types/ crates/api-types/
-COPY crates/db/ crates/db/
-COPY crates/deployment/ crates/deployment/
-COPY crates/executors/ crates/executors/
-COPY crates/git/ crates/git/
-COPY crates/git-host/ crates/git-host/
-COPY crates/local-deployment/ crates/local-deployment/
-COPY crates/mcp/ crates/mcp/
-COPY crates/relay-control/ crates/relay-control/
-COPY crates/relay-hosts/ crates/relay-hosts/
-COPY crates/relay-protocol/ crates/relay-protocol/
-COPY crates/relay-tunnel-core/ crates/relay-tunnel-core/
-COPY crates/relay-webrtc/ crates/relay-webrtc/
-COPY crates/relay-ws/ crates/relay-ws/
-COPY crates/review/ crates/review/
-COPY crates/server/ crates/server/
-COPY crates/server-info/ crates/server-info/
-COPY crates/services/ crates/services/
-COPY crates/trusted-key-auth/ crates/trusted-key-auth/
-COPY crates/utils/ crates/utils/
-COPY crates/workspace-manager/ crates/workspace-manager/
-COPY crates/worktree-manager/ crates/worktree-manager/
-COPY crates/ws-bridge/ crates/ws-bridge/
+# Keep workspace membership and offline SQLx metadata in sync with Cargo.toml.
+# The old hand-maintained list included the removed server-info crate.
+COPY crates/ crates/
 COPY assets/ assets/
 COPY --from=fe-builder /app/packages/local-web/dist packages/local-web/dist
 
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git \
     --mount=type=cache,id=workspace-target,target=/app/target \
-    cargo build --locked --release --bin server \
- && cp /app/target/release/server /usr/local/bin/server
+    cargo build --locked --release --bin server --bin agent-process-host \
+ && cp /app/target/release/server /usr/local/bin/server \
+ && cp /app/target/release/agent-process-host /usr/local/bin/agent-process-host
 
-FROM debian:bookworm-slim AS runtime
+FROM node:22-bookworm-slim AS runtime
+
+# The adapter and image read the same version pin. Installation of the Codex
+# host integration happens at runtime, against the actual user's mounted home.
+COPY assets/openwiki-version /usr/local/share/evk/openwiki-version
+ENV OPENWIKI_TELEMETRY_DISABLED=1
+RUN npm install --global --omit=dev "openwiki@$(tr -d '\n' </usr/local/share/evk/openwiki-version)" \
+ && node -e 'const p=require("node:fs").readFileSync("/usr/local/share/evk/openwiki-version","utf8").trim();const r=require("node:child_process").spawnSync("openwiki",["--help"],{encoding:"utf8"});if(r.status!==0||r.stdout.match(/OpenWiki v(\S+)/)?.[1]!==p)process.exit(1)'
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -135,6 +99,7 @@ RUN apt-get update \
 WORKDIR /repos
 
 COPY --from=builder /usr/local/bin/server /usr/local/bin/server
+COPY --from=builder /usr/local/bin/agent-process-host /usr/local/bin/agent-process-host
 
 RUN mkdir -p /repos \
   && chown -R appuser:appuser /repos

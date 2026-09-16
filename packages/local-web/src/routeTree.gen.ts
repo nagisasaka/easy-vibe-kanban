@@ -21,6 +21,7 @@ import { Route as AppWorkspacesElectricTestRouteImport } from './routes/_app.wor
 import { Route as AppWorkspacesCreateRouteImport } from './routes/_app.workspaces_.create'
 import { Route as AppWorkspacesWorkspaceIdRouteImport } from './routes/_app.workspaces_.$workspaceId'
 import { Route as AppProjectsProjectIdRouteImport } from './routes/_app.projects.$projectId'
+import { Route as AppWorkspacesWorkspaceIdWorkflowRouteImport } from './routes/_app.workspaces_.$workspaceId_.workflow'
 import { Route as AppProjectsProjectIdWorkflowsRouteImport } from './routes/_app.projects.$projectId_.workflows'
 import { Route as AppHostsHostIdWorkspacesRouteImport } from './routes/_app.hosts.$hostId.workspaces'
 import { Route as HostsHostIdWorkspacesWorkspaceIdVscodeRouteImport } from './routes/hosts.$hostId.workspaces.$workspaceId.vscode'
@@ -99,6 +100,12 @@ const AppProjectsProjectIdRoute = AppProjectsProjectIdRouteImport.update({
   path: '/projects/$projectId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppWorkspacesWorkspaceIdWorkflowRoute =
+  AppWorkspacesWorkspaceIdWorkflowRouteImport.update({
+    id: '/workspaces_/$workspaceId_/workflow',
+    path: '/workspaces/$workspaceId/workflow',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppProjectsProjectIdWorkflowsRoute =
   AppProjectsProjectIdWorkflowsRouteImport.update({
     id: '/projects/$projectId_/workflows',
@@ -208,6 +215,7 @@ export interface FileRoutesByFullPath {
   '/workspaces/$workspaceId/vscode': typeof WorkspacesWorkspaceIdVscodeRoute
   '/hosts/$hostId/workspaces': typeof AppHostsHostIdWorkspacesRoute
   '/projects/$projectId/workflows': typeof AppProjectsProjectIdWorkflowsRoute
+  '/workspaces/$workspaceId/workflow': typeof AppWorkspacesWorkspaceIdWorkflowRoute
   '/hosts/$hostId/workspaces/$workspaceId': typeof AppHostsHostIdWorkspacesWorkspaceIdRoute
   '/hosts/$hostId/workspaces/create': typeof AppHostsHostIdWorkspacesCreateRoute
   '/projects/$projectId/issues/$issueId': typeof AppProjectsProjectIdIssuesIssueIdRoute
@@ -236,6 +244,7 @@ export interface FileRoutesByTo {
   '/workspaces/$workspaceId/vscode': typeof WorkspacesWorkspaceIdVscodeRoute
   '/hosts/$hostId/workspaces': typeof AppHostsHostIdWorkspacesRoute
   '/projects/$projectId/workflows': typeof AppProjectsProjectIdWorkflowsRoute
+  '/workspaces/$workspaceId/workflow': typeof AppWorkspacesWorkspaceIdWorkflowRoute
   '/hosts/$hostId/workspaces/$workspaceId': typeof AppHostsHostIdWorkspacesWorkspaceIdRoute
   '/hosts/$hostId/workspaces/create': typeof AppHostsHostIdWorkspacesCreateRoute
   '/projects/$projectId/issues/$issueId': typeof AppProjectsProjectIdIssuesIssueIdRoute
@@ -266,6 +275,7 @@ export interface FileRoutesById {
   '/workspaces/$workspaceId/vscode': typeof WorkspacesWorkspaceIdVscodeRoute
   '/_app/hosts/$hostId/workspaces': typeof AppHostsHostIdWorkspacesRoute
   '/_app/projects/$projectId_/workflows': typeof AppProjectsProjectIdWorkflowsRoute
+  '/_app/workspaces_/$workspaceId_/workflow': typeof AppWorkspacesWorkspaceIdWorkflowRoute
   '/_app/hosts/$hostId/workspaces_/$workspaceId': typeof AppHostsHostIdWorkspacesWorkspaceIdRoute
   '/_app/hosts/$hostId/workspaces_/create': typeof AppHostsHostIdWorkspacesCreateRoute
   '/_app/projects/$projectId_/issues/$issueId': typeof AppProjectsProjectIdIssuesIssueIdRoute
@@ -296,6 +306,7 @@ export interface FileRouteTypes {
     | '/workspaces/$workspaceId/vscode'
     | '/hosts/$hostId/workspaces'
     | '/projects/$projectId/workflows'
+    | '/workspaces/$workspaceId/workflow'
     | '/hosts/$hostId/workspaces/$workspaceId'
     | '/hosts/$hostId/workspaces/create'
     | '/projects/$projectId/issues/$issueId'
@@ -324,6 +335,7 @@ export interface FileRouteTypes {
     | '/workspaces/$workspaceId/vscode'
     | '/hosts/$hostId/workspaces'
     | '/projects/$projectId/workflows'
+    | '/workspaces/$workspaceId/workflow'
     | '/hosts/$hostId/workspaces/$workspaceId'
     | '/hosts/$hostId/workspaces/create'
     | '/projects/$projectId/issues/$issueId'
@@ -353,6 +365,7 @@ export interface FileRouteTypes {
     | '/workspaces/$workspaceId/vscode'
     | '/_app/hosts/$hostId/workspaces'
     | '/_app/projects/$projectId_/workflows'
+    | '/_app/workspaces_/$workspaceId_/workflow'
     | '/_app/hosts/$hostId/workspaces_/$workspaceId'
     | '/_app/hosts/$hostId/workspaces_/create'
     | '/_app/projects/$projectId_/issues/$issueId'
@@ -461,6 +474,13 @@ declare module '@tanstack/react-router' {
       path: '/projects/$projectId'
       fullPath: '/projects/$projectId'
       preLoaderRoute: typeof AppProjectsProjectIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/workspaces_/$workspaceId_/workflow': {
+      id: '/_app/workspaces_/$workspaceId_/workflow'
+      path: '/workspaces/$workspaceId/workflow'
+      fullPath: '/workspaces/$workspaceId/workflow'
+      preLoaderRoute: typeof AppWorkspacesWorkspaceIdWorkflowRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/projects/$projectId_/workflows': {
@@ -581,6 +601,7 @@ interface AppRouteChildren {
   AppWorkspacesElectricTestRoute: typeof AppWorkspacesElectricTestRoute
   AppHostsHostIdWorkspacesRoute: typeof AppHostsHostIdWorkspacesRoute
   AppProjectsProjectIdWorkflowsRoute: typeof AppProjectsProjectIdWorkflowsRoute
+  AppWorkspacesWorkspaceIdWorkflowRoute: typeof AppWorkspacesWorkspaceIdWorkflowRoute
   AppHostsHostIdWorkspacesWorkspaceIdRoute: typeof AppHostsHostIdWorkspacesWorkspaceIdRoute
   AppHostsHostIdWorkspacesCreateRoute: typeof AppHostsHostIdWorkspacesCreateRoute
   AppProjectsProjectIdIssuesIssueIdRoute: typeof AppProjectsProjectIdIssuesIssueIdRoute
@@ -605,6 +626,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppWorkspacesElectricTestRoute: AppWorkspacesElectricTestRoute,
   AppHostsHostIdWorkspacesRoute: AppHostsHostIdWorkspacesRoute,
   AppProjectsProjectIdWorkflowsRoute: AppProjectsProjectIdWorkflowsRoute,
+  AppWorkspacesWorkspaceIdWorkflowRoute: AppWorkspacesWorkspaceIdWorkflowRoute,
   AppHostsHostIdWorkspacesWorkspaceIdRoute:
     AppHostsHostIdWorkspacesWorkspaceIdRoute,
   AppHostsHostIdWorkspacesCreateRoute: AppHostsHostIdWorkspacesCreateRoute,

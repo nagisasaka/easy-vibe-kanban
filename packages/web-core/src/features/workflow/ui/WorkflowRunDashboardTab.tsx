@@ -14,6 +14,7 @@ import {
 import {
   getDefaultWorkflowRuntimeNodeId,
   getWorkflowNodeActionGate,
+  canCancelWorkflowRun,
   getWorkflowNodeExecutionForWork,
   getWorkflowNodeWork,
   getWorkflowRuntimeView,
@@ -42,7 +43,7 @@ import {
 } from '@/features/workspace-files';
 
 export interface WorkflowRunDashboardTabProps {
-  projectId: string;
+  projectId?: string;
   run: WorkflowRunResponse;
 }
 
@@ -95,7 +96,7 @@ export function WorkflowRunDashboardTab({
     }
 
     setSelectedNodeId(getDefaultSelectedNodeId(run));
-  }, [runtimeView, selectedNodeId]);
+  }, [run, runtimeView, selectedNodeId]);
 
   const selectedNodeWork = getWorkflowNodeWork(runtimeView, selectedNodeId);
   const selectedNode = getWorkflowNodeExecutionForWork(run, selectedNodeWork);
@@ -108,15 +109,25 @@ export function WorkflowRunDashboardTab({
     : null;
   const selectedAgentSessionRows = buildAgentSessionRows(run, selectedNodeId);
   const workflowWorkspaceHref = run.workspace_id
-    ? `/projects/${projectId}/issues/${run.issue_id}/workspaces/${run.workspace_id}`
+    ? run.issue_id && projectId
+      ? `/projects/${projectId}/issues/${run.issue_id}/workspaces/${run.workspace_id}`
+      : `/workspaces/${run.workspace_id}`
     : null;
   const handleOpenWorkflowWorkspace = useCallback(() => {
     if (!run.workspace_id) return;
-    appNav.goToProjectIssueWorkspace(projectId, run.issue_id, run.workspace_id);
+    if (run.issue_id && projectId) {
+      appNav.goToProjectIssueWorkspace(
+        projectId,
+        run.issue_id,
+        run.workspace_id
+      );
+    } else {
+      appNav.goToWorkspace(run.workspace_id);
+    }
   }, [appNav, projectId, run.issue_id, run.workspace_id]);
 
   const handleCancelRun = async () => {
-    if (!run.runtime_view || runtimeView.authority !== 'current') {
+    if (!canCancelWorkflowRun(run, runtimeView)) {
       setActionError(
         t('workflow.runCanvas.actionUnavailable', {
           defaultValue:
@@ -227,9 +238,14 @@ export function WorkflowRunDashboardTab({
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div>
               <span className="text-low">
-                {t('workflow.dashboard.issueId')}:
+                {run.repository_id
+                  ? 'Repository'
+                  : t('workflow.dashboard.issueId')}
+                :
               </span>
-              <span className="ml-2 text-high">{run.issue_id}</span>
+              <span className="ml-2 text-high">
+                {run.repository_id ?? run.issue_id}
+              </span>
             </div>
             <div>
               <span className="text-low">
@@ -265,20 +281,16 @@ export function WorkflowRunDashboardTab({
             <h2 className="text-sm font-semibold text-high">
               {t('workflow.dashboard.progress')}
             </h2>
-            {runtimeView.authority === 'current' &&
-              (run.status === 'running' ||
-                run.status === 'pending' ||
-                run.status === 'awaiting_human' ||
-                run.status === 'awaiting_arena') && (
-                <button
-                  className="flex items-center gap-1 rounded bg-secondary px-2 py-1 text-xs text-error hover:opacity-80"
-                  onClick={() => void handleCancelRun()}
-                  disabled={mutations.isCanceling}
-                >
-                  <Square className="h-3 w-3" />
-                  {t('workflow.dashboard.cancelRun')}
-                </button>
-              )}
+            {canCancelWorkflowRun(run, runtimeView) && (
+              <button
+                className="flex items-center gap-1 rounded bg-secondary px-2 py-1 text-xs text-error hover:opacity-80"
+                onClick={() => void handleCancelRun()}
+                disabled={mutations.isCanceling}
+              >
+                <Square className="h-3 w-3" />
+                {t('workflow.dashboard.cancelRun')}
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-4 text-xs">
             <div className="flex-1">
@@ -587,15 +599,17 @@ export function WorkflowRunDashboardTab({
                   </div>
                 )}
 
-              {selectedNodeActionGate.canSelectArenaWinner && (
-                <WorkflowArenaWinnerPanel
-                  arenaGroupId={selectedNode.arena_group_id}
-                  issueId={run.issue_id}
-                  nodeId={selectedNode.node_id}
-                  projectId={projectId}
-                  runId={run.id}
-                />
-              )}
+              {selectedNodeActionGate.canSelectArenaWinner &&
+                run.issue_id &&
+                projectId && (
+                  <WorkflowArenaWinnerPanel
+                    arenaGroupId={selectedNode.arena_group_id}
+                    issueId={run.issue_id}
+                    nodeId={selectedNode.node_id}
+                    projectId={projectId}
+                    runId={run.id}
+                  />
+                )}
             </div>
           )}
         </section>

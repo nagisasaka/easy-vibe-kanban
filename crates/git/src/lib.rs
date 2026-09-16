@@ -11,6 +11,7 @@ use ts_rs::TS;
 use utils::diff::{Diff, DiffChangeKind};
 
 mod cli;
+pub mod snapshot;
 mod validation;
 
 use cli::{ChangeType, StatusDiffEntry, StatusDiffOptions};
@@ -108,6 +109,14 @@ impl Commit {
 impl std::fmt::Display for Commit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl std::str::FromStr for Commit {
+    type Err = git2::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        git2::Oid::from_str(value).map(Self::new)
     }
 }
 
@@ -323,6 +332,76 @@ impl GitService {
         Ok(true)
     }
 
+    /// Stage the same source set as normal automatic completion and freeze its
+    /// tree before writing the durable semantic-publication intent.
+    pub fn stage_source_snapshot(&self, path: &Path) -> Result<String, GitServiceError> {
+        let git = GitCli::new();
+        git.add_all(path)?;
+        Ok(git.write_tree(path)?)
+    }
+
+    /// Commit only the previously staged snapshot, never restage a later task's
+    /// changes during recovery. Callers verify the resulting parent and tree.
+    pub fn commit_staged_snapshot(
+        &self,
+        path: &Path,
+        message: &str,
+        expected_head: &str,
+        expected_tree: &str,
+    ) -> Result<(), GitServiceError> {
+        let git = GitCli::new();
+        if self.get_head_info(path)?.oid != expected_head || git.write_tree(path)? != expected_tree
+        {
+            return Err(GitServiceError::InvalidRepository(
+                "Source publication snapshot changed; no commit was made".into(),
+            ));
+        }
+        self.ensure_cli_commit_identity(path)?;
+        git.commit(path, message)?;
+        Ok(())
+    }
+
+    /// Commit an explicitly validated artifact set without sweeping other
+    /// generated/untracked files into the commit. Used by Wiki maintenance.
+    pub fn commit_paths(
+        &self,
+        path: &Path,
+        message: &str,
+        paths: &[String],
+    ) -> Result<bool, GitServiceError> {
+        if paths.is_empty() {
+            return Ok(false);
+        }
+        if paths.iter().any(|path| {
+            path.is_empty()
+                || std::path::Path::new(path).is_absolute()
+                || path.split('/').any(|part| part == "..")
+        }) {
+            return Err(GitServiceError::InvalidRepository(
+                "Invalid commit path".into(),
+            ));
+        }
+        self.ensure_cli_commit_identity(path)?;
+        for args in [
+            vec!["add", "--"],
+            vec!["commit", "--only", "-m", message, "--"],
+        ] {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(path)
+                .args(args)
+                .args(paths)
+                .output()
+                .map_err(|error| GitServiceError::InvalidRepository(error.to_string()))?;
+            if !output.status.success() {
+                return Err(GitServiceError::InvalidRepository(
+                    String::from_utf8_lossy(&output.stderr).into_owned(),
+                ));
+            }
+        }
+        Ok(true)
+    }
+
     /// Get worktree diffs against a base commit
     pub fn get_diffs(
         &self,
@@ -368,7 +447,13 @@ impl GitService {
                 cli::StatusDiffOptions { path_filter: None },
             )
             .map_err(|e| GitServiceError::InvalidRepository(format!("git diff failed: {e}")))?;
-        Ok(entries.into_iter().map(|e| e.path).collect())
+        // A rename changes both paths. Safety consumers (including Wiki-only
+        // publication) must not overlook a source deletion merely because the
+        // destination is inside their allowed artifact directory.
+        Ok(entries
+            .into_iter()
+            .flat_map(|entry| std::iter::once(entry.path).chain(entry.old_path))
+            .collect())
     }
 
     /// Return a raw binary-safe patch for all worktree changes against a base commit.
@@ -874,6 +959,18 @@ impl GitService {
         let branch = Self::find_branch(&repo, branch_name)?;
         let oid = branch.get().peel_to_commit()?.id().to_string();
         Ok(oid)
+    }
+
+    pub fn is_ancestor(
+        &self,
+        repo_path: &Path,
+        ancestor: &str,
+        descendant: &str,
+    ) -> Result<bool, GitServiceError> {
+        let repo = self.open_repo(repo_path)?;
+        let ancestor = repo.revparse_single(ancestor)?.peel_to_commit()?.id();
+        let descendant = repo.revparse_single(descendant)?.peel_to_commit()?.id();
+        Ok(ancestor == descendant || repo.graph_descendant_of(descendant, ancestor)?)
     }
 
     pub fn get_fork_point(

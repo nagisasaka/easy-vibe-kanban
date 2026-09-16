@@ -516,10 +516,23 @@ impl Codex {
                 }
                 CodexSlashCommand::Goal(_) => match session_id {
                     Some(_) => {
-                        self.handle_app_server_slash_command(current_dir, command, session_id, env)
+                        // Resume owns a new long-lived run, unlike the other short-lived
+                        // goal management commands. Never replace the saved objective.
+                        let mut executor = self.clone();
+                        if matches!(command, CodexSlashCommand::Goal(CodexGoalCommand::Resume)) {
+                            executor.execution_mode = crate::profile::ExecutionMode::Goal;
+                            executor.plan = false;
+                        }
+                        executor
+                            .handle_app_server_slash_command(current_dir, command, session_id, env)
                             .await
                     }
                     None => {
+                        if matches!(command, CodexSlashCommand::Goal(CodexGoalCommand::Resume)) {
+                            return Err(ExecutorError::Io(std::io::Error::other(
+                                "Resume Goal requires an existing Codex session",
+                            )));
+                        }
                         self.return_static_reply(
                             current_dir,
                             Ok("_No active Codex session to manage a goal._".to_string()),
@@ -582,6 +595,7 @@ impl Codex {
         let (_, session_fast) = resolve_model(self.model.as_deref());
         let thread_start_params = self.build_thread_start_params_with_resources(current_dir, env);
         let current_dir_path = current_dir.to_path_buf();
+        let checkpoint_memory = env.get("EVK_REPOSITORY_MEMORY_INSTRUCTIONS").is_some();
 
         self.spawn_app_server(
             current_dir,
@@ -603,7 +617,11 @@ impl Codex {
                             .await?;
                         let thread_id = resume_response.thread.id;
                         tracing::debug!("resumed thread for compact, thread_id={thread_id}");
-                        client.thread_compact_start(thread_id).await?;
+                        if checkpoint_memory {
+                            client.compact_with_memory_checkpoint(thread_id).await?;
+                        } else {
+                            client.thread_compact_start(thread_id).await?;
+                        }
                     }
                     CodexSlashCommand::Review { .. } => {
                         return Err(ExecutorError::Io(std::io::Error::other(
@@ -701,6 +719,17 @@ impl Codex {
                                 "No active Codex session to manage a goal",
                             ))
                         })?;
+                        if matches!(goal_command, CodexGoalCommand::Resume) {
+                            let response = client
+                                .thread_resume(resume_params_from(thread_id, thread_start_params))
+                                .await?;
+                            client.set_resolved_model(response.model);
+                            let thread_id = response.thread.id;
+                            client.register_session(&thread_id).await?;
+                            client.resume_goal(thread_id).await?;
+                            // Goal notifications, not command acknowledgement, end this run.
+                            return Ok(());
+                        }
                         let message = handle_goal_command(&client, thread_id, goal_command).await?;
                         log_event_raw(client.log_writer(), message).await?;
                         exit_signal_tx
@@ -861,14 +890,7 @@ async fn handle_goal_command(
             ))
         }
         CodexGoalCommand::Resume => {
-            let response = client
-                .thread_goal_set(ThreadGoalSetParams {
-                    thread_id,
-                    objective: None,
-                    status: Some(ThreadGoalStatus::Active),
-                    token_budget: None,
-                })
-                .await?;
+            let response = client.resume_goal(thread_id).await?;
             Ok(format!(
                 "**Goal resumed.**\n\n{}",
                 format_goal_details(&response.goal)

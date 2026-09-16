@@ -217,19 +217,73 @@ pub async fn merge_workspace(
         .ensure_container_exists(&workspace)
         .await?;
     let workspace_path = Path::new(&container_ref);
-    let worktree_path = workspace_path.join(repo.name);
+    let worktree_path = workspace_path.join(&repo.name);
 
     let workspace_label = workspace.name.as_deref().unwrap_or(&workspace.branch);
     let vk_id = resolve_vibe_kanban_identifier(&deployment, workspace.id).await;
     let commit_message = format!("{} (vibe-kanban {})", workspace_label, vk_id);
 
-    let merge_commit_id = deployment.git().merge_changes(
+    let memory = utils::repository_memory::RepositoryMemoryStore::existing_for_repository(
+        &repo.name, repo.id,
+    )?;
+    let _integration_lock = memory
+        .as_ref()
+        .map(|store| store.try_integration_lock())
+        .transpose()?;
+    let mut memory_integration = None;
+    let mut semantic_message = None;
+    if let Some(store) = &memory
+        && store.state()?.enabled
+    {
+        semantic_message = services::services::repository_memory::prepare_workspace_source(
+            pool,
+            deployment.git(),
+            &repo,
+            &workspace,
+            &worktree_path,
+            &workspace_repo.target_branch,
+        )
+        .await
+        .map_err(|error| ApiError::BadRequest(error.to_string()))?;
+        memory_integration = Some(
+            services::services::repository_memory::prepare_integration(
+                store,
+                workspace.id,
+                &workspace_repo.target_branch,
+                deployment
+                    .git()
+                    .get_branch_oid(&repo.path, &workspace_repo.target_branch)?,
+            )
+            .map_err(|error| ApiError::BadRequest(error.to_string()))?,
+        );
+    }
+
+    let summary = semantic_message.as_deref().unwrap_or(&commit_message);
+    let integration_message = memory_integration.as_ref().map(|record| {
+        services::services::repository_memory::integration_commit_message(summary, record.id)
+    });
+    let merge_result = deployment.git().merge_changes(
         &repo.path,
         &worktree_path,
         &workspace.branch,
         &workspace_repo.target_branch,
-        &commit_message,
-    )?;
+        integration_message.as_deref().unwrap_or(summary),
+    );
+    let merge_commit_id = match merge_result {
+        Ok(commit) => commit,
+        Err(error) => {
+            if let (Some(store), Some(integration)) = (&memory, &mut memory_integration) {
+                integration.source_error = Some(error.to_string());
+                store.save_integration(integration)?;
+            }
+            return Err(error.into());
+        }
+    };
+
+    if let (Some(store), Some(integration)) = (&memory, &mut memory_integration) {
+        integration.integrated_commit = Some(merge_commit_id.clone());
+        store.save_integration(integration)?;
+    }
 
     Merge::create_direct(
         pool,
@@ -288,6 +342,17 @@ pub async fn push_workspace_branch(
     let workspace_path = Path::new(&container_ref);
     let worktree_path = workspace_path.join(&repo.name);
 
+    services::services::repository_memory::prepare_workspace_source(
+        pool,
+        deployment.git(),
+        &repo,
+        &workspace,
+        &worktree_path,
+        &workspace_repo.target_branch,
+    )
+    .await
+    .map_err(|error| ApiError::BadRequest(error.to_string()))?;
+
     match deployment
         .git()
         .push_to_remote(&worktree_path, &workspace.branch, false)
@@ -341,6 +406,17 @@ pub async fn force_push_workspace_branch(
         .await?;
     let workspace_path = Path::new(&container_ref);
     let worktree_path = workspace_path.join(&repo.name);
+
+    services::services::repository_memory::prepare_workspace_source(
+        pool,
+        deployment.git(),
+        &repo,
+        &workspace,
+        &worktree_path,
+        &workspace_repo.target_branch,
+    )
+    .await
+    .map_err(|error| ApiError::BadRequest(error.to_string()))?;
 
     deployment
         .git()

@@ -26,6 +26,8 @@ import type {
   ProfileApplyPreviewRequest,
   ProfileCopyPreview,
   Repo,
+  RepositoryMemoryState,
+  ConfigureRepositoryMemory,
   SaveConfigProfileRequest,
   SettingsDiff,
   SettingsPatch,
@@ -64,6 +66,12 @@ export interface MachineClient {
   getConfig: () => Promise<UserSystemInfo>;
   saveConfig: (config: Config) => Promise<Config>;
   listRepos: () => Promise<Repo[]>;
+  getRepositoryMemory: (repoId: string) => Promise<RepositoryMemoryState>;
+  configureRepositoryMemory: (
+    repoId: string,
+    data: ConfigureRepositoryMemory
+  ) => Promise<RepositoryMemoryState>;
+  syncRepositoryMemory: (repoId: string) => Promise<RepositoryMemoryState>;
   updateRepo: (repoId: string, data: UpdateRepo) => Promise<Repo>;
   deleteRepo: (repoId: string) => Promise<void>;
   registerRepo: (data: {
@@ -207,6 +215,28 @@ export function createMachineClient(
     listRepos: async () =>
       handleApiResponse<Repo[]>(
         await makeMachineRequest(runtime, target, '/api/repos')
+      ),
+    getRepositoryMemory: async (repoId) =>
+      handleApiResponse<RepositoryMemoryState>(
+        await makeMachineRequest(runtime, target, `/api/repos/${repoId}/memory`)
+      ),
+    configureRepositoryMemory: async (repoId, data) =>
+      handleApiResponse<RepositoryMemoryState>(
+        await makeMachineRequest(
+          runtime,
+          target,
+          `/api/repos/${repoId}/memory`,
+          { method: 'PUT', body: JSON.stringify(data) }
+        )
+      ),
+    syncRepositoryMemory: async (repoId) =>
+      handleApiResponse<RepositoryMemoryState>(
+        await makeMachineRequest(
+          runtime,
+          target,
+          `/api/repos/${repoId}/memory/sync`,
+          { method: 'POST' }
+        )
       ),
     updateRepo: async (repoId, data) =>
       handleApiResponse<Repo>(

@@ -1,4 +1,47 @@
 pub mod client;
+pub const GOAL_OBJECTIVE_MAX_CHARS: usize = 4000;
+
+pub fn goal_concurrency_constraint(limit: Option<u16>) -> String {
+    match limit {
+        Some(0) => {
+            "\n\nExecution constraint: do not spawn or delegate to subagents for this goal.".into()
+        }
+        Some(limit) => format!(
+            "\n\nExecution constraint: when work can be divided safely, use at most {limit} concurrent spawned subagents (excluding the primary agent). Avoid concurrent writes to the same files."
+        ),
+        None => String::new(),
+    }
+}
+
+pub fn validate_goal_objective(objective: &str) -> Result<(), ExecutorError> {
+    let count = objective.chars().count();
+    if count > GOAL_OBJECTIVE_MAX_CHARS {
+        return Err(ExecutorError::Io(std::io::Error::other(format!(
+            "Codex Goal objective is {count} characters; maximum is {GOAL_OBJECTIVE_MAX_CHARS}. Shorten the instructions."
+        ))));
+    }
+    Ok(())
+}
+
+fn add_goal_skill_context(params: &mut ThreadStartParams, skills: &[SelectedSkill]) {
+    if skills.is_empty() {
+        return;
+    }
+    // Goal activation has no UserInput array. Make the same skill references
+    // available before activation, without starting an extra turn or inflating
+    // the persistent 4,000-character objective. References are data, not commands.
+    let references = serde_json::to_string(skills).expect("skill references serialize");
+    let context = format!(
+        "Available selected skills (JSON name/path references): {references}\nRead the referenced SKILL.md before using a relevant skill. Choose skills according to the current task; availability does not require invoking a skill."
+    );
+    params.developer_instructions = Some(match params.developer_instructions.take() {
+        Some(existing) => format!("{existing}\n\n{context}"),
+        None => context,
+    });
+}
+pub mod agent_scope;
+mod goal_lifecycle;
+
 pub mod jsonrpc;
 pub mod normalize_logs;
 pub mod review;
@@ -555,15 +598,10 @@ impl Codex {
     }
 
     pub(crate) fn prepare_execution_prompt(&self, prompt: String) -> String {
-        let prompt = match self.goal_max_concurrent_agents {
-            Some(0) => format!(
-                "{prompt}\n\nExecution constraint: do not spawn or delegate to subagents for this goal."
-            ),
-            Some(limit) => format!(
-                "{prompt}\n\nExecution constraint: when work can be divided safely, use at most {limit} concurrent spawned subagents (excluding the primary agent). Avoid concurrent writes to the same files."
-            ),
-            None => prompt,
-        };
+        let prompt = format!(
+            "{prompt}{}",
+            goal_concurrency_constraint(self.goal_max_concurrent_agents)
+        );
         if self.effective_execution_mode() == ExecutionMode::PlanWithGoal {
             format!(
                 "{prompt}\n\nProduce an approval-ready goal contract as the final plan, with sections named Outcome, Constraints, Implementation Plan, and Verification and Completion Criteria. The approved text will become the persistent Goal objective, so make it self-contained and include measurable completion conditions."
@@ -871,8 +909,64 @@ impl Codex {
         env: &ExecutionEnv,
     ) -> ThreadStartParams {
         let mut params = self.build_thread_start_params(cwd);
+        let reviewer = env
+            .get("EVK_OPENWIKI_REVIEWER")
+            .is_some_and(|value| value == "1");
+        if reviewer {
+            // A trusted server role, not a prompt or user profile preference.
+            // Overrides apply to this fresh thread only; inherited user/project
+            // MCP and Skill installation remains untouched for other workspaces.
+            params.sandbox = Some(codex_app_server_protocol::SandboxMode::ReadOnly);
+            params.approval_policy = Some(V2AskForApproval::Never);
+            params.permissions = None;
+            params.runtime_workspace_roots = None;
+            let config = params.config.get_or_insert_with(HashMap::new);
+            config.insert("mcp_servers.openwiki.enabled".into(), Value::Bool(false));
+            config.insert(
+                "skills.config".into(),
+                serde_json::json!([{"name":"openwiki", "enabled":false}]),
+            );
+        } else if env
+            .get("EVK_OPENWIKI_MAINTENANCE")
+            .is_some_and(|value| value == "1")
+        {
+            // Public Codex MCP configuration, scoped to this maintenance
+            // thread. This also works with custom CODEX_HOME and a parent
+            // workspace cwd, where project-level discovery alone is insufficient.
+            let config = params.config.get_or_insert_with(HashMap::new);
+            // Writer tools are a prerequisite, not an optional integration.
+            // Codex may omit slow optional servers from its initial tool catalog.
+            // Keep this thread-local; never enable writer tools for the reviewer.
+            config.insert("mcp_servers.openwiki.enabled".into(), Value::Bool(true));
+            config.insert("mcp_servers.openwiki.required".into(), Value::Bool(true));
+            config.insert(
+                "mcp_servers.openwiki.startup_timeout_sec".into(),
+                Value::from(10),
+            );
+            config.insert(
+                "mcp_servers.openwiki.command".into(),
+                Value::String("openwiki".into()),
+            );
+            config.insert(
+                "mcp_servers.openwiki.args".into(),
+                serde_json::json!(["mcp", "--host", "codex"]),
+            );
+            config.insert(
+                "mcp_servers.openwiki.env".into(),
+                serde_json::json!({"OPENWIKI_TELEMETRY_DISABLED":"1"}),
+            );
+        }
+        if let Some(memory) = env
+            .get("EVK_REPOSITORY_MEMORY_INSTRUCTIONS")
+            .filter(|_| !reviewer)
+        {
+            params.developer_instructions = Some(match params.developer_instructions.take() {
+                Some(existing) => format!("{existing}\n\n{memory}"),
+                None => memory.clone(),
+            });
+        }
         let roots = env.shared_resource_roots();
-        if !roots.is_empty() {
+        if !reviewer && !roots.is_empty() {
             params.runtime_workspace_roots = Some(
                 std::iter::once(cwd.to_path_buf())
                     .chain(roots)
@@ -1033,12 +1127,23 @@ impl Codex {
     }
 
     async fn launch_codex_agent(
-        thread_start_params: ThreadStartParams,
+        mut thread_start_params: ThreadStartParams,
         resume_session: Option<String>,
         combined_prompt: String,
         selected_skills: Vec<SelectedSkill>,
         client: Arc<AppServerClient>,
     ) -> Result<(), ExecutorError> {
+        let requires_openwiki = thread_start_params.config.as_ref().is_some_and(|config| {
+            config.get("mcp_servers.openwiki.required") == Some(&Value::Bool(true))
+                && config.get("mcp_servers.openwiki.enabled") != Some(&Value::Bool(false))
+        });
+        if client.execution_mode() == ExecutionMode::Goal {
+            let skills = crate::knowledge_skills::augment_for_wikillm(
+                &combined_prompt,
+                selected_skills.clone(),
+            );
+            add_goal_skill_context(&mut thread_start_params, &skills);
+        }
         let account = client.get_account().await?;
         if account.requires_openai_auth && account.account.is_none() {
             return Err(ExecutorError::AuthRequired(
@@ -1046,22 +1151,26 @@ impl Codex {
             ));
         }
 
-        let (thread_id, resolved_model) = match resume_session {
+        let thread_id = match resume_session {
             None => {
                 let response = client.thread_start(thread_start_params).await?;
-                (response.thread.id, response.model)
+                response.thread.id
             }
             Some(session_id) => {
                 let response = client
                     .thread_resume(resume_params_from(session_id, thread_start_params))
                     .await?;
                 tracing::debug!("resumed thread, thread_id={}", response.thread.id);
-                (response.thread.id, response.model)
+                response.thread.id
             }
         };
 
-        client.set_resolved_model(resolved_model);
         client.register_session(&thread_id).await?;
+        if requires_openwiki {
+            // A configured/ready server is not proof that the required tools
+            // are exposed. Check before either a normal turn or Goal activation.
+            client.ensure_openwiki_tools().await?;
+        }
         if client.execution_mode() == ExecutionMode::Goal {
             client.start_goal(thread_id, combined_prompt).await?;
             return Ok(());
@@ -1178,7 +1287,7 @@ impl Codex {
                 exit_signal_tx.clone(),
                 cancel_for_task,
             );
-            client.connect(rpc_peer);
+            client.connect(rpc_peer.clone());
             // Do not expose the control peer until it owns a connected RPC
             // transport.  The process host can send cancellation immediately
             // after launch, before the initialization request has completed.
@@ -1195,7 +1304,8 @@ impl Codex {
                     ExecutorError::Io(io_err)
                         if io_err.kind() == std::io::ErrorKind::BrokenPipe =>
                     {
-                        // Broken pipe likely means the parent process exited, so we can ignore it
+                        // Transport failure cannot be treated as successful startup.
+                        rpc_peer.request_exit(ExecutorExitResult::Failure);
                         return;
                     }
                     ExecutorError::AuthRequired(message) => {
@@ -1203,9 +1313,7 @@ impl Codex {
                             .log_raw(&Error::auth_required(message.clone()).raw())
                             .await
                             .ok();
-                        exit_signal_tx
-                            .send_exit_signal(ExecutorExitResult::Failure)
-                            .await;
+                        rpc_peer.request_exit(ExecutorExitResult::Failure);
                         return;
                     }
                     _ => {
@@ -1217,9 +1325,7 @@ impl Codex {
                             .ok();
                     }
                 }
-                exit_signal_tx
-                    .send_exit_signal(ExecutorExitResult::Failure)
-                    .await;
+                rpc_peer.request_exit(ExecutorExitResult::Failure);
             }
         });
 
@@ -1377,6 +1483,16 @@ fn fallback_models() -> Vec<ModelInfo> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn goal_length_counts_unicode_characters_not_utf8_bytes() {
+        assert!(super::validate_goal_objective(&"😀".repeat(4000)).is_ok());
+        assert!(
+            super::validate_goal_objective(&"あ".repeat(4001))
+                .unwrap_err()
+                .to_string()
+                .contains("4001")
+        );
+    }
     use std::path::{Path, PathBuf};
 
     use codex_app_server_protocol::{Model, ModelListResponse, ReasoningEffortOption, UserInput};
@@ -1848,5 +1964,99 @@ mod tests {
             UserInput::Skill { name, .. } if name == "knowledge-enrich"
         ));
         assert!(matches!(&input[2], UserInput::Text { text, .. } if text == prompt));
+    }
+}
+
+#[cfg(test)]
+mod goal_skill_tests {
+    use super::*;
+
+    #[test]
+    fn bootstrap_reviewer_overrides_writer_profile_without_shared_config_writes() {
+        let codex: Codex =
+            serde_json::from_value(serde_json::json!({"sandbox":"danger-full-access"})).unwrap();
+        let mut env = ExecutionEnv::new(RepoContext::default(), false, String::new());
+        env.insert("EVK_OPENWIKI_REVIEWER", "1");
+        env.insert("EVK_OPENWIKI_MAINTENANCE", "1");
+        env.insert(
+            "EVK_REPOSITORY_MEMORY_INSTRUCTIONS",
+            "previous task memory must not leak",
+        );
+        env.insert("EVK_SHARED_RESOURCE_ROOTS", r#"["/shared/writable"]"#);
+        let params = codex.build_thread_start_params_with_resources(Path::new("/workspace"), &env);
+        assert_eq!(params.sandbox, Some(V2SandboxMode::ReadOnly));
+        assert_eq!(params.approval_policy, Some(V2AskForApproval::Never));
+        assert!(params.runtime_workspace_roots.is_none());
+        assert!(
+            !params
+                .developer_instructions
+                .unwrap_or_default()
+                .contains("previous task")
+        );
+        let config = params.config.unwrap();
+        assert_eq!(config["mcp_servers.openwiki.enabled"], false);
+        assert!(!config.contains_key("mcp_servers.openwiki.command"));
+        assert_eq!(
+            config["skills.config"],
+            serde_json::json!([{"name":"openwiki","enabled":false}])
+        );
+    }
+
+    #[test]
+    fn repository_memory_is_persistent_for_initial_and_resumed_threads() {
+        let codex: Codex = serde_json::from_value(serde_json::json!({})).unwrap();
+        let mut env = ExecutionEnv::new(RepoContext::default(), false, String::new());
+        env.insert("EVK_REPOSITORY_MEMORY_INSTRUCTIONS", "Read the workspace-specific memory after context compaction. Canonical openwiki/ is read-only.");
+        let params = codex.build_thread_start_params_with_resources(Path::new("/workspace"), &env);
+        assert!(
+            params
+                .developer_instructions
+                .as_deref()
+                .unwrap()
+                .contains("after context compaction")
+        );
+        let resumed = resume_params_from("existing".into(), params.clone());
+        assert_eq!(
+            params.developer_instructions,
+            resumed.developer_instructions
+        );
+        assert!(
+            !params
+                .config
+                .as_ref()
+                .is_some_and(|config| config.contains_key("mcp_servers.openwiki.command"))
+        );
+        env.insert("EVK_OPENWIKI_MAINTENANCE", "1");
+        let maintenance =
+            codex.build_thread_start_params_with_resources(Path::new("/workspace"), &env);
+        assert_eq!(
+            maintenance.config.unwrap()["mcp_servers.openwiki.args"],
+            serde_json::json!(["mcp", "--host", "codex"])
+        );
+    }
+
+    #[test]
+    fn goal_skills_are_available_before_initial_or_resumed_activation() {
+        let mut params = ThreadStartParams {
+            developer_instructions: Some("existing rules".into()),
+            ..Default::default()
+        };
+        let selected = vec![SelectedSkill {
+            name: "knowledge-recall".into(),
+            path: PathBuf::from("/skills/knowledge-recall/SKILL.md"),
+        }];
+        add_goal_skill_context(&mut params, &selected);
+        let instructions = params.developer_instructions.as_deref().unwrap();
+        assert!(instructions.starts_with("existing rules"));
+        assert!(instructions.contains("knowledge-recall/SKILL.md"));
+        assert!(instructions.contains("does not require invoking"));
+        let resumed = resume_params_from("existing-thread".into(), params.clone());
+        assert_eq!(
+            params.developer_instructions,
+            resumed.developer_instructions
+        );
+        let mut none = ThreadStartParams::default();
+        add_goal_skill_context(&mut none, &[]);
+        assert!(none.developer_instructions.is_none());
     }
 }

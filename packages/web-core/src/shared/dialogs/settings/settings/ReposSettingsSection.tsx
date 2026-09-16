@@ -41,6 +41,7 @@ import {
 } from './SettingsComponents';
 import { useSettingsMachineClient } from './SettingsHostContext';
 import { useSettingsDirty } from './SettingsDirtyContext';
+import { RepositoryMemorySettings } from './RepositoryMemorySettings';
 
 interface RepoScriptsFormState {
   display_name: string;
@@ -534,6 +535,13 @@ export function ReposSettingsSection({
 
       {selectedRepo && draft && (
         <>
+          {machineClient && (
+            <RepositoryMemorySettings
+              key={`${machineClient.target.id}:${selectedRepo.id}`}
+              repo={selectedRepo}
+              client={machineClient}
+            />
+          )}
           {isProjectWorkspace ? (
             <SettingsCard
               title={t('settings.repos.projectWorkspace.title')}

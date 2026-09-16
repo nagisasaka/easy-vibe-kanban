@@ -229,7 +229,7 @@ export function WorkflowNodeSessionPanel({
   );
 }
 
-function WorkflowNodeSessionHeader({
+export function WorkflowNodeSessionHeader({
   execution,
   sessionHref,
   workspaceHref,
@@ -266,7 +266,7 @@ function WorkflowNodeSessionHeader({
 
   return (
     <div className="shrink-0 border-b border-secondary bg-panel/95 px-base py-base">
-      <div className="flex items-start justify-between gap-base">
+      <div className="flex min-w-0 flex-col gap-base">
         <div className="min-w-0 space-y-2">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-normal text-low">
@@ -296,7 +296,7 @@ function WorkflowNodeSessionHeader({
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-wrap justify-end gap-half">
+        <div className="flex min-w-0 flex-wrap gap-half">
           <Button
             type="button"
             size="xs"

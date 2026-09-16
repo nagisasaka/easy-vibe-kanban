@@ -131,11 +131,29 @@ This generates both the Axum router and TypeScript type metadata (via `HasJsonPa
 
 ## Testing
 
+This is a separate Rust workspace, excluded from the public fork's default
+`pnpm run check`, `pnpm run lint`, and root `cargo test --workspace` gates.
+Direct Cargo validation requires access to the private billing dependency;
+disabling `vk-billing` or installing SSH alone does not make that dependency
+public. Do not attempt these commands as routine local EVK validation when the
+required access is unavailable.
+
+For remote backend work in an environment with dependency access:
+
 ```bash
-cargo test --manifest-path crates/remote/Cargo.toml
+pnpm run remote:check
+pnpm run remote:lint
+pnpm run remote:test
 ```
 
 SQLx compile-time checks require either a running Postgres or offline query data (`.sqlx/` directory). Run `pnpm run remote:prepare-db` to do this.
+
+The self-hosted Docker build has a supported private-dependency removal step
+inside its build context. Use it only as part of an explicitly scoped remote
+build/test task; do not patch the source manifest or broaden a local task into a
+Docker build merely to satisfy a completion gate. If remote validation cannot
+be performed, state that it remains unverified. Frontend type checks and Rust
+formatting remain available without private dependency access.
 
 ## Shared Types (`api-types` crate)
 
@@ -151,7 +169,7 @@ All types derive `TS` from `ts-rs` so they can be exported to TypeScript automat
 
 ## Type Generation (`generate_types.rs`)
 
-The binary at `src/bin/generate_types.rs` generates `shared/remote-types.ts` — the single TypeScript file consumed by the remote frontend. Run it with:
+The binary at `src/bin/generate_types.rs` generates `shared/remote-types.ts` — the single TypeScript file consumed by the remote frontend. Like remote tests, this requires an environment with the necessary dependency access. Run it with:
 
 ```bash
 pnpm run remote:generate-types        # write shared/remote-types.ts

@@ -5210,6 +5210,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
+name = "markdown"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5cab8f2cadc416a82d2e783a1946388b31654d391d1c7d92cc1f03e295b1deb"
+dependencies = [
+ "unicode-id",
+]
+
+[[package]]
 name = "markup5ever"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9170,6 +9179,8 @@ dependencies = [
  "ignore",
  "indicatif",
  "json-patch 2.0.0",
+ "libc",
+ "markdown",
  "mime_guess",
  "moka",
  "notify",
@@ -9177,6 +9188,7 @@ dependencies = [
  "notify-rust",
  "once_cell",
  "os_info",
+ "percent-encoding",
  "relay-types",
  "reqwest 0.13.2",
  "rust-embed",
@@ -9185,6 +9197,7 @@ dependencies = [
  "serde_yaml",
  "sha2 0.10.9",
  "sqlx",
+ "strip-ansi-escapes",
  "strum",
  "strum_macros 0.27.2",
  "tempfile",
@@ -11447,6 +11460,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
 
 [[package]]
+name = "unicode-id"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70ba288e709927c043cbe476718d37be306be53fb1fafecd0dbe36d072be2580"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11626,6 +11645,7 @@ dependencies = [
  "shellexpand",
  "shlex",
  "similar",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",

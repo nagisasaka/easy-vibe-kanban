@@ -905,12 +905,12 @@ async fn ensure_workflow_target(
     workflow_id: Uuid,
 ) -> Result<(), ApiError> {
     let workflow = get_workflow_template(pool, workflow_id).await?;
-    if let Some(owner_project_id) = workflow.project_id {
-        if owner_project_id != project_id {
-            return Err(ApiError::BadRequest(
-                "Workflow does not belong to project".to_string(),
-            ));
-        }
+    if let Some(owner_project_id) = workflow.project_id
+        && owner_project_id != project_id
+    {
+        return Err(ApiError::BadRequest(
+            "Workflow does not belong to project".to_string(),
+        ));
     }
     if workflow_attempt_by_workflow_id(pool, workflow_id)
         .await?
@@ -1715,7 +1715,8 @@ mod tests {
                 orchestration_run_id: None,
                 workflow_id,
                 attempt_id: Some(attempt_id),
-                issue_id,
+                issue_id: Some(issue_id),
+                repository_id: None,
                 workspace_id: None,
                 trigger_source: "schedule_manual".to_string(),
                 input_text: "Check status".to_string(),

@@ -46,3 +46,31 @@ This is useful for:
 - Project-specific Codex profiles
 - Separating work and personal configurations
 - Custom automation setups
+
+## Reasoning effort
+
+Leave the EVK reasoning override unset to use the configuration resolved by your
+Codex app-server. For example, your Codex `config.toml` can contain:
+
+```toml
+model = "gpt-6-astra"
+model_reasoning_effort = "max"
+```
+
+Use an effort supported by the selected model and installed Codex version. EVK
+uses Codex's model list for available choices. An explicit EVK reasoning choice
+overrides the inherited configuration. New sessions and resumed sessions retain
+the reasoning effort returned by Codex when EVK selects Code or Plan mode; mode
+selection must not reset an inherited value to `null`.
+
+For OpenWiki Bootstrap, start a new run after changing the configuration so each
+fresh Generate, Review and Refine session resolves the new setting. Configuration
+edits do not retroactively change an already-running phase. Resumed conversations
+can also retain their saved settings; use an explicit EVK override when you need
+to change an existing conversation.
+
+When diagnosing unexpected effort, compare `thread/start` or `thread/resume`'s
+`reasoningEffort` with the subsequent `thread/settings/updated` notification in
+Native Audit. A value that changes from `xhigh` to `null` when the first turn
+starts is not successful configuration inheritance. `null` means no explicit
+effort, not proof that the model is doing no reasoning.

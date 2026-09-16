@@ -28,7 +28,10 @@ import {
   isActionVisible,
 } from '@/shared/types/actions';
 import { useActionVisibilityContext } from '@/shared/hooks/useActionVisibilityContext';
-import { useMobileActiveTab } from '@/shared/stores/useUiPreferencesStore';
+import {
+  useMobileActiveTab,
+  useUiPreferencesStore,
+} from '@/shared/stores/useUiPreferencesStore';
 import { CommandBarDialog } from '@/shared/dialogs/command-bar/CommandBarDialog';
 import { SettingsDialog } from '@/shared/dialogs/settings/SettingsDialog';
 import { getProjectDestination } from '@/shared/lib/routes/appNavigation';
@@ -141,19 +144,44 @@ export function NavbarContainer({
     projectDestination !== null && projectDestination.kind !== 'project';
   const [mobileActiveTab, setMobileActiveTab] = useMobileActiveTab();
 
-  // Simplified mobile: the session view exposes only the Chat tab. The other
-  // surfaces (diff/logs/files/git/preview) stay desktop-only for now, and we
-  // pin the active tab to chat whenever a workspace/session view is shown so a
-  // previously-persisted tab can't leave the user on a hidden surface.
+  const openWiki = useUiPreferencesStore((state) => state.openWiki);
+  const closeWiki = useUiPreferencesStore((state) => state.closeWiki);
+
+  // Keep the simplified mobile navigation, adding only the Wiki reader.
+  // Do not reset a valid Wiki selection on workspace/session rerenders.
   const mobileWorkspaceTabs = useMemo(
-    () => MOBILE_TABS.filter((tab) => tab.id === 'chat'),
-    []
+    () =>
+      MOBILE_TABS.filter(
+        (tab) =>
+          tab.id === 'chat' ||
+          (tab.id === 'wiki' && !isCreateMode && Boolean(selectedWorkspace))
+      ),
+    [isCreateMode, selectedWorkspace]
   );
   useEffect(() => {
-    if (!isOnProjectPage) {
+    if (
+      mobileMode &&
+      !isOnProjectPage &&
+      !mobileWorkspaceTabs.some((tab) => tab.id === mobileActiveTab)
+    ) {
       setMobileActiveTab('chat');
     }
-  }, [isOnProjectPage, setMobileActiveTab]);
+  }, [
+    mobileMode,
+    isOnProjectPage,
+    mobileActiveTab,
+    mobileWorkspaceTabs,
+    setMobileActiveTab,
+  ]);
+
+  const handleMobileTabChange = useCallback(
+    (tab: MobileTabId) => {
+      if (tab === 'wiki') openWiki(selectedWorkspace?.id);
+      else if (tab === 'chat') closeWiki(selectedWorkspace?.id);
+      setMobileActiveTab(tab);
+    },
+    [closeWiki, openWiki, selectedWorkspace?.id, setMobileActiveTab]
+  );
 
   const { data: orgsData } = useUserOrganizations();
   const selectedOrgId = useOrganizationStore((s) => s.selectedOrgId);
@@ -304,7 +332,7 @@ export function NavbarContainer({
       onNavigateToBoard={handleNavigateToBoard}
       onOpenDrawer={onOpenDrawer}
       mobileActiveTab={mobileActiveTab as MobileTabId}
-      onMobileTabChange={(tab) => setMobileActiveTab(tab)}
+      onMobileTabChange={handleMobileTabChange}
       mobileTabs={mobileWorkspaceTabs}
     />
   );

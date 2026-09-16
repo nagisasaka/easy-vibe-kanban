@@ -86,7 +86,7 @@ fn trace_launch_diagnostic(
     );
 }
 
-async fn should_disable_default_commit_for_workspace(
+pub(crate) async fn should_disable_default_commit_for_workspace(
     pool: &SqlitePool,
     workspace_id: Uuid,
 ) -> Result<bool, sqlx::Error> {
@@ -117,11 +117,8 @@ pub struct LocalContainerService {
     config: Arc<RwLock<Config>>,
     git: GitService,
     file_service: FileService,
-    analytics: Option<AnalyticsContext>,
-    approvals: Approvals,
     queued_message_service: QueuedMessageService,
     notification_service: NotificationService,
-    remote_client: Option<RemoteClient>,
 }
 
 impl LocalContainerService {
@@ -134,10 +131,10 @@ impl LocalContainerService {
         config: Arc<RwLock<Config>>,
         git: GitService,
         file_service: FileService,
-        analytics: Option<AnalyticsContext>,
-        approvals: Approvals,
+        _analytics: Option<AnalyticsContext>,
+        _approvals: Approvals,
         queued_message_service: QueuedMessageService,
-        remote_client: Option<RemoteClient>,
+        _remote_client: Option<RemoteClient>,
     ) -> Self {
         let child_store = Arc::new(RwLock::new(HashMap::new()));
         let cancellation_tokens = Arc::new(RwLock::new(HashMap::new()));
@@ -161,11 +158,8 @@ impl LocalContainerService {
             config,
             git,
             file_service,
-            analytics,
-            approvals,
             queued_message_service,
             notification_service,
-            remote_client,
         };
 
         // A service restart must observe and re-associate persisted processes;
@@ -353,6 +347,16 @@ impl LocalContainerService {
     }
 
     async fn handle_agent_run_terminal(&self, event: AgentRunTerminalEvent) {
+        if event.status == AgentRunStatus::Succeeded
+            && let Err(error) = self
+                .complete_repository_memory(event.session_id, event.agent_run_id)
+                .await
+        {
+            // Preserve source/draft for retry. Do not start a queued turn
+            // which could overwrite this run's source before finalisation.
+            tracing::error!(agent_run_id = %event.agent_run_id, %error, "Repository memory completion failed; source retained, queued follow-up not consumed");
+            return;
+        }
         let Some(queued_message) = self.queued_message_service.take_queued(event.session_id) else {
             return;
         };
@@ -395,6 +399,40 @@ impl LocalContainerService {
                 "failed to start queued follow-up after canonical AgentRun completion"
             ),
         }
+    }
+
+    async fn complete_repository_memory(
+        &self,
+        session_id: Uuid,
+        run_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let Some(session) = Session::find_by_id(&self.db.pool, session_id).await? else {
+            return Ok(());
+        };
+        if should_disable_default_commit_for_workspace(&self.db.pool, session.workspace_id).await? {
+            // Design Arena deliberately leaves source uncommitted until the
+            // existing promotion lifecycle chooses an implementation.
+            return Ok(());
+        }
+        let repos =
+            WorkspaceRepo::find_repos_for_workspace(&self.db.pool, session.workspace_id).await?;
+        tokio::task::spawn_blocking(move || {
+            for repo in repos {
+                let Some(store) =
+                    utils::repository_memory::RepositoryMemoryStore::existing_for_repository(
+                        &repo.name, repo.id,
+                    )?
+                else {
+                    continue;
+                };
+                if let Some(run) = store.run(run_id)? {
+                    services::services::repository_memory::complete_coding_run(&store, &run)?;
+                }
+            }
+            anyhow::Ok(())
+        })
+        .await??;
+        Ok(())
     }
 
     async fn remove_registered_agent_process(

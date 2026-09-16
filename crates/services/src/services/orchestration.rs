@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use chrono::{Duration, Utc};
 use db::models::orchestration::{
-    OrchestrationAgentRunLinkRecord, OrchestrationConsumptionRecord, OrchestrationEventRecord,
-    OrchestrationInboxRecord, OrchestrationLeaseRecord, OrchestrationNodeExecutionRecord,
-    OrchestrationOutboxRecord, OrchestrationPersistenceError, OrchestrationRunRecord,
-    SerialEachQueueItem,
+    OrchestrationAgentRunLinkRecord, OrchestrationConsumptionEffects,
+    OrchestrationConsumptionRecord, OrchestrationEventRecord, OrchestrationInboxRecord,
+    OrchestrationLeaseRecord, OrchestrationNodeExecutionRecord, OrchestrationOutboxRecord,
+    OrchestrationPersistenceError, OrchestrationRunRecord, SerialEachQueueItem,
 };
 use executors::runtime::{
     AgentEventEnvelope, AgentEventPayload, AgentRunPort, AgentRunPortCommand,
@@ -670,13 +670,8 @@ where
         } else {
             0
         };
-        let iteration_u32 = u32::try_from(iteration).map_err(|_| {
-            OrchestrationServiceError::Persistence(
-                OrchestrationPersistenceError::MissingNodeIdentity,
-            )
-        })?;
         let target_id = if target.join == OrchestrationJoinPolicy::Each {
-            stable_node_execution_id(orchestration_run_id, &target.node_key, iteration_u32)
+            stable_node_execution_id(orchestration_run_id, &target.node_key, iteration)
         } else {
             join_node_execution_id
         };
@@ -685,7 +680,7 @@ where
             target_id,
             orchestration_run_id,
             &target.node_key,
-            iteration_u32,
+            iteration,
             target.stable_order,
         )
         .await?;
@@ -1035,9 +1030,11 @@ where
             join_node_execution_id,
             source_node_execution_id,
             target_node_execution_id,
-            &event,
-            command.as_ref().map(|value| (Uuid::new_v4(), value)),
-            Utc::now(),
+            OrchestrationConsumptionEffects {
+                event: &event,
+                follow_up: command.as_ref().map(|value| (Uuid::new_v4(), value)),
+                consumed_at: Utc::now(),
+            },
         )
         .await;
         OrchestrationLeaseRecord::release(&self.pool, "dispatcher", run_id, &self.owner_id).await?;
@@ -1119,9 +1116,14 @@ where
         if run_status == OrchestrationRunStatus::Cancelling {
             self.cancel(orchestration_run_id, correlation_id).await?;
         }
-        let children: Vec<(Uuid, Uuid, OrchestrationNodeStatus)> = sqlx::query_as(
+        let plan: sqlx::types::Json<OrchestrationPlanSnapshot> =
+            sqlx::query_scalar("SELECT plan_snapshot FROM orchestration_runs WHERE id = ?")
+                .bind(orchestration_run_id)
+                .fetch_one(&self.pool)
+                .await?;
+        let children: Vec<(Uuid, Uuid, OrchestrationNodeStatus, String)> = sqlx::query_as(
             r#"
-            SELECT links.node_execution_id, links.agent_run_id, nodes.status
+            SELECT links.node_execution_id, links.agent_run_id, nodes.status, nodes.node_key
             FROM orchestration_agent_run_links links
             JOIN orchestration_node_executions nodes ON nodes.id = links.node_execution_id
             WHERE links.orchestration_run_id = ?
@@ -1133,7 +1135,7 @@ where
         .fetch_all(&self.pool)
         .await?;
         let mut unreachable = 0;
-        for (node_execution_id, agent_run_id, current) in children {
+        for (node_execution_id, agent_run_id, current, node_key) in children {
             let snapshot = match self.port.query(agent_run_id).await {
                 Ok(snapshot) => snapshot,
                 Err(AgentRunPortError::Unavailable(_)) | Err(AgentRunPortError::NotFound(_)) => {
@@ -1143,6 +1145,18 @@ where
                 Err(error) => return Err(error.into()),
             };
             let observed = node_status_from_agent(snapshot.state.status);
+            if observed == OrchestrationNodeStatus::Succeeded
+                && run_status != OrchestrationRunStatus::Cancelling
+                && plan
+                    .nodes
+                    .iter()
+                    .any(|node| node.node_key == node_key && node.requires_product_validation)
+            {
+                // The product must verify its protocol/result first. This also
+                // applies during generic startup/outbox recovery, not just the
+                // live Workflow watcher, so raw success cannot race validation.
+                continue;
+            }
             if current == observed || is_terminal_node(current) {
                 continue;
             }
@@ -1169,6 +1183,55 @@ where
         self.refresh_run_projection(orchestration_run_id, correlation_id)
             .await?;
         Ok(unreachable)
+    }
+
+    /// Complete a product-gated node after host validation. Ordinary agent
+    /// success continues to use the existing reconciliation path.
+    pub async fn complete_product_node(
+        &self,
+        run_id: Uuid,
+        node_id: Uuid,
+        status: OrchestrationNodeStatus,
+    ) -> Result<(), OrchestrationServiceError> {
+        let plan: sqlx::types::Json<OrchestrationPlanSnapshot> =
+            sqlx::query_scalar("SELECT plan_snapshot FROM orchestration_runs WHERE id = ?")
+                .bind(run_id)
+                .fetch_one(&self.pool)
+                .await?;
+        let (key, current): (String, OrchestrationNodeStatus) = sqlx::query_as(
+            "SELECT node_key, status FROM orchestration_node_executions WHERE id = ? AND orchestration_run_id = ?",
+        ).bind(node_id).bind(run_id).fetch_one(&self.pool).await?;
+        if !is_terminal_node(status)
+            || !plan
+                .nodes
+                .iter()
+                .any(|node| node.node_key == key && node.requires_product_validation)
+        {
+            return Err(AgentRunPortError::Rejected(
+                "Node does not accept product-validated completion".into(),
+            )
+            .into());
+        }
+        if is_terminal_node(current) {
+            if current == status {
+                return Ok(());
+            }
+            return Err(AgentRunPortError::Rejected(
+                "Product node already has another terminal outcome".into(),
+            )
+            .into());
+        }
+        self.append_event_with_product_completion(
+            run_id,
+            run_id,
+            OrchestrationEventPayload::NodeStatusChanged {
+                node_execution_id: node_id,
+                status,
+            },
+            true,
+        )
+        .await?;
+        Ok(())
     }
 
     pub async fn refresh_run_projection(
@@ -1358,6 +1421,17 @@ where
         correlation_id: Uuid,
         payload: OrchestrationEventPayload,
     ) -> Result<OrchestrationReducerApply, OrchestrationServiceError> {
+        self.append_event_with_product_completion(run_id, correlation_id, payload, false)
+            .await
+    }
+
+    async fn append_event_with_product_completion(
+        &self,
+        run_id: Uuid,
+        correlation_id: Uuid,
+        payload: OrchestrationEventPayload,
+        product_completion: bool,
+    ) -> Result<OrchestrationReducerApply, OrchestrationServiceError> {
         let now = Utc::now();
         if !OrchestrationLeaseRecord::acquire(
             &self.pool,
@@ -1393,7 +1467,11 @@ where
             timestamp: now,
             payload,
         };
-        let result = OrchestrationEventRecord::append_and_project(&self.pool, &event).await;
+        let result = if product_completion {
+            OrchestrationEventRecord::append_product_completion(&self.pool, &event).await
+        } else {
+            OrchestrationEventRecord::append_and_project(&self.pool, &event).await
+        };
         OrchestrationLeaseRecord::release(&self.pool, "dispatcher", run_id, &self.owner_id).await?;
         Ok(result?)
     }

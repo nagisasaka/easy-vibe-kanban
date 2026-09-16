@@ -97,7 +97,6 @@ impl NativeAuditFrame {
         content_type: impl Into<String>,
         correlation_id: Uuid,
         payload: &[u8],
-        metadata: Option<Value>,
     ) -> Self {
         Self {
             audit_format_version: NATIVE_AUDIT_SCHEMA_VERSION,
@@ -110,8 +109,13 @@ impl NativeAuditFrame {
             payload_encoding: NativePayloadEncoding::Base64,
             payload_base64: base64::engine::general_purpose::STANDARD.encode(payload),
             payload_checksum: sha256_hex(payload),
-            metadata,
+            metadata: None,
         }
+    }
+
+    pub fn with_metadata(mut self, metadata: Option<Value>) -> Self {
+        self.metadata = metadata;
+        self
     }
 
     pub fn payload_bytes(&self) -> Result<Vec<u8>, NativeAuditError> {
@@ -469,8 +473,8 @@ impl NativeAuditWriter {
             content_type,
             correlation_id,
             payload,
-            metadata,
-        );
+        )
+        .with_metadata(metadata);
         self.append(frame)
     }
 
@@ -902,19 +906,18 @@ impl AuditBundle {
         let result = self.replay(mapper)?;
         if let Some(expected) =
             self.read_expected::<ProviderEvent>("expected-provider-events.jsonl")?
+            && expected != result.provider_events
         {
-            if expected != result.provider_events {
-                return Err(NativeAuditError::FixtureMismatch {
-                    kind: "provider_events",
-                });
-            }
+            return Err(NativeAuditError::FixtureMismatch {
+                kind: "provider_events",
+            });
         }
-        if let Some(expected) = self.read_expected::<AgentEvent>("expected-agent-events.jsonl")? {
-            if expected != result.agent_events {
-                return Err(NativeAuditError::FixtureMismatch {
-                    kind: "agent_events",
-                });
-            }
+        if let Some(expected) = self.read_expected::<AgentEvent>("expected-agent-events.jsonl")?
+            && expected != result.agent_events
+        {
+            return Err(NativeAuditError::FixtureMismatch {
+                kind: "agent_events",
+            });
         }
         Ok(result)
     }
@@ -1197,7 +1200,6 @@ mod tests {
             "text/plain",
             Uuid::from_u128(5),
             b"out-of-order",
-            None,
         );
         assert!(matches!(
             writer.append(invalid_sequence),

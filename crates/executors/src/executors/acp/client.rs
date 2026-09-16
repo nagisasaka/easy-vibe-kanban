@@ -92,28 +92,6 @@ impl AcpClient {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::executors::acp::AcpEvent;
-
-    #[tokio::test]
-    async fn native_replay_gate_drops_events_until_enabled() {
-        let (event_tx, mut event_rx) = mpsc::unbounded_channel();
-        let client = AcpClient::new(event_tx, None, CancellationToken::new());
-
-        client.suppress_events();
-        client.record_user_prompt_event("adoption prompt");
-        assert_eq!(client.suppressed_event_count(), 1);
-        assert!(event_rx.try_recv().is_err());
-
-        client.enable_events_and_record_user_prompt("adoption prompt");
-        assert!(
-            matches!(event_rx.recv().await, Some(AcpEvent::User(prompt)) if prompt == "adoption prompt")
-        );
-    }
-}
-
 #[async_trait(?Send)]
 impl acp::Client for AcpClient {
     async fn request_permission(
@@ -328,5 +306,27 @@ impl AcpClient {
             }));
             Err(acp::Error::internal_error())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::executors::acp::AcpEvent;
+
+    #[tokio::test]
+    async fn native_replay_gate_drops_events_until_enabled() {
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+        let client = AcpClient::new(event_tx, None, CancellationToken::new());
+
+        client.suppress_events();
+        client.record_user_prompt_event("adoption prompt");
+        assert_eq!(client.suppressed_event_count(), 1);
+        assert!(event_rx.try_recv().is_err());
+
+        client.enable_events_and_record_user_prompt("adoption prompt");
+        assert!(
+            matches!(event_rx.recv().await, Some(AcpEvent::User(prompt)) if prompt == "adoption prompt")
+        );
     }
 }
