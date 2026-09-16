@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:1664ea866ce25c318986c18a84e3e8b70dd74d0c8b4854b5c0537473843c3493",
+  "claims": [
+    {
+      "id": "claim_fe336fda43dd4a7087db9ff239381b34",
+      "statement": "Pipeline は宣言的テキストであり、ロードだけではエージェント作業をスケジュールしない。",
+      "evidence": [
+        {
+          "resource": "repo://crates/services/src/services/pipelines.rs#L1-L3",
+          "version": "repo-lines-v1:sha256:e49d4b9d825f82f7d9b44c1ee9d834c9d4ee028e0d0204659c6dc865f5924328:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmU5ZThiYzQ2ZDU2YzBiNTI3YjNjZmRkNWVlMTEwMTE3YzkzMjAyY2YwM2VlOTQ3ZDZiYzA2Mzg4ZTE0MzdmZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjA3YzE3NzI1NDZhNGQwZjBlZWY3NTllOGZlNGIwOWExYzg3YzhjMmIzYmRkMzJjMGRmMTdlNjJkNTFjNThmOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmVkMjRkNDFkYjU4ZWQxMDE2NDJhZGE0M2QzODgwMmExODZiY2QyN2M1MGY5ZjY4OTZhMTY2NzcxMjRlZThhMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_e93f2ac2362346bd85bac9e9906a26dc",
+      "statement": "Card context は保存済み指示と空ブロックによる無効化を保持し、本文編集時にプリセットを再生成しない。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/features/pipeline/model/cardContext.test.ts#L89-L118",
+          "version": "repo-lines-v1:sha256:c288096b4ef3c5d836bbc161eddce85c16af0ac0f2915f21bda22efcd6174fed:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwNmRmMTEzZDI5ODA2OThkMzRhMzRiMmJmZjcwMmUxOWNiMjE3NDUzODc4OWY4YmVjNzMwOWI5NjY0MTMxOGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlZWExMjY2MGNmMzUzZWRiN2MxZjJlNDk1OTEwMWVlYTNlZmUxYjkwYWJhYWVhNmU5NTNjNjk0MzhhYjEyNjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU2ZDM5MjQzNjdhMzUxYjU5OGU5NmJiZTZkOGE5NDljYzE2NGZkNmU3NDFiOGI4NDkzZTkzY2EwOWJiZGU5OGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRkY2Y5YzFlODRmODRhNmE2MWU4YTQzMmRkMzBkYWIyNzkxNDdjMDRhODcyYmRhMzA1ZmNiY2ZkNDk5ZWNmZTcifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/features/pipeline/model/cardContext.ts#L25-L98",
+          "version": "repo-lines-v1:sha256:f51779e49b89636dd6ec6b111a0ace4b171d9b0a3cc31bee3ecc640049794ad6:eyJzZWxlY3RlZExpbmVDb3VudCI6NzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExYzc0YWY0NTRkNDg5M2FlMzcyZWVjYzZhMTI3OGNjYzFjM2I3MmM4YzRmNjA2YmU2MDA2YTA4YjQ3NTg0Y2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1ZWYwMWJjMDhkYmMzYjYzZTRlNzVlYTNkMjZhNWI5NDE4OTE4NzdlMjdhZDg5MTMyOWM4NDExZDdkOGRjNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhlYmI0OTJlZWVjNDlkZTI0NmZmZjg5MjBiMjk4MWQ4ODZkNjk4MzMyNGQwMjVkZjNiNDkxMGI5N2I5OGFmNmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ0NmIzODFjNmI5YTcxODk4NzNkYjYwYzcxNWY2MDcyMjI0ZmYyNjQ5M2E2OTY3NzU2ZTY4NDY1MDc0ZDdmZTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_326b8ff62fbe4513b07955a538ba10e7",
+      "statement": "Pipeline の再構成は最後の完全な marker ブロックを置換し、周囲の本文と手書き補足を保持する。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/features/pipeline/model/cardPipeline.ts#L19-L109",
+          "version": "repo-lines-v1:sha256:01c4fe68f588c6773bd8ee642e00d014f43f497c42912c9415fe0ff770039a93:eyJzZWxlY3RlZExpbmVDb3VudCI6OTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2NTBkMjYzYTkxNThlZDJlZTYzZTAwZjUyYzliZWUwMTRiZDBlNGNlMTk2ODIwNjNjODhiZjIyMjBkNzVhYzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxYTQ1MjBjMTdlYTdlNDRjM2NmNGQ5OTQ5ZGI2ZmVjMjFlZWFjOWY0ODgzNjg5ZmRhNzEwNGE2YTUxNmJjZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5OWI4NzhlNWFlZTE0NTI1NzVkZjkwMjYwOGFjZjM1MzFhMjQ3ZjI0MjhiZjY5OGI3ZGU5OTVjODA5ZWQ0YjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIxOGI0ZGU1ZWYyYWIwZmQyMWI4Zjg5OTc1OGVkZDYxNmNhZmMyNmY1YmNmMzJkYTcyZTY5ZDRhOGFiMDNkYzkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_148687219a68442990df828e92063194",
+      "statement": "Card context は初回 Workspace リクエストに含まれ、全チャットや既存 Session への自動追加ではないと文書化されている。",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L78-L83",
+          "version": "repo-lines-v1:sha256:3e718a81aa184760de4a6819dd446034c1d021d824f50b28182b888f51fa7c68:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGJhZmQ3NTU3NjIzMmU2ZmNhMGY2YTFjZWRiY2ZjYWU4ZmRkNmI1NjEyOTNjZTRlN2I0YWVlNjA1N2ExZGQwOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWVjODVmZTAxNWNhYmRlMThhMjYyMjhmM2M0NzgwMWM0YzgzY2I3ODgxZmQwODQwYTE3NGNkYTBjOWRlMmYyMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2FkZTNhNTdmNmE0NTkzMTEwMzlkNjAzOTc3Y2I1MmQ2MjJkZGZmMzA4OGQzOWRiZGRjZTM5YTE1NDllODkwMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDNiZjdiYzBhZWVlNTFiNzlhMzBkOGQwMjY2MmU3MGM1NjU5Y2MwYTdiZmRjY2U1YTk5MzI0NzZlMjZjOTJmNCJ9"
+        },
+        {
+          "resource": "repo://packages/web-core/src/features/pipeline/model/cardContext.test.ts#L65-L74",
+          "version": "repo-lines-v1:sha256:117dc33848f7029bd95611a882c40d918cbdd4a7c06ee2864a2014d4bfd0b2b9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIzYTg3ZmY1MzIzZmU3YWEyYWFkZjBhYzA0ZTdhYWI0ZGExODAxNThjYThkODg2NzcxN2JmM2I5NmE5YzQwY2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhM2U0NmY5NDI3NmI2ZjZmNGVkMWYwMmFmNzhiZWY2YTJlZTFjNDM5ZGQ1NTg0Yjk3Mzk0ODMxMzIxNGQyYjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEwOTgzOTUyZTcxNTE3NzZlNTUwZGEwZjllNDRhYWM4NDQyZWNiNWZlOTVkNThmZTg3M2JhY2E5NzlhODc4ZTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFkN2YyNGEyZDZiMzY2N2U1Y2FhYjRhNmRmMDNhMDc1YzVkNTVhZjMyZTExOGM2NTk1YjIxMDRhNmQ2MzE3ZTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f559319ae01847d8816eff5625769574",
+      "statement": "Pipeline 同梱定義は既存ファイルを上書きせず、不正定義は警告して読み飛ばす。",
+      "evidence": [
+        {
+          "resource": "repo://crates/services/src/services/pipelines.rs#L138-L188",
+          "version": "repo-lines-v1:sha256:fa124ae015dfe3d44f53fd0c45c61842608137898a21003f7f7a237d2692e0c8:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5YjZlNGJhOGNmYjI5NGJkNjUzMjVhZGQ3OTA0NTJlNGRjNzEzZDczMmIwYWI1YzUxNWRkNjczNmNiZWU5MGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkNWNkYTBiZjkwODA5ZTQzNWM3YTVlZjRkYTJkNjgyZDMwZDNjOWIwOTJlMTgyYjExZmUxMmE0ODkyZDU0ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNjNjNGQxYWY4Y2Q4OWJiMGJkZDc2NTdmZmNiZjY4MDZhNjEwZDc5ZDZjOGQ0YzMwN2MyNDFkZjM5MDA1MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjE2MDRiMzVmYzQwYWYwMGNiYTRlZWEyZmQ1ZTJjM2FmMTg2M2IzOTExODVkN2JmNGJiMDllNzJkMGM4YjMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7c742d9240134b07a21ab7ca4f5442c7",
+      "statement": "LLM Wiki の Recall と Enrich は条件付きのエージェント指示であり、該当知識や宛先がない場合の無変更を許容する。",
+      "evidence": [
+        {
+          "resource": "repo://assets/pipelines/wikillm.toml#L4-L14",
+          "version": "repo-lines-v1:sha256:6680e7eabf5dafd74a6aee5075ad1616bf06017cefa13f5c26fb1600e4a1cd61:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzOWEzM2IyYWI3MjZmOTZiMjFiMDExOTViZWI0ZTA0YTU5YTg5Njc0NjJiN2QwZTYwODg3ZDQwZDQ3MWQ0OTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1ZjBhNjk2ZjE1MmQwMGM1MzA3NjZiMTk5ZDBmZDNlOTQ4Y2VhYjUyZThjN2U4MjFlNzI4M2Q5M2IxNGU2Y2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI5NzViYTU3ZWUzYmYyZmE1NmNmMzM4ZTM4ZjZkZDIzOTRlZTk3NjFmMDdjODRhODI2ZTg2YTM0ZDk5YjMxMjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8180eed52ef544b08e61ad40fd097be9",
+      "statement": "LLM Wiki Skill 追加処理は完全な専用ブロックを検出し、既存同名 Skill を保持し、配置失敗時は警告して続行する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/executors/src/knowledge_skills.rs#L11-L65",
+          "version": "repo-lines-v1:sha256:818e503b40680f7b106e0d08f8c213c9cba6d8f37db93ebba9454a9bcf0e3411:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjNDBiMjViMDIyNTc1ZjFmN2UwN2FjY2VmNGIxZmJjYjNiZTlhNmQ3MWUzYzJhZjg3ZDU0Yzc0MmVkNTMyMGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkOTQwNjVhNmU4YTJkYmY3OWIyYzZiZTZiZWY4YTAyZmQ5OWMxYzczZmFiOTk1OTkyZGM1ODI3N2RkZTM2MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiYzk4ZDZiMGRjNDkyYzUwMTZkZjEwODA1YTNhNTRlYjljMTg0YTVhNjEzN2U3ZjRiZWNmYTBjMjIwNTUwZDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a8d3de1884e942fd89d55be8d01aca1a",
+      "statement": "LLM Wiki 準備は全接続リポジトリの既存 Wiki を先に検証し、不正な既存データを修復せず、リポジトリなし DirectFolder だけはルートを使える。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/sessions/agent_run.rs#L47-L114",
+          "version": "repo-lines-v1:sha256:5851afabfaeb55ce17916850737228f568b23369e7f37f41363684ca796931f4:eyJzZWxlY3RlZExpbmVDb3VudCI6NjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3NGFkNjU2N2Q0Y2MzNGI0OGIxZTJlNTM3ZjFhNWMwOWYyMWNkY2VkN2U3OGZhMTc3MjZiMmY2MGFiMjMyNTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM4NmUwMmNmYmY4YzVkNTQxMTE3ZjMyMGJkMzYzMzA4MTBiOGRlNDU2NmQwNDhhMzVlMDliYzdjMzRmYWZjODkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiZmE3MWQwYTNhZjA1M2UwMjJlNDI3YzYzZTVmYjViMzA5MTk1ZDQ3ZjU2Y2Y4YzAxZTY4NzM3ZGYyYzc4MWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3YzI4NmFjZWVkOGMzYTM4YWI0NTM3MTc1YzBkYjgyM2FlOWUwZmFjYTcwOWRiMzM3MTBiODA1YzQyZTg0MDkifQ"
+        },
+        {
+          "resource": "repo://crates/server/src/routes/sessions/agent_run.rs#L726-L764",
+          "version": "repo-lines-v1:sha256:0721e1cff5dba7eaee895249b3ed8019b9f4e89c1fb5f548b94832a7688099ae:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyYjVlZGY1OTQ5Y2ZlYTY3ODIyY2Y2OTExMzIzNjNkNjhkNmYxZTE2OWY1ZTBkNGY3YzE0ZTVmYTFlNmQ0ZTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNiMTY5NzVmNjI3MWI4NjQ1MjY1MjViY2ZlM2FhZjA1NTQwYjUwZWVkMGZlMTViMDhmMDQ2ZTk1NTFkYTM3YTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYyZDgyOGEwMzdhYzFjODE1MzViMWQ1NTAwODMyMzIzYmZiYjg2NmEzYTNmODdlN2E2OGMxM2EyYmFlNTZmZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwMGRiMDQwZjI5MDliZjk3OGZmMGE5NTZhNTVlODNjNjUzNDE4ZGU2YmI2OGY4MDQxZGE5NzZmOGQzZDIyNzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6f7934ec98de413d9586ca2953d04d12",
+      "statement": "LLM Wiki は config.toml、index.md、pages を要求し、設定更新は初期化や修復を兼ねない。",
+      "evidence": [
+        {
+          "resource": "repo://crates/services/src/services/wiki.rs#L179-L220",
+          "version": "repo-lines-v1:sha256:2fcaf187430b494a0118cc1d109caf9edbf5080cbeecb0b970406d7a76c489d7:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1MTVmZDM5ZGM0ZTBkYWVlNWRlNjkwNmViYmIyNzFhZjZkMTdjYjE2NTFmZjMzOGFiMTI2NTY1NmRlY2ZlMDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwNzcxZTdlODE4MjdmY2U5NTlmNzc5NWIzMjA3NTNiOWNhMmQwMTQ5YjEwZGI2ZDVmM2FjMzdjYmRhYjQ1NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhiYjAwN2M5ZTQxNDQ1MzY1MmRiNzVkZDY2YjYzYzQwZjE4NzY4NDBmMGYwOWZhMTQ4NzAxMjQyZmQ5OWRiODEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4NmY5YzJiZWQ0OGVkMGEwOTdlZjFmM2IyODRjMmYzYTYzZTcyMjkxYTg2NGU2OWQwZDE3MTNhNDFjNGI5MzkifQ"
+        },
+        {
+          "resource": "repo://crates/services/src/services/wiki.rs#L291-L328",
+          "version": "repo-lines-v1:sha256:681b633df7575cc99c92ba8e3f5953b1a13b4e6c8cfa32356d8b2f6a0e58b967:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1OGM4N2M0ZDQwZGViYjhhYmYzMDE4MWFhYjRlZDI4NzQxMDJmODMzNDdjMTEyMDQ2M2Y0MjY3MDljM2QyYWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4OTc3MWZlMWI2NjI4ODc1YWEyM2U3ZGJlNGFhNzE0NjFkMDBjZGZiNjZkZGYxMWI5ZDgyMGFjNTg5N2ZkZjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1ZjZmNDY2ZTU5Y2ZjMzA3MDNjNDVmNzJhZjY1ZGU1NGFjMzYzZDM1NGNjMWEzMzMwMzUwYWNkNDUyNDM0YzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU5MjVkZWM5NDY4ODU4ODMzNjcxODJiMmI0OWQ5NGYzYzYzZDlkNjJiOTdlM2RmZGY1MjVjNmJhNzI5YzUwZjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_466539ab84774752897cf434f7ea4bee",
+      "statement": "legacy .llm-wiki 読み込みは symlink とルート外を拒否し、512 KiB/ページ、2,000 ページを上限として pages 直下を走査する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/services/src/services/wiki.rs#L13-L17",
+          "version": "repo-lines-v1:sha256:0e9995581e49f6e1a855f5d42d4a9db939bc9db467a7d8996c13b44b2fe00ccb:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2ExNWI2OGM4OTM5Mzk3ODc2OGI1Mzc2NzdmZGRlZGFhZTQ1NDNjNDRiNDQwZTUxM2ZjZGE4OGY2YjRhMTlhMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGEzOTU2MWJiYzRhNzI5YTVmNDFiOWYxMzdiNzQ3NDQ1OWNmNTgwMDJmYmE2ZTg3MGUzYjg2MTBmNTM5NjAzMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWNmMTFkMzg1MDhiMTUzZDE5ODg2ZWUzOTZlNmMyN2RlMmZmY2Y2ODkwOTY0OGY3ZDAxNmJmNDBhOWY2Y2Y1NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmVlMGJhMzliOWQzOTI1NzM5ODc1ODM4OTk0MTEzYzlkMWFkYzFhOWU2NjRkMDMyMDU5MDNkYzNlNGUyNThmNSJ9"
+        },
+        {
+          "resource": "repo://crates/services/src/services/wiki.rs#L160-L205",
+          "version": "repo-lines-v1:sha256:921776158eb0da948a3c0eef6c0ca795d3d595a2653e3bd392dfce14cce02d09:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwODNhNWU4MjA3MjE5MTg4YmFkYjc2NWVkN2NhNTI4ZDMwMjFjODY5NThhM2MwOTVkZjY3NDNmMThiZjUxY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiNTU4NjhmOWVlNjQyNTY4NTA4MDFhOTU4ZDgxOGIyMTI0ZmIwZDdlMWU4OTRiOTMyODFiNmU1NTNhZjBlNDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNjNjNGQxYWY4Y2Q4OWJiMGJkZDc2NTdmZmNiZjY4MDZhNjEwZDc5ZDZjOGQ0YzMwN2MyNDFkZjM5MDA1MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQzYTc4ZDkzZDAwMDM1N2ZiMzZlMDEyN2UyYzExYzdiZjc3ZmNmYTQwYWU1NGY1MjM3NTNhMjk0NjUwMmJlZTIifQ"
+        },
+        {
+          "resource": "repo://crates/services/src/services/wiki.rs#L240-L265",
+          "version": "repo-lines-v1:sha256:7d9a4e6633f69c3ad2135605f00975b508800c7736cd4eb7ded5555699302217:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxZTMwZmRiYTUwZWY5MmRjMmNmZjNhY2EzZGMxZmY2NjQzYTQ2ODI5ODRjZTZkYjljZDRiZTlhODc3OWVmNzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiYmNlMzQ0ZGQ4NWMyNmZhNjZlNzc4NjFiNjhkM2ZkYTY1N2FjMDZkNGEwZDFjYmNlYjdmZDczMDdkYzM4MDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjOTBkZGMxMTY4NDE4ZWQ5ZGQxYzA1OGE3YWZiMTBhODUyNWZkMjQyYTdkNmZkOWYwODEyYTliMWIxZjg4YmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjYTJhOWEwMzRjY2ViMDIwOTc5NjBlM2Y5YWM2OWY1YzYzMjhlYWY0OGJhYjUwMDU3NzhjODNjMWJlMzJiMzMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a0d211f1c8e34f6580987405881c66cf",
+      "statement": "LLM Wiki API は Workspace に属するリポジトリを解決し、リポジトリなし DirectFolder では Workspace ID を repo ID として扱う。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/workspaces/wiki.rs#L81-L120",
+          "version": "repo-lines-v1:sha256:94582f01b7e7d6d8454bcf4bc2f8efcbb91abbd66400dc90004d13901b391fa9:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxOTE3ZWE5ZTM2MDkwYjAxODk1Njg3YjRmMGE3ZmM5ZjhjZjI4YjViMTUzYmUwM2Q3NGQwNjc1YWVmNTcwYmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0NzVlOTRhOTA0YWM0OWIzMTU0ZDQ2NzJhNjZlODYyOWI4NmRhYzc0ZTNlMjkzN2JlNjkyN2FlM2RhMTFjNTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzODFhMTY0MmQwNmM1MjU3OTNkZThmYjJkYzQ2MzJhNDFmNTFmNjIxZDM5NTMwZGM2OTBkN2NlZTU1ZGM5ZWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwZDkzNzNiYjE2NmY1NjliMzgwMjNiZDczMjgxNGRkZjQxY2UwZWJkNDE5MWE4ZjFmNjBkMTY2ZDAzYWI0ZDEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9251267311d7461984a3cc346629b0cc",
+      "statement": "LLM Wiki の設計は各リポジトリの作業ブランチ内でコードと同じレビュー・統合に従う知識を意図する。",
+      "evidence": [
+        {
+          "resource": "repo://docs/superpowers/specs/2026-09-09-llm-wiki-design.md#L33-L49",
+          "version": "repo-lines-v1:sha256:936874ab5f63aa00308e8a61e723b30e595ad4e0e04ccae3fcbdedbff32a4ce7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExMDUxYmRlMmNjMjNjMDdiZDQ5NTFiMGZhM2I3Y2UzOGEyOWRhMTI5NDM3NjA2YzJkNWUwNTYzNTQ2MTVmNTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1MjU2MDUzZjE5YjQzMGRmMjZkZWFjMWM0ZDdlYjBlZDhmNTY5M2NlNTRhZmZkNWFkYjM1NThjNWZlMjI0YTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg1MjkwZjU4MmFlNGU2ZWNhNzdhODU4ODY5NzlmMTVhYzM1MTM1MGI4ODUxMDJjNjcxNDk1YmVjYmVlZDE5MDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNmMjBjZTI5N2I2MWNhZmNmMjc5ODVhOTBhMjU2ZDZhOWQwZmMwYTJhNzg3YTc5YmMxMGY4ZDAxNDUzYjNiOGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_997db6c5857a4dd89d50429517cbf21c",
+      "statement": "Workspace Wiki API の openwiki=true は階層型 OpenWiki の読み取り専用 adapter を選び、隠し管理ファイルと INSTRUCTIONS.md を表示ページから除外する。上限超過を部分成功にせず、既存 legacy Wiki の設定や更新経路を使わない。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/workspaces/wiki.rs#L158-L184",
+          "version": "repo-lines-v1:sha256:49df04e3517c82c20e6cc3571b1dc0ec68c15c3f041c76394467d2c9c22e3fe1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxMzkyYWE3ODVjYzJjNjA1OWUwNmFmOTUxYTBkYjcwYWIxMDY3NDZjMTNhYmJhNDg0ZWYyYzY3MWM1NmZlZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwZGQyOThmODg2ZTlmYTU1NDg0ZGJhNDI5NmQ5MTRjNGUwNDIyNDg2YWEyZjg5NGY4NmJjNTYxNzdjOWEwZGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4NjMwMmQ5YWU5NzhjZjI3N2Y0MWY1ZmZlOTgyNDFlZTk3Y2U1YWRhMDU0MGIzNjg0MWUxODk0MTM0NjJlNjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNkMDVhNDEyN2I5MWY3ZWYzNmE0Y2I1YWZkNWE3ZDVkMjQzNWUyZTRhOTY0ZWM1MzA5ZTEzYjA3MjhjODBkNzUifQ"
+        },
+        {
+          "resource": "repo://crates/services/src/services/wiki/openwiki.rs#L1-L71",
+          "version": "repo-lines-v1:sha256:a2a468542b71a872587f756ae45d7c9500e42660b037502c412783555fe7d912:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1MDcxNTQ3NTc3Y2JjYzc1ZjNiMGM2ZGE0Mzg0Y2E5ZDhlZWZiZmE3MGU5ODk0MjQ3YWFjOGViMjUyZDBhNWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5OGQxMDg3OTUyYWMyZTRhNGQyOGE3ZTIxOWE5YjZhNDhjZTk1OGRjNjI0ZDE4MTNmYmZjZmE0NWIwMzBmYzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZhNDhiMDNmY2UwMWE3YWJmZTlkOWY2OGZjZGE2MWY1ZWQ1N2Y0NTk5MzdkNjBmMDQyZTMyN2Q2MDI0YmI0MmEifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-16T18:13:42.498Z"
+  }
+}

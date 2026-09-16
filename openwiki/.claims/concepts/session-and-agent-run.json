@@ -1,0 +1,312 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:7e64e65568b8661e7fe9157d8cf97ce2effffba5bebeb111158948ab51bfbf96",
+  "claims": [
+    {
+      "id": "claim_82c340b0bbd240889908ea6c2c5be423",
+      "statement": "Session は Workspace 内の会話であり、AgentRun は依頼、RunAttempt はその実行試行を別識別で保持する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/db/src/models/agent_runtime.rs#L31-L92",
+          "version": "repo-lines-v1:sha256:4fc4d6e362757f0705be875ff78ec4f063d408ea410d2c3a4f15b3db32eab9ad:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyNDNjYWExNzQzNjM0NmM4NTZmYWJlM2YxNGIyZjA2OGM5MzQxN2I4NjFiYWQ2YzJlZTI5ZGU0N2U1OWRmYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM4MjUwODc4MmM5OTZlZTMxNDE5OGZlYTJmNjE2MzFjZDczZTc2N2ZiMDVlYjZlZjY4MWZhZDg5MTZiZjFlMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkYTdjNWU1ODRlZjdhY2E0NGU0ZjlhN2U3YzI1ZGU1MDZlZmJmNTZiZjAyMGZmZmY2NjJhMmI5M2M3ZWZmNjQifQ"
+        },
+        {
+          "resource": "repo://crates/db/src/models/session.rs#L22-L31",
+          "version": "repo-lines-v1:sha256:f059f3763661f346552e6b44f5405eee9d011461aec2c6a2fb42835e3c6861b8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiNDMxYmJmN2YxYmRkM2VhMWI5YzU5M2IxMjYwZjM3ZDY2ZWM5MWM0MDRhYzRlYTg5NWNhNGJjYThlZjA3NmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4MjhhOGQzMDU1NDYyNThiMGMwYzFhNGUyYzczYTc5ZTBiNTUzNDkyNzE1NWU1NDJlNzRhZTViNTYxYTIxYWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhNzk0MDEzM2M5ODA5MmMwMDg3ZGJiMDc3ZTU2MGY2MGZmMjQ2NTAxNTEwM2JiZDRlMTg1MDZjMTY5YmQ1NTMifQ"
+        },
+        {
+          "resource": "repo://docs/workspaces/sessions.mdx#L10-L21",
+          "version": "repo-lines-v1:sha256:2b9f70e69c5daccb20f54915b8e300866e9bba2634fde4e289a1ca23232bb060:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxODM3YTdkNzVkYzk0YTlkZDk0ZDdiMWFhMjAwMzMwNTgwMmY0MjhlMTMxYTU0YTYzNGU4YTkyNjZlNmQ0ZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkMjVmOGFhNzAzZjdlYmUxMjQ2Njk3ZDY5ZTkxNGI4YWIyZDBmMmIxZGViYzhhNGMyY2M1OWI5ZjdjYzkxNTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMxZGY1OTYxMWEyOTg0ZDkyNzBmN2FlNWYwZjQzYWRjNGMxMjkwMWUwMGFiNjJmNDhkMTk2YjkxMmI0OGJlNTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5ZDU5MTY0ZjQ3ZTVkZWZlMGY4ZDIxZWMyMzE3N2Y1MjFiY2RkOTM4YWIyMzEzMDliMDNkZjYxNWJiNWU4NWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b45c056c9ff646c282b00257dcdf0d98",
+      "statement": "RunAttempt は run identity、provider/profile、Workspace、capability/config の一致を検証し、ReviewのSkillsとFollowUp外のresetを拒否する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/executors/src/runtime/contracts.rs#L294-L345",
+          "version": "repo-lines-v1:sha256:3e113a3176efde7c756b8b199d44636a8b671ef576d51e3cb6453cf489168bd4:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1ODQxNDU5Y2YxYzllYWIzNTk0OWY1Y2Y5MzBiNDliNzQwZjg4ZGVhNWQ4NzRmYTliYWY5ZWNjMGNlMTk0NjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRlZGI5NGMyOTk4OGRhYmNhMGEzNDliOTZmYTU4N2E3YTVmYTU1YmE2YzczOTAxZWEwNWU4NjcyZDMwYTE1NDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE3MjQwODM0ZDFkY2ViZjdmOTE3YzNhMTJjMzQ1ZjY0OGQ5YTJlZjA4NWI1NjdjNWJjZmFlZGIwZjhhZjM0ODYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_09cb2360b3ac4c38860199cb4046c380",
+      "statement": "通常 follow-up は活動中の同一 Session run を拒否し、provider session 有無から intent を選んで新しい AgentRun を作る。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/sessions/mod.rs#L334-L348",
+          "version": "repo-lines-v1:sha256:de65c94e33282c5b12db0c503b4764d55fc2795496d4fbfc2a28d0a1a3b58c0c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3ZGI4YTBiZTRiODYwZmU5ZWE1ZDIyYjY4YWY0YmYzMDQyYjRkNjI2OGUxY2Y1MTIyNjA0NWZjMTZhOTkzMjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4YWM2ZTc4MmZjMDQ0NWE4ZTM3ODdjODZhYjU2MGVhMGNiZTU4MzQ4MTU2MTBiMGQ5OTE0YjBlZTYzN2QwZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5N2JkYWYxNTRlMDE1ZjY4ZjlkNDUzZDA4MzRhMTkyYTg1YzE1NWIwM2QwNjU0YzFmYjRjNzZjZDk0MTg2YWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM1ZmM4YTA4M2JmZDRmNjQ4NjU0NzMzNTg4N2MzMDFhMjViYzViOTgxOTFlMTZiMDhhMzkxNGVmODYyMWNiZDkifQ"
+        },
+        {
+          "resource": "repo://crates/server/src/routes/sessions/mod.rs#L392-L439",
+          "version": "repo-lines-v1:sha256:a0b62b71e4b3fe892d061546774f389f72eef4df650835dd94f0bb0316774eb8:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4NmNkZmZhNDhjMGZkMmM0YWRiYzNiYWI3MzUwOGJmYjMyZTFkYmIwMTAzM2NiZThiYzViZjAxZjRiNDdiMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0NjI0MmE5ZDY5M2VhMTVkZmJiY2RkN2I3NmYxYmNhYzNjNGVlMGVlMWY4MWU5YWM2YmExODE5YTQ2ZDQxOTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3NzBhMjNkZjk5ZTFmN2RlMDBmMjljMzUxMzFhZTczMjQxZDc4ODUzODUyNDZlMGU1ZGE4Zjk4ODljYWYwNmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3MTUyY2U2ZDgwZjY3NDcyZDRmZTJjNWVhYzRlMDY1NDg0N2U0YjI1YzMxM2ZjYmNmZTExMDc4MTZlYmNjYjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d0721b4e3e0f4b15868938e2bb8c8e90",
+      "statement": "Retry は終端 AgentRun の同じ turn の試行番号を増やし、ResumeかRestartだけを許可して前回設定を維持する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/local-deployment/src/agent_run_port.rs#L2639-L2704",
+          "version": "repo-lines-v1:sha256:1d72451b6f3b06cf0693d66f4681b87e6f98e1068b609d148de40ae133d764f2:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlNTgyM2ZkNmZkNTk1NmFiNjk3NDBjNGQwNjAyYjAyMzFhY2RlMWYyNWY3ZmYwNjE1ZGQzZmFjMGY5NTFkMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5MTVkZWRjYjlmNWE4ZTI3YTFiODhiNmE3Yzk1NjA5OWZjMmI1NTk2ZGVjNTRkOTI2NTgzZTkyZGU2NmFmNWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0OTZmYzc2NmU2YjcwZDczNjMxOGIzMGUwNmFjZDczNTIwZGMyNmIwZTYzMmY4Yjk3ODAzZTVlNmM0Nzg2ODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkMTg2YTAwZDE3NTdiZDVkMTQ0NDJjYjQzN2U4MWE2MjhlM2I0NzYzYzJiOTkyNmQxZGI2ZjMxMGVjZjEyYTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_de7ec31714074782a0d7f6e4eb8ff1a8",
+      "statement": "Session の executor/provider/profile/native identity は binding 後の切替を拒否し、native採用はscopeとprofile fingerprintおよび他Sessionの所有を検証する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/sessions/agent_run.rs#L153-L170",
+          "version": "repo-lines-v1:sha256:a5afe99f379652ae8561d9b85f6903592dc9aa75bc5be81ddc04f39f5daea1cb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkMTkxYTJhM2FiNjliM2ExOTQxYjhiY2U3NGE0NThmMDA5Y2FlNzhhZDM5NDQ4NzhhNGU5NTdjZWRmMDQ5M2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4OTc3MWZlMWI2NjI4ODc1YWEyM2U3ZGJlNGFhNzE0NjFkMDBjZGZiNjZkZGYxMWI5ZDgyMGFjNTg5N2ZkZjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVmZjNjNjM3MWNmMDA5MjM1NDAyNmI0ZGVhNTM1MWViNmRhZmI3NjZjMzg5Mzg3Y2ExZjk4M2FkMGE5NmE3ZTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3YTI1M2U1Mjc5YmQyMTMwNTk4NDk1MmI2NGNhNmM4YWQwOGVhZThmZGY2ZGMyNjJjNjRkOGQ1N2QyZTFhZWEifQ"
+        },
+        {
+          "resource": "repo://crates/server/src/routes/sessions/agent_run.rs#L321-L415",
+          "version": "repo-lines-v1:sha256:4a85f733182b05d8d2cf9692100e2cf8851800b7200e5b45c6993dc0b17a2fdb:eyJzZWxlY3RlZExpbmVDb3VudCI6OTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzNmE3ZDlmYTJhZTE0ZGJhNzQyMDgzOTQ0OTBmZGE5YzlhYWVlYmY5YjM1ODRkYTdiNWJiZDM5NTZjMDUxYmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1ZjZmNDY2ZTU5Y2ZjMzA3MDNjNDVmNzJhZjY1ZGU1NGFjMzYzZDM1NGNjMWEzMzMwMzUwYWNkNDUyNDM0YzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjExZmIzNmYwNDZkNDFlYmExZjMyMzRjOTg0MmFiNGIyZDM0NzUyNmQxNjQ3OTY4YjU4NWU5MGMxMThlYWU1ZGEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_15adbf99fd5e4836b14cf3e1bee1c798",
+      "statement": "AgentRun の入力・承認待ちは非終端で、実行状態と ProjectionStatus は別に保持する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/executors/src/runtime/contracts.rs#L634-L689",
+          "version": "repo-lines-v1:sha256:9a0dff05f3dd9d978403e642071d29203f5bbed68e2f0cc76741c4f6a3728a05:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyYTkyNDVjZWM3YjVhZjcxYzczNmZhNzdkZGE4ZGQ0YTQ5M2M1ZWEzODQzNzY1ZjA5Zjk3MGI0NzA1YzZiYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5OTM2YzUyMjc2Y2JiZTBiZTExYjNjZmU2YTIwYTFhZGNmNmMxYjk0YWJmN2RjZDllNDlmYjZkZGFmMGU2YTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ0MDlmODdhM2MzZjg3NmRmOGI1MzU1MmQ2MmRjOTgzZGIyZjU5NzQ1ZTRlMmNhZDYyYzI5NzczMDg2NjM1ZDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1YjI1NDBkZTBmNzQ2MjkxYmZhYzcwZjZlNDliZjIwNzQwODk5N2NhYmMxNTY3NGMzMGVlMDQ2MTc4YjFjZjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_abf8338c3deb4ad8bfb356751d79bb1e",
+      "statement": "Cancel は終端runで無操作、活動中はCancellingを保存し、projection degradedではCancel以外の制御を拒否する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/local-deployment/src/agent_run_port.rs#L2370-L2414",
+          "version": "repo-lines-v1:sha256:bfb3bac0f5072779080df28a9457682a646a9359d62cfb107141e9907fc8f32e:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MWQ3NDI3OWQxMjZiN2FjNWI3ZDZjYWFkODVmNzU4MzJiZDk3OWNhMmM0ZTg1ZDk0MzRiYTQ5ZWMzMDlhOGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MjJjNDJjZDE5YzZkMDNkODA4YzQ1MjcyMDU1MjgyNWI3ZWExYzViNDkxYjIxODUxMWNhYzc0MTVjZjlkOWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzNGI2NWQ0NjNkMjZhM2ExMmEwZWZiNDkxZmE2Y2E4YjEyNzhhNDU3MjEwNjM2YjJjMDk5MmJkOWE0YjAyYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3MGMzNzlhMGNkMzYwNGExZDk1OTk1YWExMWVmMzNmZWZmZjI5ODYxNTc3ZjFjYWNlNTZlYTJmMmY2Y2ZiMDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9638dc4c23f94092bc461fe2f34cea6c",
+      "statement": "Follow-up queue はSessionごとに一件のメモリ内保存で置換され、成功後のmemory完了失敗時は保持し、非成功runの終端では破棄する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/local-deployment/src/container.rs#L349-L371",
+          "version": "repo-lines-v1:sha256:0004a7bd50bfc3e020cad4d2bfa131b948c2e133e016cff202d2bac3db5dafb6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwODhhOWQxZjg3YjIwYjAzYjQxMGU0Mjk4Zjg5M2I4NjRjZmU5ZWJiYjM1YzZiNThkZThlN2RjYjNiMDg1MjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjMTBkODc1YTIxNTU4NmI1OThjMzU0NjY2NzUzNzQ2Y2U5YzM3NmM2ZjFhYzY0NzVkYTY0N2Q2MTYwNjI5ZjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyY2MwZDQ0ZGRlMzkxMDE4YTQ1OWMwNmIwOTBlZWVjOGRmNTA0MTg4Mjk3MzIwMmQwYTc2NWZjOTM1NjRjYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJkMDI5OGViYTY0ZTA3NzAzNzdlOTM4ZTRmOTliNDc2YTA4MWU5NmNlOWY4M2YzZjg2NzQ1ODU2MTJkZjBlZDcifQ"
+        },
+        {
+          "resource": "repo://crates/services/src/services/queued_message.rs#L31-L69",
+          "version": "repo-lines-v1:sha256:b882e2298acc7649a91f13a0e1967d1b18f876859480cc2f89b575f48194f557:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3MmRlYjAzOWNiNGQ3OGU4M2Q1YTk0ODJkMDAwZmM0MWNmMjg3YjNhZGQ4ZDFkNDUzMWI1YzRiOGM3MzY4ZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhZTE0MjhiZTJlODRmNjcyMTRkZjg5OTZmODBmMjA4ODg3MDBlMDhlM2VjMTU5NjUyNDkwNjBiZmNmYTJkODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkMjZiOTcwNmNmOTBkMWRlYjQ0ZTA3NTYxMDI4NTkxOGEyNTEzNWZkMmJkYjYyNDc5YjJkZTYxOTVjYjNlY2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxNTQ1Y2ZhNjJiMjRmNWEwMjJlMjNkMjk2NDc5NWI1MWI2NmM1N2IyODdmYjE5MWIxNDVjZWIzYTVlZWYwMDIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e394fc85e4b3484d888b93ccc22a5883",
+      "statement": "ExecutionMode はPermissionPolicyと別で、Codex Goal objectiveは4,000文字を上限とする。",
+      "evidence": [
+        {
+          "resource": "repo://crates/executors/src/executors/codex.rs#L1-L23",
+          "version": "repo-lines-v1:sha256:0ab2f4535e0db706c43480799e3554be23df2f36cd92c5ceee764390466bfed8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkYjJjYmFkNWM4MzE0ZGVjNGEzNDE3OWRlZDY5YzQwZjg1YWZjODIzMTcxZjQxNzk2ODJhYzAzN2RjNzc1NGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4OTc3MWZlMWI2NjI4ODc1YWEyM2U3ZGJlNGFhNzE0NjFkMDBjZGZiNjZkZGYxMWI5ZDgyMGFjNTg5N2ZkZjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzMmNkMmU3OWQxY2E2NDkxZjcyZWU2N2NjY2FjMGViM2VkYTVmYWYxNWIyYzAwM2MzYTRmN2U3MTFkYTVjZGQifQ"
+        },
+        {
+          "resource": "repo://crates/executors/src/profile.rs#L18-L34",
+          "version": "repo-lines-v1:sha256:13baef4151ceee762d0d1ad63790db0da4bf205a6c059540b632de113ba02ca2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyMmI0ZDBhY2U5ODQ2ODNhMGU1ZTczYTU1ZWZhZjU4ZjJlZTg0ZGM0ZmVkN2NhYzA5NThjZDJjNWUzMTA0NTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4MGQwNzhjYzc0ZTljMzY3ZDYzYWViN2ZlMDRkODI4ZDk1ZThjMWJkMjg0ZWI2MWI1YzVhYjA2OTllZWVhMGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhNTU4MjhhM2RkNDUzMTdmNzA1ZTc4NGY4MzkyMmRmZjQ3ZTlkODY5YWU3ZmFiM2RiZDk4MGQwZWNjMzI4MWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1cbc2630feff4a6aa5574a3d72778a4c",
+      "statement": "Goal管理の開始は対応RPC応答で確定し、同じthreadのcomplete/clearedまでpausedやblockedでもhostを維持する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/executors/src/executors/codex/goal_lifecycle.rs#L36-L104",
+          "version": "repo-lines-v1:sha256:61f77435b1a120cdb38bb30e2000cfa83911aa933afe4d5df14c92baf4e79469:eyJzZWxlY3RlZExpbmVDb3VudCI6NjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjMGViNWMzNDdkMjZiYWQ3MTc4ZThlOWNlOTQ5YWE5MzcwMzVhNjMzMzY2NmFiN2Q3ZTJkZDI1OTYxMzJmYzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY2Yzk4NzQ0ODU1NjNlYmI2NGFmODIzOWJmMDY1NjFjZjI3YmZjNzdjN2RiYTdiYzJhYmUzN2U3Mjc5NmEzOWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjE2MDRiMzVmYzQwYWYwMGNiYTRlZWEyZmQ1ZTJjM2FmMTg2M2IzOTExODVkN2JmNGJiMDllNzJkMGM4YjMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bcd21715a8934825ad6f97ab2c3adaa3",
+      "statement": "Goalのsubagent上限は0で無効化、未指定でCodex既定となる。",
+      "evidence": [
+        {
+          "resource": "repo://crates/executors/src/executors/codex.rs#L1625-L1644",
+          "version": "repo-lines-v1:sha256:1d1f66bc0a94f686110e92e25bc67a3492adae0c9dd2dfd19e6552b2c523d9ee:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyYjVlZGY1OTQ5Y2ZlYTY3ODIyY2Y2OTExMzIzNjNkNjhkNmYxZTE2OWY1ZTBkNGY3YzE0ZTVmYTFlNmQ0ZTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlNzVjNzBkOTQ2MzYyNWUxMDc5ZmQ4ZmM4ZWU2MmFkMmU5MmM0MmJlYWFiZmQ4NWI3OGQ4ZTBhNDk3OWI5NGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYyZDgyOGEwMzdhYzFjODE1MzViMWQ1NTAwODMyMzIzYmZiYjg2NmEzYTNmODdlN2E2OGMxM2EyYmFlNTZmZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwMGRiMDQwZjI5MDliZjk3OGZmMGE5NTZhNTVlODNjNjUzNDE4ZGU2YmI2OGY4MDQxZGE5NzZmOGQzZDIyNzAifQ"
+        },
+        {
+          "resource": "repo://crates/executors/src/profile.rs#L166-L172",
+          "version": "repo-lines-v1:sha256:15d956774bc01b8571e520eb4c022d312848c5a3994e0960c9d752dc8ed19276:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzJlMTdjMjBmYWY5NzY5OGNjYjc0OGNhZWRmNDM3YTQ0MzdlZTI1OTZkMmQzMDZkMGIwOGE1NzdkYWZhYjRiNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2IyZGY1YTY3OTJjMzkyYWJmMWNmOWVhMjdiODc1MmNmYWY5NGU5OWE1NzgxZjU0NTg1NDRmNjUwYzk3ZDAyNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGY4NzMzNTIyZjg4NzZlYWNjMWFhY2IwOTk0OTc3ZWVlNTRmYzZkNThlZGExYzI1MDY0ZWUwOWZhYTcwMjk5OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmY3YTk0OTE4MGEwMzBhMjA5YmIxM2IyOWRmMWEzMjNjZDM1N2IyMTUzZmE2OTU0Mjc3NGJjZWExMjg5MjM2ZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_ce784d182df94922a97df7bf105de511",
+      "statement": "Native子agentの活動は親のstatus/output/Goalを完了させない。",
+      "evidence": [
+        {
+          "resource": "repo://crates/executors/src/runtime/reducer.rs#L278-L298",
+          "version": "repo-lines-v1:sha256:74d6764bc78a22a12a2c54b5a521e116bdd3905cf4b20416db8da2e9de33a1f6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyYjVlZGY1OTQ5Y2ZlYTY3ODIyY2Y2OTExMzIzNjNkNjhkNmYxZTE2OWY1ZTBkNGY3YzE0ZTVmYTFlNmQ0ZTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3Y2ViNjc2NGNkNGMzMDM4YTllNGRjY2UxYzAxNzUxMDY5M2Q0MThiNjNmOWYyNzU5MDNjMjVhZjM2ZWZkODEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE3Y2QxMWI1ZWJmNjNjNjA1MzcxNzAwZTA1MDY3Mzk1MGY2ZmMyY2Y0NGVmOGU2NjczOTUzYmMzMmZhZGQzM2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_48736fa9c62649f8ab326549af554d94",
+      "statement": "現行coding agentはExecutionProcess actionから起動できず、AgentRun APIが要求される。",
+      "evidence": [
+        {
+          "resource": "repo://crates/local-deployment/src/container.rs#L1451-L1463",
+          "version": "repo-lines-v1:sha256:84c554afcaed731b6a21edfe3264d7be861e074bd4601c6051a72d57b0637004:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxODdkZGNlODNjNzI1NTJlYWJlYzI4MzE4ZjJiOWE4YmFlYTM2ZjMyZjFiYTUxZmUwYzM3MTMwNGRjNDJkNDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlZmJmNGY4Yjk3MzdmMTdkNDgyNzgxYWY2NzBkMjE1YTk0OThkZjU2YjRmZDk5OTNhOWQ2MDQzZGI1NTAzMTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4ODU4MjU5NDc5YmI1ZmYzY2Y0YjE2MDhjNTA0MzYzNzM5NThhMWQ3NWY2NDZlMDZiNGUyOWQ5MzVkNGMzN2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNkYTk0ZWJlYTU5MWI2NDM0NTE5YWQzOTg1ODUxOGNjYWZjMjBmMjdlYmRmMjhhYjgzZmM1OTM4MDQ3ZDkzOTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2f0e829f8dca4e6a9d5bcc3750fcfaaa",
+      "statement": "承認・質問 UI は run と待機 ID を区別し、PlanWithGoal は objective 更新後に承認を送る。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/features/workspace-chat/model/canonicalAgentControls.ts#L1-L59",
+          "version": "repo-lines-v1:sha256:24d9e02827fde52c189ff9ae56008b9773c7e0a8a6e00991c2f8bfe0574c1ef4:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwZDZiZWFiNTg1MjM5YWIxOWI1ZWRhNDI2NDYyZGFhOWY0YmQ3NzAyZWRiNmY0ZTliZTQ1ZGE4MzhjMzk4ZTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1ODI2OGUyMDVjOGEwNzFmOGUzOGI4OWJlOTVhODMwZDFhNDhlY2YzMjc5OTZhMDA3YjRhMDBiYTQ4NWRhZjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/features/workspace-chat/model/hooks/useWorkspacePendingApproval.ts#L1-L82",
+          "version": "repo-lines-v1:sha256:19c61d23bd2a693e2746e3f1266ed22ebfb07879a4293493826ecc43cc28d3c4:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyMjEzNGE5OTAyMmZkNTVhNmRkZDZkNDRjOWEyOTQ2N2E1OTdjZWRjYWUzMGJjNjIyZjY0Yjg5YmZlMzYxMjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx#L576-L589",
+          "version": "repo-lines-v1:sha256:819d854411723725300500fe69a06f12ef965ef4c309788c7e876854436e2e1d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMmMxOWY0M2U3OWM1N2E1NDYzZmU5NzNmZjcyMmNjMzE5MTFjZjk0YWI4ZWYxYTdkZWY2NmNhM2UxNzFjNzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3OTYwOGYyOWVlYjE2NmMxZWY1ODMzYmIyYTA5MTAwNGNiNzA3ZmZkMTQ5MTVkZjJkNmMxZDgzOTU1NTczNDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdlYzZlYTAzZmYyOWZjZWEyMTBkZmRkYmEyZTI2ZjVmNjEwNzA0MmNiNzNkMzE5YjUzOGMzYTFkMDNiYWVkODAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYyMjljMjRhM2U4MTMxMzhiMTVkZmVjYTIwYjJjZGJhZGE4OWFmMTExZDFjYWFjOGU2YTI0NDYwZTNmYjViMzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9ea518f8c33b4104bd1a361bc36f4bcd",
+      "statement": "現在の Codex host は NoopExecutorApprovalService を渡し、tool/plan 承認は即 Approved、質問待機は ServiceUnavailable となる。",
+      "evidence": [
+        {
+          "resource": "repo://crates/executors/src/approvals.rs#L69-L103",
+          "version": "repo-lines-v1:sha256:1eb1d21d1ab105ba5f53ca324883359e18061c1bec80d34ecd0ea7120847aeb6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxMWMxNmI2NDRhYjYzZTI0NTNlOTNkMDZlNTFhMTI3ZmQ5ZjQ0ODgxZDVmZDlhNjAyMjlhYWYxY2M1Y2I4YWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFmYTA4MWMxYmFiNjU3NWI2YzQ0MTYyN2RjYzBkYjQ1ZWEyYjRjM2Q2ZDk5MjViOWM0YmYyMTA4YWIyNTI5MjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNkZWEyYzljODVkOTMyNTUwMWY3ZDMyNjZkYjM0ZDBiMGNjMTc5MjEwMGE1MjdhZjE4OTc0NTk5M2Y4NzNjYmYifQ"
+        },
+        {
+          "resource": "repo://crates/executors/src/executors/provider_adapter.rs#L60-L106",
+          "version": "repo-lines-v1:sha256:8e299d85923fc6d91ddbc05e45b02010b1b5359952560faa5ea1328f3175e4e7:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4ZTQzYjVhMTdmZGI0MjQzMDJiNzU0MjNjMzQyYTM2YjcwNGM1N2I1NmQxYzI3YzJlMjAxNTM0NGVhZGQ1MDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhNmNlZDRjMTVmNGM4NTdmOThlZDc2OTczMTQyY2IwMWI1ODZmMjZmNmU2YjFkOGYxZWE1MjMyZTQ3MWJhNjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc2ZGIxYzFlNWY0NGY3ODE0YTNjOTRlZGQzYmQ3ZDVkYWU2ZTI2NTQyZWM3YTA5NzBkNDM4M2MzY2U3Y2MxMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY5ZjVlMTJhYzdiZTgwYjg1ZjVkZDk4ZGExMGNlYzIxNWRlOGVlMmM0NWQyYWMyNTk1MGIxMzkzODZlMTc0YzcifQ"
+        },
+        {
+          "resource": "repo://crates/local-deployment/src/process_host.rs#L302-L329",
+          "version": "repo-lines-v1:sha256:a5e27f95a5f851c0b06c61267fc62628a2b498a3f25f176f6fc12bf155e81fce:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlZTRmN2FiYWYwMTRmMjA2YjI5MjdmM2U5NGU0MzQ4ZjBkMmE4MzY0ZDU4Y2ZlYmI2NDU5M2VmOTM0ZGNjZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2NzFjZGYwM2I1N2E2ODdjZGY1NmRiYmNkOWIzMjAxMTlmYTZiNzIzMWI0NDI5YzNkMzU3NmI4NGMwOTFlMzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyNzEzNGU5ZTkyOGNmNzkzNjNkMmU0OTc2NWIyNmJhNTllMzExOTY5NTIxZGYzNzdiZTNiOTA1NzM4M2ZhNzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmNjNhMTVmZTdhNmM0NjI0N2YxNDQwNGUyMmY3NDhjNDBjYzk1MTU5NTcxMzk3YmI5MGRlMDcyMjU3Njk4ZGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_95da9a40e2ba4739ac4e9e076a4915f9",
+      "statement": "Codex は質問待機エラーを TimedOut にし、汎用 Approve/Input を Unsupported とする。計画承認後の実装・Goal開始処理と、chat-interface の人によるレビュー手順には現配線で差がある。",
+      "evidence": [
+        {
+          "resource": "repo://crates/executors/src/executors/codex/client.rs#L412-L418",
+          "version": "repo-lines-v1:sha256:7e6a6492a135feee40765b42a3c7905a6b56e3d19992afa4db4f060a2fa959ea:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWUyZjNhMDY1M2M1NWY4NjI0Y2E4MWQ4NTQwNjU1NGI2YzliODI3MTZiYzE0YjNmZmI3ZjdmZWI0ZTY0MTdmMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTZiMDQ0OTE0Njk3MjJlODM2M2E5NGU0MDQ0NTM4ZTAxM2EyYTIxN2UzNmIxZTU2OGJhNjBhY2I3YjRjOGYyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjkyOTMyMGU2OWQ1NjE5NjAyMWY4MzdhOTA0ZDg2ODUyYzMwMGU3NjliNmIzYmU3MTc2OTdjZWQ5NzhjNDAwNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWU0MmNlNzZmYjk1MzkxOWE5Yzg3MzYzYzIzYjc0NzRmODk5MWFlY2VlMDM0ZGU4MTE4Yjc1OTdlMjI1MWJiMSJ9"
+        },
+        {
+          "resource": "repo://crates/executors/src/executors/codex/client.rs#L988-L1122",
+          "version": "repo-lines-v1:sha256:82947d8eae976fb5983268029345e1dd16ce9117dfcdd0f10de3bbea9253896e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwMGYzMGJjOGFlNmJjNWRkN2I5MTE0YzIwMGUxYTI0NWU3MGE1Yjg2ZDYzMDcwMWM4MGY0MDM1Y2Q0NDdkMjU1IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIzMTFkYmYwNWZkYTI4MzBjYWI3ZThiNGU5NzRjOTgyYjdkMGU2MGQ2NGYyZTQ1NmFlMTVkN2I0MjMzYjU4NDlmIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIxNTgzZjMzNzg2MTJkNGE4NGVmODEzZDNkNmM3MDM3MWU1MzAzZGM2N2YyMWJiNjI5ZGUxNmQxMzJjMDdmZTUzIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIxY2UwMjYxMjllYzhhNDg2NmUxYmE1YjNjMmQ5Y2YyMWU5NWFmYWVjNmI4ODMyYmZlM2Y5NTAyNTBlMmY5NTQ0In0"
+        },
+        {
+          "resource": "repo://docs/workspaces/chat-interface.mdx#L130-L174",
+          "version": "repo-lines-v1:sha256:5b14c4b0ede1a8f3b5756685dd63a4be171ea013827646ffa237f4b9fa3661d0:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxY2I0ZjE0ZThiZTE5ZTgzZDhiZGVhZGU0NGViNGIyMmVlZWJiNGI1ZGYwOGEzODJmNTI4ZmRiOWMyZGVjYjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhiYmYyZTA0MTNlMGNhYjcxZjRjYzBjNzAyMGVjMzM2ZTI3MDk0NWQ0YzJmZjNmMGRmZWYyYjkyN2Q3MjhjZTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiMjA5OWY0YTA2NmNhNmRiZjU3MWE0MmQwNWViNmRjZmJjNTMxNTA0OGZkOTQxNWQ0MzAzZmI5ZDljZTU5MWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c98e86adcff646e0a97e2540f99be124",
+      "statement": "ドラフト Scratch は message と executor 設定を debounce 保存し、Workspace/Session/control IDで編集欄を分ける。local は SQLite/WS、remote は localStorage である。",
+      "evidence": [
+        {
+          "resource": "repo://crates/db/src/models/scratch.rs#L369-L395",
+          "version": "repo-lines-v1:sha256:6414d6abac18c4686ca03e50559c68c4cb70429b7776669fb36d59c0f94807e0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4ZDZmNWM3MmIyNzI4YjM2NjgzNGU0MDYyYzE5MDY5NDFmYjI4NmMzMDgzZGM5ODc2MzcyODg1ZWQ4MTU5M2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYxZDAwZTNkNjg3NzcxMDkzN2U1MmRlOTc0YWEwNTQwNjU0Y2YxY2QyOGU1ZjIxZjhjODE3M2I1OTZkZjY1MzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUyYWMyNjUwM2ZmY2FiNDFmNDA4ZWY3NjgyMzk0OGUzYWNlNzZiYTZlZGM5MzQ4MDUwMjUxMzRkNzA1M2MxOGYifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/features/workspace-chat/model/hooks/useSessionMessageEditor.ts#L43-L121",
+          "version": "repo-lines-v1:sha256:0b5f07b1bb5a10015626609b7d51ff7db24ed430903c21514b5c241a516a3385:eyJzZWxlY3RlZExpbmVDb3VudCI6NzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzMmE2MDllMDJmOTZkMjNlOGQ4ZDA3MjE2Y2Q5Y2YxMDIwYTkzMGI0MGZlOWM1MDMwYjJmMzVkMWI0YTEwMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3OGM4NzYyMjZjODJiMDM0OGZkZTA3ZGQ3YjBmMjgxZWE3MTFiYzdhNTJhYWE5NzU4NDVlMjdjZmQ0NjY1M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZjYjFiMjA2NWQwM2U4YzRjMzg3ZDliNzkyMmFhYzgzODdkMGMyNWQ0NzI1MTQ1MWFjNDkxNmQxZDNkNTdmYTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlZWNhM2ZjNzcwMGJhNTIwMzkxNzQxOGI2ZmNhYTRkZDUxNmI0ZjIzMDU2MDRiNTRjZDU4YTJlZTRmZmQyNDcifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx#L303-L312",
+          "version": "repo-lines-v1:sha256:80a961035036509872e9e69cfc905a826a7326d6b8ad89ee313122d2eb237e83:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5N2YxNzhlY2M2M2ZhMTc3ZjlhY2I0YjY0NDgzMjQ3YzE3NWFlYzMxZDk5NmUzYTlhZGJkNGJjZjE1MjFhYWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwZjRiNTQ3YTBhNzgxMGU4ZTZjNGRjOWQzZWExMGVmMjJiYjkxM2QwNzY0ZjFjMTlkMTYzYzQ4MzIxNThiNzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRkMzE2ZGFhYmFiZDMzMWNhZjQ1NGExZTM0MTZlMmY5MDRjZDZlOTc0MjBkOWExYjhjYjM3NTVmNTMxZWNlZTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJkNjFiODkwZWVjNGRjMGQxZTg4MTJhMTdiODdlNjVjZTk5ZGIwNzYwMTVmMDA1ZDJmYWNmMGMxYjVmNzgwYTkifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/shared/hooks/useScratch.ts#L1-L86",
+          "version": "repo-lines-v1:sha256:6044321f88e4bcb11f2c1819b93f0b2d61bc890736358fcddcdf7189191a4c15:eyJzZWxlY3RlZExpbmVDb3VudCI6ODYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxMTNmMTk1MDRlNTliOTNjMTJkOGNiNjNiNGE4Y2VmODIyZTQwMzFiYjk1NDA5Zjg5OWUzMWYyNTQ3M2NkMGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhMWQxYTYzMzkwMjI5Yzc5ODM0N2U4M2EwNDA1NDQxYzk0MDAwMzUyODRhZDE2OGMxYmY2Y2RmMWQ3MGEzNzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1af48a44b5b8474eacd08aa224f156b0",
+      "statement": "remote の Scratch hook は localStorage 書込失敗を無視して画面状態を更新し、editor の API 保存エラーも console 記録に留まる。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/features/workspace-chat/model/hooks/useSessionMessageEditor.ts#L61-L79",
+          "version": "repo-lines-v1:sha256:24c96209e63aac0d8decdc8a4518c745f9f9f046118b746881cf94185fa8c3c0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiNTc5MTg1NzRmOGZjMWY3YzljNmNmMDUzYmUzZDRkNjkzYzI0YjE3NjIwYjU5MmM2MTM2MGQ5MGE5MmFjNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1ZWYwMWJjMDhkYmMzYjYzZTRlNzVlYTNkMjZhNWI5NDE4OTE4NzdlMjdhZDg5MTMyOWM4NDExZDdkOGRjNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmOWI4NTBkNzU5ZmM0NDM5MWE4YjAzMzM5Y2JiNzE5OWZjOWQxNTRjZjE4YzUwMDA4YzAzZDY2MWZlMDhjZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI5ZjE1ZDZmNTI3YmMwZGU0NDA4ZDljNjEwZGU5MjU0ZWU3YTQ4MmVkYzA0NDk0YmNiY2NkOGM2MmYxNjRiNDYifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/shared/hooks/useLocalStorageScratch.ts#L144-L165",
+          "version": "repo-lines-v1:sha256:18e97b728cceae78fc0100aa4b0465526461663c16eec782e3d982cc8f0eb4f6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2ODIxMDNjYzkwYWI0OTA0NDJlNDIyMTY4ODU1MTc4ODlkM2UyMmVhMmI3YmExMWNkODM1YTA1OTgzYWFiNjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyYTJjYjI1YTEyMmI0NDIyMWE2MjM0ZWM2NjBhN2I1ZmI3ZjliZGU3YjNiOWUyYjNjNTU5YTBkOTZmYWM3MzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzZDQxMzczYjdhN2QzNWEyNTNkYmI4NGRhYTFlZmEwZDQwYmE3NmQwYjY2MjFhOGI5NTQxNjMyMGQ1ZGI3YTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFhMWQxYTYzMzkwMjI5Yzc5ODM0N2U4M2EwNDA1NDQxYzk0MDAwMzUyODRhZDE2OGMxYmY2Y2RmMWQ3MGEzNzAifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/shared/hooks/useLocalStorageScratch.ts#L5-L34",
+          "version": "repo-lines-v1:sha256:5bee87f238968c054b58c9a6e562ab7a378ad2fde72bd6d2ed6cf132ab7536ec:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiMjE1YTA1YTZjY2QzOWZmODRiZGEzOGZlMmIwYjY5ZmMxZDE5ZTY4YTExZDk2MTlhYjgyMTE3MDQzODQxZTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjOTllMzg2YTFiNGU0YmM1M2MxZTRhMWQ3ODgxMzZkZWUyYmE1ODJmYzI5ZjZjMTY4MzNhMTg2MDIwYTBmMmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRiNDhiMzM4NDEyNmFmMDhlMmViYzIxYjY0NGUzNWVjZjZjZmFiODZiZWVjYWUwNGVkZTY4ZTdiYzQ3MjRlMWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_88dd782e7144451d806ad9ef82760a71",
+      "statement": "送信成功時の画面クリア・新規 Session の Scratch 削除と、既存 Session のサーバー SQLite 削除は別経路であり、既存 Session 送信は remote localStorage を削除しない。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/sessions/mod.rs#L435-L452",
+          "version": "repo-lines-v1:sha256:5a1a1a5432048968f074e4633fbb1524f8acc91c351f99ce3851ed70f432987e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNmM2ExN2RlODU4OGU1YWY5ZWMyOTMxMDM5ODcxOGE1MjU0N2QwYTZiYjVhMGRiZTk0NjZiNmFjZTVjODBmMmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4OTdhZjJlNzg4OTFiMWNlY2VkOTNiYTRlMDVjMzE2ZTdjYzI0NTk1ZjFkZGI3NTM5ZWVhZDdjNGY2YTk5OTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI4Y2JhZGMxZmMzZTRhZDRmMzNkYTYxN2ZhYzFhNjVkMTU0Mjc4ZjQ2YjdhOTkxODNkYmFkZDkzODJlOTdjOGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA4ZDhlMWFkMmQyZDVmMjEyMzRjZDlhMWViYTg3NTg5ZTlkOGY0MDdhN2FhNmNmZDRjMTNkOTU2ZmI1OGU3MTQifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/features/workspace-chat/model/hooks/useSessionSend.ts#L109-L129",
+          "version": "repo-lines-v1:sha256:c9546d3a66482a397c2c812faa55129a7bb6be0d099ccf6b60c693d07e4abf69:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmMDliMjYxNDlhNzI0Y2E5ZGQ0ODJkOGZhMTc4YThiOGZhMDA0NzAzMjBhOGVlY2Y0YzRlZDU4Njk5ZTExNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliNjJmNjBkODU5MGE1NzljZjQ2ZjhkNjczNzhjNGM1NzJiOTYyY2VjY2RiOTBjN2E1ZjdiNDJiOTYwNzgyYTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjY2RmNTJmYTc2MDUxYmJlNTBkMGEzMGZkNjcxMGVlN2E3OTMzNzQ1ZjU0NjQ3YmEzZDc2MWMzZDMxOWJlZWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1OTBhMGZmNjg2MDgwNThlNjM2NWUxNTNhYzhkMTJlZjFlYzM0ZGYzN2QzMzRjNGE5YWM2YjYwYzg1NzA4ZDAifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx#L653-L674",
+          "version": "repo-lines-v1:sha256:425abb4236dc76955ed26402bc0ca8d476235e536496b22fd26d756b14b6cc73:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlZjM5NzI1NzQ3YzkyYmYxZDAwMzA3NTEwMGFjMTIxZjIyOGJmNzFhN2I1YjIzYWUzY2UzODVkZjg5ZDkwYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2NDA5Yjg1YTdiNjU0NjMzODEwZjcxYmIxNGYzOTA3NGJkYjU5MzMwZWQ3ZTc5MTUzZTllYTA0YTUyNzA1YjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdmODQ2MWM0YmM4ZWMzMTA5ODYyYjRjMjcyZmFiMmMzNmQ4OGQzOTUwZjAxYzhlNTU0MWRjMzIwOTA4ZjZjYWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxNjM4OGU2OTQ4ZjE3MGJjNTYxOTgyMjRhNDM4NGIzMjUyNGQ3MTdmZDhjMDUyZTlkYjc3ZGE1ZDYxZjY1NTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6f2dd3d9e55b4869a674bea3dd598a3e",
+      "statement": "local Scratch は queue 済み ID の作成更新を拒否し、queue 消費成功時の削除と失敗時の破棄は異なり、UI取消は本文設定を戻す。",
+      "evidence": [
+        {
+          "resource": "repo://crates/local-deployment/src/container.rs#L349-L384",
+          "version": "repo-lines-v1:sha256:77853bc1b758c5f7020cf6be991000db62286dfa4afbff2956ca0ca0b7ffb9d6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwODhhOWQxZjg3YjIwYjAzYjQxMGU0Mjk4Zjg5M2I4NjRjZmU5ZWJiYjM1YzZiNThkZThlN2RjYjNiMDg1MjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyY2MwZDQ0ZGRlMzkxMDE4YTQ1OWMwNmIwOTBlZWVjOGRmNTA0MTg4Mjk3MzIwMmQwYTc2NWZjOTM1NjRjYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAxZGI0NzFmNWU0ODc4YWM1NTNkMWM5YzM5NmFhMTQ3ZDMzZDIwZmQ5MmY1ZDcwOGMyMjU0YTIxOTY1YmM3OTUifQ"
+        },
+        {
+          "resource": "repo://crates/server/src/routes/scratch.rs#L44-L96",
+          "version": "repo-lines-v1:sha256:55cc69470c33617f78599fb2951cdbf655b87bda459f715b6a218d8e12df189b:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4M2UwYzlkMjI2NmI2ZTQxZmU4OTU0OGVjMGFjYjFhMDllMTEzZjNlZDdkMTUyMWZjYjU4MGVhMjc2NTQ5ZmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyYjY0ZDEyODEyNjkyMmJhOGUyZmVjMTg3Mjk0NDJjY2Q2NGZmMDc2OWU4ODgxMGQ5ZDFiMjA0ZTE3ZmUzN2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyOTYyZGRjMWY3OWIxZTA4NjY5MTdkMjYzMDQxMGNhZGZhODhhODk5MjU1ODhhMzU5YTNhZGMxZjZjYmQwNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY0NmU4M2M2ZGMxOGZlODg2OGExYjVmNzc0YmRlMDE2YzI3MjJhMzU0NmY2ZTA1MTA4Yjk3M2Q5ZTAxMTVhOGEifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx#L869-L882",
+          "version": "repo-lines-v1:sha256:759069e0307ecf56e4924de2ecc68a99fcad4b8ba89d30d85ec83dd1f6a524d2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxZWY2Y2UwYTg5YWE0OWVlYWUxNGRlNDJkOTFmYzMwOTQ2OWJlY2E4YWY0MjkyOGU3OTI5ZTM2ZTE2N2M4ODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhYzUwMDE1MzYzY2YyZDVjOTk3NDdmNmMzNzZkMzE2ZjU3MDY4NGZjZDU1ZDA4ZGE4MzE5ZTM3ZDVhMmJhY2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5NDA4NmExNzMxZTQ4OWFiNTRlY2M2NmM3ZTZlOWYxMDA1M2RlMWM1YzZiZTBjNGIyYjI2OTQwMGYyODQ2ZTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1MTAxZmY0ODc5NzU2Y2NjZGM4Y2M3OGZiZTNkNWVlMDdlNDkzN2YwMGNjOGY3NmViZDNiNDBjYjE2N2I2OWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_ad422bd4e4ac4861a4b093e26f3df832",
+      "statement": "Codex client は thread/start と thread/resume の応答から解決済み model と reasoning effort を採用するため、依頼の effort override が未指定でも provider が継承した設定を後続 turn に維持できる。",
+      "evidence": [
+        {
+          "resource": "repo://crates/executors/src/executors/codex/client.rs#L183-L190",
+          "version": "repo-lines-v1:sha256:957ca9cfb050c12d0f2c5c2d895a3fe87cf6948680046090b12c534597e062e3:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWRjYmZkNmVjYzMyMTVhY2JjZTM5NjI0NWMxNmE3MDc5NjUyMTE2Nzk4YmMxNmExNmRiMDFmMDNkNTk4OTBkMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGM1ZmM2YTBjZDIwZGNhNDUwYjZlZTUwMGQ4OTJiMDg1YmFkOGU0ZjBjNzdjN2YwNGMxZDcyODVhY2I4NGIzMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGYxMTcyZDhkNjQ5YmVlYjBmZmU4MmQ1YmUxZTlkNTY3ZDllODdjODcwYTcxY2ZjM2M1NmUxODcwMmMzZTM2YyJ9"
+        },
+        {
+          "resource": "repo://crates/executors/src/executors/codex/client.rs#L257-L298",
+          "version": "repo-lines-v1:sha256:e6bc6f661d2c389428fdaffbb33d79dd465b5fc6e50a0c48a9b37a96fd13499b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2NjZlZmY3ZjZkMjRjOWNlZWYyZTdiNzE4OTY5YjBiODJhYWRiNGM3ZWNmNjQ2M2VmZTViZmNmODI5OWVhZTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1Y2RlZjgwODVhZTc0YWI2MzZkNjQ1OWY1YzZkNWZiZmIwZGIyNjRmMWIwZDc1YmFjNTE5YzliM2Y2NzE3YWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkMjhjMGI0ZDdkOTAyNWU1ODMwYjgzZTFhZmVlMzU5ODg1NDAxZGM5ZjA2Y2MwOTczYmYzMmM4YTVmZmE1NzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ5NzZhMzE1Nzc4MjExNDhlYWU4NmFmM2IyNDM2MmUzNDk4ZTgyNTI5OTU2OGI4Mjk0Y2E4OWQ4N2ExZGU4OWMifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-16T18:13:42.498Z"
+  }
+}

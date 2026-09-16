@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:704722ba120e41459f50eb11bc03aa8b9bf720075939c31b1baec79914e284a5",
+  "claims": [
+    {
+      "id": "claim_6831267bb1984baabffe65be3d6b8400",
+      "statement": "WorkflowAttempt は Issue と専用 Workflow/Workspace/最新runを結び、WorkflowRun と NodeExecution は別の実行記録である。",
+      "evidence": [
+        {
+          "resource": "repo://crates/db/src/models/workflow.rs#L66-L134",
+          "version": "repo-lines-v1:sha256:0dbced61aabc80b5b3941c7d5ddd5d7e96920e6d84b61110410339938996a076:eyJzZWxlY3RlZExpbmVDb3VudCI6NjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiNDMxYmJmN2YxYmRkM2VhMWI5YzU5M2IxMjYwZjM3ZDY2ZWM5MWM0MDRhYzRlYTg5NWNhNGJjYThlZjA3NmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5MmM2MmFkOGFiYzhiNDIyNGFiYTM3NjBkNTdjMmU3NGE1YWY1MGQyOWJjOTVjN2Q5YTYxZThiOTQ2ZTk2YzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2ZWJkZWYxMjAyYzc5MGY3NWQxM2QwMTkxNWZjOWY5YzVmZmJiYTJkM2FjNjc2YTAzYjJkYzVjODA4NmNhMDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f91ad4cd0e904ef5870d11b5cc391189",
+      "statement": "資源付きAttempt作成はWorkspaceと不足Agent Sessionを準備してReadyにし、明示Repoは対象branchを要求する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/workflows.rs#L674-L777",
+          "version": "repo-lines-v1:sha256:1a500244ddb959b97707b4c5155f30c31694591f8b97f096ce66a276dd2db59e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJhMzg1OTI5ZjQ2YTU3ZWZiOGMwMDBhYjliMThjNjQyMjk2NDEwOWQwNmM2ODJjZWE2NTA2MTJhOGZiM2Q0NDM5IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlZWM1OGI1YTUxMDdmNjVkZDc3NTg5Yjg5NDZmMmFjZTJiYTQ3YjlmMTRhYWY5ZTgzMGQ1YzAwMTY0YTJjZjViIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJjNTg5MDMyMjhmYTkxOTdhNTgzOWE5YWEzMWRkMWRhZjlkMDhjZWE1YWJjNzMxNTFmODVmZGNjZDMwNzY5NTZjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJiMmY0MWRmMGQ0OWM0MTM4YmNkYjg2MWZkYTBhNTUxNDE4ODgxNjFlNDVlYWNjMjA0NTdjZjMyNTM0ZjU4ODdkIn0"
+        }
+      ]
+    },
+    {
+      "id": "claim_ffc18d1efd5243308700ae9bf44e043e",
+      "statement": "Systemテンプレートは通常APIから更新・削除できない。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/workflows.rs#L1109-L1123",
+          "version": "repo-lines-v1:sha256:62087cd6c0fd7dcf77682287ee03fc83407958300f51bceecfb3b1e63208e6fe:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzY2ZlOTIwYWNjN2U0MDZhYTMxZDA1MTg2ODY2OWRkZWFlZTVmYzg2NmEyMzFmMDRhNWE1NWZmYzA3YWE3ZWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM0ZTBjZmY5MGFjYmJlY2ZlZDIwOTVlOGU5NGI4NTA2MTEwMWE0ZmZlNDIyNTRiYWEzNjE0YTRjMDA0OWYzMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYyNDRhY2VkNGI2YjA2ZGY0MTI3MjYxYTUzODU1NjhhYWZiN2UzN2RiOTY4ZTQ4OTYxMWNjMDUzYjQ5YmY4YTgifQ"
+        },
+        {
+          "resource": "repo://crates/server/src/routes/workflows.rs#L1168-L1179",
+          "version": "repo-lines-v1:sha256:8bbfb0abada527ff307387e78b4d30b638ade119cb08b1639ec05f72f6d4dfa3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkM2UzYzRjMGZmYzYzMDQ2MWNjYWM5YjZhNjBmZThmNDg2NWVjMjM1MWQ5YTk5ZTEwMDFhMjQ4Y2Q1MWYyYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4YzAxYjExZWE5YjEzZmM4MmRhYzgwYjkzYzUwMjM4OWZkY2EwNmEzNDJlZmM2YTdlMjRhZWU5YjM1MWQxMzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZjMWNjNzU4NTQzZGQ1ZGVlNDUxMzFlMmFlZDZlOTAxYWJiMjlmMDQ3OTE0MmYwZDgyOTE3YjdkZTllNDc0YjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkxMjkyN2RkNzMzY2NjMDEwMTYzMjhiZTVjNzBkZGU1NWJiOTYwMGNmMTdjYzdkZTZmMTNmYTE0MTVlMGY2M2YifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4c296c10ace64e61a9d31afce1a69266",
+      "statement": "WorkflowRunは起動時にグラフsnapshotを固定し、runtimeは保存snapshotを読む。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/workflow_runtime/runner.rs#L2052-L2103",
+          "version": "repo-lines-v1:sha256:471871c8f34b7c8151783a593e15ac77fb8e66b6672addab546cff10dc3c8505:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2MjYyNzcyODJlMzU0NzM1N2VjZmI2ZGNhMTBhZTgyYTMyNmJjMDVkYjlkNzg0MTBiNjVjNzlkM2VhOGJmNGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwOGE4ZmU4OWY3YWU3ZGFhYjU2YTA4OTk0ZDU1MTAzYjRjODdmNDJiYWM5NTdkMGNjMGYzZjQwYmY3MThjOTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjOGIzYzJiZDkzMzQxZTc3MzNiZDMyYTI2MjMwMTE5ZTNiNDA2ZGUyNjMxZTc3N2QzOTYyNzRhMmY0MjkyZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjExZmIzNmYwNDZkNDFlYmExZjMyMzRjOTg0MmFiNGIyZDM0NzUyNmQxNjQ3OTY4YjU4NWU5MGMxMThlYWU1ZGEifQ"
+        },
+        {
+          "resource": "repo://crates/server/src/workflow_runtime/runner.rs#L983-L1046",
+          "version": "repo-lines-v1:sha256:bd5f00cb481c642daa49047c46b5729f17560281f38b57c8b6e4d0c7d34af363:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkYTQxNzg0ODI5OTM2Nzc4ZGFlM2Y2MDkxMmE1YmU0MDZlM2I3ZjBjOThlYmE5ZDgxOTljZDg2M2M0ZGI2ZjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0NjI0MmE5ZDY5M2VhMTVkZmJiY2RkN2I3NmYxYmNhYzNjNGVlMGVlMWY4MWU5YWM2YmExODE5YTQ2ZDQxOTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzNTMwOTQxNzA1NjllMjY1ODIzYmJjZTM2ZDIzOGY4YTdkMjM1ZjY0M2U3NmUzNGY4YmQ3ZWQwNjE1MjU2MWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5NjBkOTMzMTkwOGNjODNhOTM4Mzg0MzJmNTA2Y2FkZGZiYTAzNmIwMjg1MGE1OWNiMTM2NWZlNzQwYmUxN2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d2753aa4a55244229d263538762bb407",
+      "statement": "現行validationはgraph version1/2、一意ID、一Start、一個以上End、辺の参照と到達可能性を要求し、循環を拒否する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/workflow/src/validation.rs#L43-L125",
+          "version": "repo-lines-v1:sha256:a32ec9602f0f8888590cf165578f22759567988d0ff2e04146045bee27b06190:eyJzZWxlY3RlZExpbmVDb3VudCI6ODMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwODM0MDI3MzVjZGVhMzE5MGI4OWQxMWY1MWM3YjdhNjVhMGI0MzJlNDAzMTRkOGM2ZWYxNGY1Njk4NzI3ZWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmZWE0YzljZTY4MzA3NWE2MTRmNDJhNWExOTBjZjljMWY0YjlhNDhiMjE2YzdmOWMzMWM4N2I3YmMwMjNkZWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg0MWU1N2Q1NWY5MmFmMDQzZGJhM2ZkNzVlNTE1MTI5MDA0MDk4ZmQyZjYwMTE4YWY5NWVkYWIzYWJlMjY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5YTgzNmE5YjUwNDlmNzM3ZDk5YTQzNGMwMWYxOGEzZDk4MjhjYjJlODE1MTM1ZDUwNzRjMzVhZjA2ZDY3OTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_00931cd2a06e474988326ddb543db1a6",
+      "statement": "fan-inのready条件は少なくとも一つの上流成功であり、Condition辺は選択targetだけを発火させる。",
+      "evidence": [
+        {
+          "resource": "repo://crates/workflow/src/planner.rs#L150-L214",
+          "version": "repo-lines-v1:sha256:0e7bd58235b88bbb9f642bd755ca5bd45f500f769ebbb664a47c7bcf408b9669:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0ZjgyYmEyMDg4ODc4YWI3MWE5YzUwNGRhOTVlNzFmMWZmZTFjNzY5YjY1MGZjMTM2M2I4Mjk3MDY0YjY0YWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjMGMzNmQ2OGU0Mzk4NGFkODZlOTBkNGIwMjlkNTgwMjI2YTZiYmIwYTUxNTVmYTZlZWI1MzkwNTYwZDhiOTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5NTMwMjViZjZlOTE2NDgwNTA1MzNhYjc3MDQ5ZDc5Y2Y4N2FmNGFlNTUwNjQ5MjI4ODc1OGQzNzQxOWYyMGUifQ"
+        },
+        {
+          "resource": "repo://crates/workflow/src/planner.rs#L362-L405",
+          "version": "repo-lines-v1:sha256:1ec0d7da040f84572dbf12d6cbdeb051f47c2710eb96a136180d64c85823854f:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjODJhMTMwMzRiZTUyNGM0MjAxYmQ5MjFkMTczNjEyMzA1NzEwMjVjOGFiYWY5OTdiOWUyNGU5MTg0YWM0NWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlNzVjNzBkOTQ2MzYyNWUxMDc5ZmQ4ZmM4ZWU2MmFkMmU5MmM0MmJlYWFiZmQ4NWI3OGQ4ZTBhNDk3OWI5NGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEwMGRiMDQwZjI5MDliZjk3OGZmMGE5NTZhNTVlODNjNjUzNDE4ZGU2YmI2OGY4MDQxZGE5NzZmOGQzZDIyNzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwMGRiMDQwZjI5MDliZjk3OGZmMGE5NTZhNTVlODNjNjUzNDE4ZGU2YmI2OGY4MDQxZGE5NzZmOGQzZDIyNzAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0df94411cbbc46daa2588cebdcd7dfc7",
+      "statement": "ノードの発火数は上流成功実行の数から数え、NodeExecutionはiterationを持つ。",
+      "evidence": [
+        {
+          "resource": "repo://crates/db/src/models/workflow.rs#L112-L134",
+          "version": "repo-lines-v1:sha256:9895059e28ba4d9464353bc3ebd11d91f3e976ebe5222b4941662e1453a6e88a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiNDMxYmJmN2YxYmRkM2VhMWI5YzU5M2IxMjYwZjM3ZDY2ZWM5MWM0MDRhYzRlYTg5NWNhNGJjYThlZjA3NmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA2YWIzOTQxNzcyNTM4ZGFjM2JmZTU1NjI3MDBiMDJjMmM0OGZjYjE3MTFmY2MyYmViZGI5YzlhM2ZhNzVhZDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2ZWJkZWYxMjAyYzc5MGY3NWQxM2QwMTkxNWZjOWY5YzVmZmJiYTJkM2FjNjc2YTAzYjJkYzVjODA4NmNhMDQifQ"
+        },
+        {
+          "resource": "repo://crates/workflow/src/planner.rs#L118-L133",
+          "version": "repo-lines-v1:sha256:6b37dd27ad0f5a4e5e6a41373abe6980f67399a85efc9e2dbc54e892e040aa90:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkODgyYTgxZTNlODczOTY1OTQ1YzM3NzRjYmYyMWE3OTI3N2M2OTdiOWEyNjVjYjQyN2VmZDkzYzQxMDEyYWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmOTI1YTBmMmEyY2RmNDY1OTVkZGRhMjMzZjAxNGMzMDlmMDczNDdjNDhjMDRlNmJlOWNiZGNkODU0OTgyODkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlM2JhNWMyMDdhMjI1ZTU1ZWM1YThiMmQxNWFjYWE3ODE2OTY0MjFlNzg5MGRmY2Y2YjdlYTNlMGFlNDUzNDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk3NjY0YWZlMGUxZTdiYjE0MTZmOTZjZWFlMTYzZmVmZDA2ODliYWViNDAwNThmOGU1Nzc2NmYxM2VkMjAwYjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1bf785e8da224542bc91802d27d1da8c",
+      "statement": "現行Agent promptはrun入力とupstreamを展開し、include_workflow_contextは既定trueである。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/workflow_runtime/runner.rs#L2803-L2852",
+          "version": "repo-lines-v1:sha256:36ee03c39bc929a80fa68effa773a2668c023f64d749453c84265bd657a8a44d:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4YzczZmMyZjBkNGIwZDIyZWIwNWRlM2YyZmE0ODcwNDQ4NmEwNWM0NGY4Zjc2NmY2NGNiNDlkZjY2Mzg4NmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzZTlkYWU1NDA4YzZhYWZjM2IzMGFjNzUwMGFjY2QzOTIxYTVhZmM4MjMyZWI3OWI2ZDY0MWNjOTBlODRmOTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiNGZiM2Y3MTk3YjE2MjA2Yzg1NjIyMzdlM2JiMjk2ZjUzNTVjZGYyNjE0MGU3ZWFmZDJhOGQzYmUxMjZjMTkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2c0dab1e34ae4d2f8f0a51732a57c16b",
+      "statement": "Transformはテンプレート・正規表現・文字数切詰めを実装し、regex不一致はエラーとする。",
+      "evidence": [
+        {
+          "resource": "repo://crates/workflow/src/transform.rs#L28-L74",
+          "version": "repo-lines-v1:sha256:cc203eb6fadfd8580a3ef78886b39a9ec90379d19b8bc819fc21688961ee007b:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyYjI5MmIzZDkxODQ4YTdmMzRhMTViZGQzZDZiYTMxMzBiOGM1NWQ1ODZiY2Q3MTgyMjQyNzU4NGVmYTZjMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiMmU4ZTk4ODZkZGVjYzQ4MWY5MGQ3YzVhYTczMDc4NzI1MDI3MjhjYTJjYzJiNDhiYjQxYzRkM2NhZDlhMjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiMTQ4NDNhN2JhMjA5Zjg0MDBkNTQ1NjdjMzhhYmE5MTYzMWUwOTM1NGFlOWFiYTFmM2UzMDMwZjYxOGIxZGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MjE2MDRiMzVmYzQwYWYwMGNiYTRlZWEyZmQ1ZTJjM2FmMTg2M2IzOTExODVkN2JmNGJiMDllNzJkMGM4YjMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_55959348d3034230bc303c57e245407c",
+      "statement": "Conditionの検証失敗はAwaitingHumanへ変換され、手動選択もtargetを検証する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/workflow_runtime/condition_router.rs#L253-L332",
+          "version": "repo-lines-v1:sha256:092e82e3d265a1f73a76420421cc11233cb099103d6ab83a7de47fea618e6c67:eyJzZWxlY3RlZExpbmVDb3VudCI6ODAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkNmY5OWU0NDFlNDI0ZmNiZWFlYTQ5YmUwNTA5OGY5N2EyYmM4NjU1MDczYjJmNzZjMGM4MTRmMDVmNzIzZTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0NzVlOTRhOTA0YWM0OWIzMTU0ZDQ2NzJhNjZlODYyOWI4NmRhYzc0ZTNlMjkzN2JlNjkyN2FlM2RhMTFjNTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyMmNiODc5MzBhMTEzMDA4NTk3MDM1ZGRkMGRhMjNlMzlmNWIyZWYwMDBkM2I0Zjg0NmMzODM0Y2MzNTIyY2MifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b0677fca027b4ed78287382ff309d4c3",
+      "statement": "HumanGate承認は待機ノードを成功して継続し、拒否はpendingをskipしてrunを失敗させる。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/workflow_runtime/runner.rs#L1485-L1515",
+          "version": "repo-lines-v1:sha256:2d689b1cb96a8677a8d179d6d66c5db7a90d95c3666ef4bf960367e72e173c24:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiOGIzZGU2NGJhMzMzYTI5ZjQ0NWNkZDMyYTFhZjE1ZjZiMzU1NjFmMzdmMTU4OWUxMTc3NWY0M2Y5Mjg3YmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjN2RkYTY0MjM1OGI3OGY5MDIwNzFmYWVkOTMyMDYyMDIxNjE1ZWNhNGIyZWJiMDBkNjljYjg5OGE2OTQ5MjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiMzNmM2Y3YmU5MDc4MzE5MTBlNzU4NzdkMDU5ZGJhOTRkMjM1NDFjYjVkNjE5MWNjN2VlOTk0ZTI1MzM0ODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlZTAxNmExMDhhZWZiNTU0YTRmYTc0OTE1ZWIzYjM0ODQ0MjVjYjMzN2JlZDYyMDQ2ZWMxNjJiOWUxNTczZGYifQ"
+        },
+        {
+          "resource": "repo://crates/server/src/workflow_runtime/runner.rs#L1656-L1676",
+          "version": "repo-lines-v1:sha256:52a9b57d5da94ff92ddb605c42df5074a5e00a3c32e0b919ceb6299eccbe1d62:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlMTU3YmE2ZWM2NjEyNWQxZWRkN2Q0MzM5MjQ2YTVhYzBhNmZhNmJmNDcwYTc5MTZlNmI5NzRlODIxNTQ3MmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjN2RkYTY0MjM1OGI3OGY5MDIwNzFmYWVkOTMyMDYyMDIxNjE1ZWNhNGIyZWJiMDBkNjljYjg5OGE2OTQ5MjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg0Y2ExYjFmMzdhZGNhYjdkYjQ0OWI4NWYyN2VmMjY4N2NjY2RmOTcyMDUzN2RhYmZkNTFhMWViYjVhNTAwZTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwNDk2Y2UyNzQ3Nzc1NTk0YzczNjY3ZmY4MGI5Y2RjOTIxOTA0ZjBiNzgzNTZjNjViMjI0ODc5YWZmNjEzMzEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6be764dcb4804e9bad9a7fbf4ebce8d6",
+      "statement": "ノードretryはIssue runのFailedなAgent/Condition/Transformに限定され、下流skippedをresetして再駆動する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/workflow_runtime/runner.rs#L1822-L1870",
+          "version": "repo-lines-v1:sha256:11822fa8950a4d9e40cfcba09db66045eb141ee38d434e6e34599e2abda170f0:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiYTJmZTM0N2MwNWEyOGM5ODI3NTQ5MTJiODRlNDQ3NmZiZmNhNzA3YjUwODBmZWIwZWY3NWQwODYyOGQ3ZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjN2RkYTY0MjM1OGI3OGY5MDIwNzFmYWVkOTMyMDYyMDIxNjE1ZWNhNGIyZWJiMDBkNjljYjg5OGE2OTQ5MjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyMjI0ZTlmZTNmY2Y1Yzg3ZTY1MTUyOGVjOGQ0NjE0ZjQ2MDY0MGE3OGNmYWY2NGQyNDQ0MDQ3ZDUwNGU4MWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVmYzY1ZjdmOTgyYjcyZTU4NzdiNWIxNDYyZjQyM2ZlYmRkYjhlMzIzNGViNWZjMTcwMTczNDE5MDlkOGI1MzMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8c5c4b06b2c3497cbe3c0195b3c67486",
+      "statement": "READMEの循環例と製品設計のprompt非伝搬記述は、現在の循環拒否とupstream展開にそのまま適用できない。",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L47-L53",
+          "version": "repo-lines-v1:sha256:28395e055dda00195065dfad7960df73cdcc34aee6a2c4e24eb11a22f1f9a523:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmFmNjE5NzA5ZTQwMTNmOGIxYjZjODUyM2RkZTAwNmJlY2NmYjEyMmMzMzRhZGY1MDQ0ODk1ODkwYTI2MTUxYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDdjMDZjNTYxZDVjMzI3MzQzNjg1MjY4YTQ2YjMzOTFmMzk5OGVlZTg5MGQyYmU1MWYwZDIxY2M0YTUzYWU2ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmE4ZmViMGZiYzc3Mzk1ZmMzYWM1YzNiY2JlNGI5YmMzZTNmYWY3ZjdiM2YxYTVkNGY1ZGM1OTQ2NTQyOTAyMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTU5ZDI3MDg3ODlmYzVjNTAxYTdkMzUwNWEyYTViMDRhYTc0MDRmMTE0YTU3OGMyYTQ5MmIzMjc5YjcwOTdlZCJ9"
+        },
+        {
+          "resource": "repo://crates/server/src/workflow_runtime/runner.rs#L2846-L2852",
+          "version": "repo-lines-v1:sha256:eccfe4bb99dceacdfee590d183613f7317ef0bd706e13c7c929836252445420e:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTljMDNjOWNiMzBhNWQ3ZDhmN2JhOWRkMjI1OTBiMWY5ODhkYTJkOWNlNmNlODhkOTdhYzg4MjdkYjBlMDk4YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2NiMjE5NzAwNmNmNTk4Mjg2ZGZmMmUxZjY2NDFhZTdmODNjMmQ4YTMxMWRlOWVlYmY4NWI0NWMwYmE3NzhhZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmI0ZmIzZjcxOTdiMTYyMDZjODU2MjIzN2UzYmIyOTZmNTM1NWNkZjI2MTQwZTdlYWZkMmE4ZDNiZTEyNmMxOSJ9"
+        },
+        {
+          "resource": "repo://crates/workflow/src/validation.rs#L100-L102",
+          "version": "repo-lines-v1:sha256:ec0e7fc43f054268aa324ef371495e6dfe4a44e27de77c46455da42b9293fcce:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzg1OTY1MDQxYmE1MTQ3OGU4NjQ3NmM4YjgyMDI5YjQxOWUyZjJlYjk5ZWFjYzc1NDFiNDcwMGIzMDk1OWFjMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWZmYmU2YmY1MTY0NmVmMTUzZTA5ZTAzNjk2Y2U0M2EyNjkzZmIxYjU2ODliMmQyOWYzNDgyODk4NDdhNzBkYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTk5YmRlZmVlYWNhNjM0MGUwMjkwZGM4NmU4ODljODlkNWUxODlhYTViYTQ0YjU4NWIzYjcwNzM0ZjRhNjJkOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmI0OTc3M2MxZDg2NTVjOTUyYWQyMjJlODdjOTUzYTg0M2JlYjM3YzFjY2NkZTU3YTNlZGFjY2JiMWQyZTVlMiJ9"
+        },
+        {
+          "resource": "repo://docs/future/ai-workflow/spec-product.md#L16-L24",
+          "version": "repo-lines-v1:sha256:60b61e00b664ec97c9ad31581570665944a795a018befc1a5d5f19f73e21308e:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWYzNjVjNmM2NTJhYTE5ZjRkMzM0MjkwMDQ5OTcwYTJiYmM1YzI2ZjdhMjAyZjNlZTE0MzA2NWI1ODAxMDA5YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTNmODcyN2M1OTkyY2UzOGE1YThiNDM2M2NiYzY3NDNiMGE5ZDFlNTExZmYzZWQ0MDYzMjc2YTMwYTc4MGJmZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmFjN2JmMmRmOTdmOGVmMTliMzE5NjAzZGYxYjM5NzU5YmFiNTNmMGE2ZmRkZmRkZjg0MmQ3MjhkYzYwNDI0ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTUyYmU0OGFlMWUxZTFjNTdlMTUyZDhhM2UxMDQ5NTQ2MjJkZDg0OTdiMDY3Y2NkYTlhZjkxMDdhNzA1OWRiYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_a341fa728df14dbabf59ee7a654babeb",
+      "statement": "通常 Workflow の共通 envelope は Workflow Input を8,000文字、各 upstream handoff を12,000文字で明示的に切り詰めるが、node prompt template の明示的な upstream 展開そのものには同じ切詰めを適用しない。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/workflow_runtime/envelope.rs#L1-L83",
+          "version": "repo-lines-v1:sha256:5dd7c46a643b5e99c246ff8583a88fc84281f36cda9bdc62ebef203e82bef36d:eyJzZWxlY3RlZExpbmVDb3VudCI6ODMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxMjU0ZjU1ZTQ2MzE4NTg3YmQyOTk4YzFiYjMwNDdmYTM3ZjhiMDdkMDUwMzBlY2FiNjk0NWUyZTUyNjA5NGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxNWI0Y2RiYjMyNjIwNDA0NmYwMzhkYjZlOTg3NzgwMzc3MWMwYTkyM2VhYjYxZTgwNWY0NjQxMGMzYzkxZjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJjMThjZjEzMGYzODRjNTY2NDMyYjVkOWE4M2Y3N2Y4YzY0OTEyZjdkNTM0ZWU2MDQxMDc5NjJlNDBiY2FhMGMifQ"
+        },
+        {
+          "resource": "repo://crates/server/src/workflow_runtime/runner.rs#L2851-L2856",
+          "version": "repo-lines-v1:sha256:dcb982401625742c79cd10938e65fef0b41866393cb5b29bfa62c6f12101aaad:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTljMDNjOWNiMzBhNWQ3ZDhmN2JhOWRkMjI1OTBiMWY5ODhkYTJkOWNlNmNlODhkOTdhYzg4MjdkYjBlMDk4YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzNiNmZkZDUyMDBiNWZmODhkYTcxNDc2YjY4MzVlYzczNzMzZGQ1ZWFjMjFlMjc3NmUwNGYwYWVjYmI5NmNkYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2NiMjE5NzAwNmNmNTk4Mjg2ZGZmMmUxZjY2NDFhZTdmODNjMmQ4YTMxMWRlOWVlYmY4NWI0NWMwYmE3NzhhZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWZmNThmNGU3MDFkNDk4NTYzYzdmYjU0MjViMWRiMDhmODJhOWFmODRkZWRlZjRhMzkzODIxM2RjYjEzMmQwMiJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-16T18:13:42.498Z"
+  }
+}

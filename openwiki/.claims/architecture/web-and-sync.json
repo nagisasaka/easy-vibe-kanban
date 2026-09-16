@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:9f9c94903650d012e4001a641f22054f098d2ce5fa12a1e50f42215b6baa58f4",
+  "claims": [
+    {
+      "id": "claim_cd547b65737e432fb2cf718c4992aa97",
+      "statement": "LocalとRemoteのWeb Appはruntime識別をProviderへ渡し、Local shellは設定・認証・Tauri listenerも組み立てる。",
+      "evidence": [
+        {
+          "resource": "repo://packages/local-web/src/app/entry/App.tsx#L1-L43",
+          "version": "repo-lines-v1:sha256:c9dde7fb73b78b50e2c89b225ae0dcbfa60656e54a87d054ee0e4b310e805b93:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzZDAxMjIwOTk1NDgzM2YxNDc0YjgwMDgzYjI3ZWQ4OWQxMjU0NjgwOWVlMWQ1YTE3MWVhZmJhM2U3YmYyMzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMDMxYzcyOTFhMTE1ZDNiZmIyZDNmYmI1ODhlNDJhNDQ3NTVhOTRlYWE1ZWRiYjJkMTYyOTZjZDg0ZjgxNzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5NGZjMGMxNzNkMWVjM2ZjNTAxZDdkZmE5Mjg1NTAxYzUyN2NmYjQ3MTI1ODNkYTNjYzM2MTgwNTY2YjRiZTMifQ"
+        },
+        {
+          "resource": "repo://packages/remote-web/src/app/entry/App.tsx#L1-L16",
+          "version": "repo-lines-v1:sha256:88dd7e4d197f1df8403353d5adca041268b2051451a7a696263818b0c92c7095:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmNWEwNmQ5NmQ3MjUyZWFkZWQyNDdiYTFhZjhkN2M5Y2Y5OGNiZjAxMmI2NTkyMmYzNjk1MDFiZjFiNTY4NzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_87b5c0a1441c423c93c154f856a5450e",
+      "statement": "localApiTransportはhost scopeでAPIを対象hostへ変換するが、ローカル資格情報を使うrelay認証等の経路は除外する。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/shared/lib/localApiTransport.ts#L28-L88",
+          "version": "repo-lines-v1:sha256:64115737ef20d59127e80537efdcdb29a973cd093b990ed0567429fe389cb229:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4Mzk3MTIwZTAzZTM0ZjJiOWY3ZDdjMmEzMWNjNjMxMTBjMGY1MjJhNDU3NjVmOWFiYmZkZDkxY2JkMjY0NDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzYzQ1NDVjYzI3NmNlMjljNmRmM2ZlYmRiNWUxOTAyZmJhODQ3MDE0ODJkNzBiM2EzYWIzMzJkNDM3ZmE1OTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkYTMxMWE1YjFkM2JkZGJhZjYwMTRmMTYxNjEwYjkxZjg0ODY5OWRkZjM5ODAxMjJmNWMwZDM1OWE1NmI2YzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYwZmNjZjc0ZTJlZDBjMDcxYTk2YmYwNmM3MzI1ZWQ1MTc4MDMxZjVlODI0M2U1YTk4NWE2NzYzOGE2ZjY1NzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_587bda599f784965b74234e9ac0ade33",
+      "statement": "remoteApiは外部URLがないlocal modeでは/api/localへ送り、それ以外はBearer認証と一度の401 refresh再送を使う。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/shared/lib/remoteApi.ts#L19-L134",
+          "version": "repo-lines-v1:sha256:d4afa8b7a473ac18bd347ba058e4b3f2fce629c94a764988fd66b18183f14a62:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwY2Q1NmJjMGUyODlmNTIzYWE4OWMxYmU3YmVkMDI3ZDE3ZGQyYWVmYmU1ZjA4NjcxMWJlYTUxYzAzNTNkZDE0IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIzODE1NDkzZmEzNzQ3MzQzNjFhNGFmODYxMzUxMTJjZjgzY2MwOTFiMGI0MzFjNDBlZWY3M2I4ODQyYTViNjk1IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2ZDVlMmYxOGM3ZGEzOTUzM2UzNjY2YzI3ZWViMzIxYmM5MDYyYmQ2YmYwYzg2NmNlNTY2OGFiZGYzYmU4Y2ZhIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIzYjc5YjIxMzE3NDgyZDE1OTUzMjUyNmRiOTMyMWQ4ZWNkMTE5OWYzY2Q2ZGIyZGQ4ZGJhMTJmMjAwNTVjZjk0In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_c357d6df5f474374940ec87740b7f6c0",
+      "statement": "Electric proxyはtableとWHEREをserver shapeで固定し、client parameterは許可項目だけ転送する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/remote/src/routes/electric_proxy.rs#L30-L79",
+          "version": "repo-lines-v1:sha256:8b5b2c23bac699479e8b01f928ef64a5c102dc1205d0b0d477195cf80a53764a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxNzY0ZTlmYjdmNGE5MzBmMzRhZDNiMmQ2NTdkZGQwN2E5MDQ4OGJhNDBkYmVhNWNmYWI4YjY1ZDg2NGRiNmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRlOWQ1ZDY0ZTQ1N2IyNzJkOGQzNmQzZDg4ZWI2NmRlZGUzMThkZDIyMjExNzFkZGNkZWZkYTY2NjNhY2IwN2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJjMzU5MTM4M2MwMjc0YmQ0ZDNjYTFhM2VlODUzZjYxNTliMDhkYzEzOWVlNDQ3YWUwM2ViOTkzOTQ5NzEwZTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3e344604888c4b1cb9df14eb11ef9551",
+      "statement": "collection mutationはREST応答のtxidをElectricへ返し、fallback時はsnapshot refreshを促してtxidを返さない。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/shared/lib/electric/collections.ts#L650-L682",
+          "version": "repo-lines-v1:sha256:39926568dc5923f73269da9c6dd6b236538db730e887ba08e615bab99c33bfee:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNmMTYzZjc3ODZjNDJjYTg4OTI3MGY3NTNhNzgwNjI2NDI2YzAzZjk3M2EwNWFkZWFlZGQ0ZmE0ZDI3MGYwZDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2ZTA4NTgzZGYzYjQ0MTA1YTMwMzhkNTQyNmZlNWY5OTZiYjliODJmNDM4Y2UyYjQ5MjYzYWM2ZTI5NGZhZGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyNzYzMjVlODI4ZDFhNDRlOTk0MDFlODhmYzMwNjk2MzU1MGJiODUwYWM0NTY1YWI4Y2YyYjgyMmFkZjgwY2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJmYWIwNmMwMDUzYTU1NWI2YWI2YjYxMGI3NGJmMTRmNGUzZmY5YTAwZWFiNmQ3ZTBlZTE1MWIxZWQ1MzliMDMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6a98bfc73f7f4d0e9da3c9a9324bf974",
+      "statement": "local modeのcollectionはfallbackを使い、Remoteは表示中3秒Ready未達時にfallbackへ切り替え、fallbackは30秒周期で取得する。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/shared/lib/electric/collections.ts#L453-L532",
+          "version": "repo-lines-v1:sha256:f6a408c57c812bb00d14bf4ec719c2fcee250a3952819e5077be8b7b416d2b15:eyJzZWxlY3RlZExpbmVDb3VudCI6ODAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjOGI2Nzg2NWMzOTJhNjU1MTg1MzAzMTY1YjA2MzA3ZmNhNWZkMTIxZjk0NmY4YzRkNGY5M2E5YjYwYjU3ZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhYmM3ZDdkMzNlMGQ2ODQzZDc1ODM5MjIwMDdkYmRjZjA4OGEzZDM4MjE4ZDA1ZDMwNTUzZDMxZmYzZDM2MjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNTgwZTk2NGY4M2E0NzNmNDNkNDQzODQ2Mjk0OWQ2OGI1NjAwZmRhNzg3ZjE2Mzc0NWQwMGRlODljYmYzNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5N2ZlYWE5NGNiOTgxNmM2ZjJhMGU2YTRjNTgwZGI2NmMxMjE5ZWI3NDdlMDJlZTg0MzJhZWQyZWNhOTc2MzMifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/shared/lib/electric/collections.ts#L580-L605",
+          "version": "repo-lines-v1:sha256:9d999f1c8687f6a8d538a937c9dfd6d64de140b9df8cb491dc3dad713351726c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjYTZkMGM0NDZhODAzYjY5MGMzZWZhOTQ0YmE1NjgxMWI5ODQ4OGZiMGMwYTNlMjJiYTIxMGVmZjY3ZWQ0ZTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliNjJmNjBkODU5MGE1NzljZjQ2ZjhkNjczNzhjNGM1NzJiOTYyY2VjY2RiOTBjN2E1ZjdiNDJiOTYwNzgyYTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ2NWU1ZjMwZTM1YmEyYzA5MGIxYThkNGU3ZDNkZmUyMjI2NDI1MTFlNzVlYzNmNGE1ZWRiNzAzZDlmYjI4NmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlNGExMzQwNzFjOTRiMzZjMjBiOTkzMWZlMGNkMzAzZWJjNDNjYzczY2NlNTc1MjhiOGYyNTg3ZDIzMTM0NGEifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/shared/lib/electric/collections.ts#L75-L77",
+          "version": "repo-lines-v1:sha256:b53797e26cc0fd6e0659741980be4457d84caa6d4753ecb06c32baa20063eae5:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmUxZDY3NWI0OWExNjZjNGQwMmY4MWIyYTMzYjI2MDE1OTk3Yzc3MzJlZDYzY2I5NWU3MzNiZjI2MGNiZTA0NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWVlOTQ0NWM0ZjlmYWNhMzg2YTJmMWVjYWNhYzQ2MDVlNDM2ZWMzMWNhYTNmM2FhMzJmNDBiYmIyZmU2ODZkMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWE1MTZlMzU4MzhhMjNlMmRjNjU5OTNlMGRjYWI2MjY3YjczNTEyMTNkMjUzMzRjZDcwYmVkN2YxMDUxMzJiNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmQ3ZTZlZTU1M2YzYTE1ZjJjY2E3YTUzNTU2ZWYzMzQ5ZGE3YTEzMzMzMjE0NTkyY2E4NDk5NjY4NTUzYTIzYSJ9"
+        },
+        {
+          "resource": "repo://packages/web-core/src/shared/lib/electric/collections.ts#L834-L846",
+          "version": "repo-lines-v1:sha256:3d85c04f5f0ecdeab40893d8f1487516b22d73a95dc3d6ff77a7bdd41c02c0b3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhZmQ0YmZlYzBjNjE5M2NhNjUzZWZhZWZmYmFhZTE5MmQ4YWY2YzBlZWQ1NzJhNzNjY2UyMTg2MDY3N2UxMGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0YjMyMzQ4NjNlYzc1MWIwMDQxYzM0ODhlMTU1ZmQ1MTE1MzVkYjBiMzI4ZTYxZGI4ZDZjYTAwMzRmMzVkYzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzOWMyYWIwMGE1NjZiZWM0Y2ZmYjM5ZjM4NmJmMjMyM2UzMmI4MjZlNWJjMDU0ZDlhMjkzMDBmNGNjOWQwNTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4Mjg3OGY1NjcwNGE5MGNhY2I2MzViZDMxNjk4ZDUyMzA0MzExZmEzNTQyYzQ5NzMwZTA2NmE0OWQ4ODdlNTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f81691588e97499d9a7feb8dc3a90be9",
+      "statement": "AgentRun WebSocketはLive購読後に永続履歴をreplayし、Liveは永続cursorに影響せず最新usage snapshotも再送する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/agent_runs.rs#L391-L484",
+          "version": "repo-lines-v1:sha256:f393e20adcba1599307da75853af203ddcdfb4f2489e1ee79677e672e69e813b:eyJzZWxlY3RlZExpbmVDb3VudCI6OTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxNWMwY2U2OTk0NWU1MDFhN2YxMjRmOTg1Yjg4ZDg4N2RlNTM1NmNiNmNiZWIwYzM3MzY5MDZkNzk5ZGM2YmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxYTBlOGFmYTA4ZThlZmRhNWRlODI0MjAxMDVlNDFmNGE5OGU0MTI0NDcyYjhmYThhYzY0MTM0OTZlZjdjYTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNjNjNGQxYWY4Y2Q4OWJiMGJkZDc2NTdmZmNiZjY4MDZhNjEwZDc5ZDZjOGQ0YzMwN2MyNDFkZjM5MDA1MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiNTM1ODgxMDBkZmM3NGY5M2JiODljY2NlY2Y3YjY0ZWExODhlOGUxMGMyMmFlYzc0YzMyNzI3OTJlY2U0YjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_07143e92038949188bdfcbf995c93029",
+      "statement": "モバイルviewport hookはキーボードによる隠れを避けるためvisualViewportの高さをCSS変数へ書き込み、React stateの更新を避ける。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/shared/hooks/useVisualViewportHeightVar.ts#L3-L50",
+          "version": "repo-lines-v1:sha256:8959cf74e43b694560b718c1c65415ebd466d407427c11d078dd3232d7ae6d86:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkMjNiNzU2NGU3ZDczYjhhYzFlZmM0MmMzMzNmNTZkN2RiNjE0MGE2OTM1ZmYxNDNmOWUyM2I3YTdmMzU5MWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5MWQ1ZjI3ZTI0ZTk0OGExOWI0NjY4MDAwMTgwZTQxYjFlYzQwYTA2ZTJiNWU4MzM2MTcwZjZlMDJkNWY5ZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3033d865f6ff4f409db75b59a92d518d",
+      "statement": "Scratchはlocal-webではSQLiteとJSON Patch WebSocket、remote-webではブラウザーlocalStorageを使うため、Cloud IssueのElectric同期と保存範囲が異なる。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/shared/hooks/useScratch.ts#L26-L86",
+          "version": "repo-lines-v1:sha256:bbe7f8b3fd333109232860ea0d60161f55778e43eeefe9ceae2d71f91fa7d1db:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhMWQxYTYzMzkwMjI5Yzc5ODM0N2U4M2EwNDA1NDQxYzk0MDAwMzUyODRhZDE2OGMxYmY2Y2RmMWQ3MGEzNzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlNmRmYzg2YThlOWJjNmRlZjE4M2RlMTdhNWY1MjliOGRkYzExOGQ5NTAwNDc3YzViODQyOGEzM2UwM2FiMGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a06e8fb22312401abf333675fe01226f",
+      "statement": "KanbanのProject/view別表示設定はUI preferencesのScratchへ保存される。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/shared/hooks/useUiPreferencesScratch.ts#L27-L98",
+          "version": "repo-lines-v1:sha256:48b6e3305010af7af66a190ee709359afe3093002a3b4230cd7e2a1f5f048239:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzYzFlNWE2NTZhNWY3NDQ1OWUxZGM0NGYzMzQ4NzZkODBhZDFkYjliMmRhZjkwMWIzMzU2MmE1MDBkZGU5OWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3MmE0MjkzODJiMmUxNDcxOGUwZTM3YjA1NzBhOGExNzAyOTkxZmNkODQ5OGNkODQwNjBhOGJmNGYwNTAxN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMzMTU5M2UxMTNkMmEwN2Y1ODk5OGI2MjgyM2UzM2ZjMzY3MGZjMDU4OTFkYTBmOTdjNjI2N2MzYmExOGU5ZGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4MWI0ODcyMDJlNTI4M2YwN2QzMTg0OTkyYjg5YzA0MjZjZTI1ZTAyODFlNjU3ZDg0YjhjMzNiY2M0Y2MzYzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_035e3931d65b402cac328839eab65959",
+      "statement": "Cloud通知hookはログインuser_idのshapeとnotification mutationを使い、未読件数をgroup単位で算出する。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/shared/hooks/useNotifications.ts#L10-L42",
+          "version": "repo-lines-v1:sha256:1c687b89cba7e2e71ef1711203650cc886c3b5402e05713e6665406741803834:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0YTM4N2JiZGNhYjdjOTRlZjE5Zjc2MjljMjIxYTVlMTlhMWI3ODk0YWZjYTdlODViNTRlMTI3MzViZThjMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU2OGU5MGU0MTI4NDQ4N2EzM2M4ZDc0ZjI1OGI1ZmE0Mjc5MmM2YjU1MGZkNzlhYjA2Nzk1NmEyYzA4YzQwYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_86bce2b57d004c89b2d4f6d4a928eadb",
+      "statement": "Wiki のナビゲーションと本文は Workspace ごとの単一 controller を共有し、repository / 形式の切替では状態をリセットし、sequence と応答 identity で古い読取結果の混入を防ぐ。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/features/wiki/model/wikiViewerController.ts#L42-L131",
+          "version": "repo-lines-v1:sha256:34f45950a0ee2b77ce3d91358ddc11f37da4899f0b7fbc4af099ef70cc08c42b:eyJzZWxlY3RlZExpbmVDb3VudCI6OTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2OWY0YjZhYjc4ODc4YmJkNjk4OTcwZWFjMjZhOWVjZTg1NjFkZmQ1OTQ5NzViNTNmZTQwNTdlZDY4ZjVmYjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyYTJjYjI1YTEyMmI0NDIyMWE2MjM0ZWM2NjBhN2I1ZmI3ZjliZGU3YjNiOWUyYjNjNTU5YTBkOTZmYWM3MzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNTgwZTk2NGY4M2E0NzNmNDNkNDQzODQ2Mjk0OWQ2OGI1NjAwZmRhNzg3ZjE2Mzc0NWQwMGRlODljYmYzNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxMDRjNjUyYWI0ZjEyNjk3MjRkNTEyN2U2ZDJlZTQ4MjYwYjNiZTBiY2NhNzdkMDZjZGJjZjdkOTBlMmVlZGYifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/features/wiki/ui/WorkspaceWikiProvider.tsx#L39-L91",
+          "version": "repo-lines-v1:sha256:a48c9295ac8da3c3cce327b230ae5c68d8da52883865e4a912192d9bdaed1997:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0ZjExMWNiZjY0YTMzMjYwYTE1ZGMzMWNiYTZiOTZjYjRhMzBlMzI2ZjZkNWY5NDFmOWFiNzY4Y2YwODUyZDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyZjMwZjNlZDE4N2Y4NzIyZTc5ZjdhYTFmN2MwYWRkMzM5YWViMzdmM2QxZjIwMGIwMzk3YjRmMTA0MmRmZGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMwZTM4NWRjZjNiMjQwOWIwNTNiMzBlNDhhM2MzY2MwMDIwNDA0ODE1MThjNTU4MWE1MWY4NjZkYzM2MjA3MjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f50896a67f3441fba7cc92cdeb7012e3",
+      "statement": "Wiki 表示中もチャットの composer と timeline は mount されたまま保持され、非表示 panel は inert と aria-hidden、および保存した幅で操作と仮想化レイアウトを隔離する。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/pages/workspaces/PreservedChatPanel.tsx#L4-L52",
+          "version": "repo-lines-v1:sha256:04ea73354ac843eb34573f5cb7b96113a2e5fdeb6c48b93457258214708b6520:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI4Mzg4YTFlMmIwMzFjMTU3NmQ3Y2YyZGU1ODhmODFmZDI2ZDRlODMxNjMyZjVlMTcyNGZjYTYyOWE4MDEwZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmYjY2NWVjZWYzMWJkOTczOWFkZjQxNmZhOGE4YmUxMjVmNjFhMmNlMjQ5ZDNiYjNmZDExZmNlZTYwNmQ4ODUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5M2JkNWY5MGI1YTdjOTE0OTFiMzlmZjg5ODM1NTM2MGQwOTdiZWYwMmRlYjRkODcwNWU1YTJhMWEwODFlNzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiOGI2MDBhNWI0NDhiMWU0ZDAyZGYwOTc0NmVkM2NhMzE3MmY3NWM0YWFiYjAxZGRlMDgwZTM2Y2FiMDc0YjQifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx#L509-L580",
+          "version": "repo-lines-v1:sha256:ee4dc1930c0bff6d479798ebe21a79b6483e37eb2c8d4dde8c5e267f105dabc2:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiNDY2NjdjNTgyZmJkZDJiOTIxMThmMTRhNDM1ZmQ3YzNiNmUzM2RlMWNhZTQ3ODgwYjdkOTEyNzE3MGUzMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjMGE3OTAyZTRhZGU5ZDk3NDNjZTk5NTQ4YWU3Nzg0YWQ0MDBlOTU2MmU2MzU3ZDA4OThmZGM4MzAyNzNjZTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk4YjE2NjBkZTlhMjE3Mjg5NzhkZTEyMGY4OWZmODFjMDBiNTU2ZTFhNmE2OTNiNmJhOGQ4ODhlMjM3YTk4YWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI0ZDJiZWMxZjFhNjQwYjNhMWFmYWNlNzRmMzRiMzYzMjljMTg0MzJhMWRhMWQwNjJiNmYyNWVlODAzZjBhZGQifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-16T18:13:42.498Z"
+  }
+}
