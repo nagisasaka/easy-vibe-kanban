@@ -549,7 +549,7 @@ pub(super) async fn validate_child_completion(
     } else {
         None
     };
-    let proof = crate::routes::openwiki::completion::bootstrap_completion_proof(
+    let proof = crate::routes::openwiki::completion::writer_completion_proof(
         &deployment.db().pool,
         &run,
         ctx.workspace.id,
@@ -864,6 +864,25 @@ pub(super) async fn cleanup_with_service<P: executors::runtime::AgentRunPort + '
         active == 0,
         "Bootstrap still has active children; keep maintenance fenced"
     );
+    let children: Vec<(Uuid, AgentRunStatus, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT ar.id, ar.status, ar.updated_at FROM agent_runs ar JOIN sessions s ON s.id = ar.session_id WHERE s.workspace_id = ?",
+    ).bind(state.maintenance_workspace_id).fetch_all(pool).await?;
+    for (id, status, updated_at) in children {
+        if let Err(error) = crate::routes::openwiki::completion::ensure_processes_exited(
+            pool, id, status, updated_at,
+        )
+        .await
+        {
+            if error
+                .downcast_ref::<crate::routes::openwiki::completion::CompletionPending>()
+                .is_none()
+            {
+                state.error = Some(format!("Bootstrap cleanup retains ownership: {error:#}"));
+                store.save_state(&state)?;
+            }
+            return Ok(());
+        }
+    }
     if let Some(workspace_id) = state.maintenance_workspace_id {
         let workspace = Workspace::find_by_id(pool, workspace_id)
             .await?

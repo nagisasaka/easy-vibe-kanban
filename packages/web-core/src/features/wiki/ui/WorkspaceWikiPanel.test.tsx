@@ -8,39 +8,37 @@ vi.mock('@/shared/hooks/useTheme', () => ({
   useTheme: () => ({ theme: 'light' }),
   getResolvedTheme: () => 'light',
 }));
-vi.mock('./WikiBootstrapDialog', () => ({ WikiBootstrapDialog: () => null }));
 vi.mock('@/shared/components/MarkdownPreview', () => ({
   MarkdownPreview: () => null,
 }));
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe('Wiki Viewer format selection', () => {
+describe('OpenWiki-only Viewer', () => {
   const workspace = {
     id: 'workspace-one',
     workspace_kind: 'direct_folder',
     name: 'Current repo',
   } as Workspace;
-  it('keeps legacy defaults and exposes the separate read-only OpenWiki choice', () => {
+  it('always displays read-only OpenWiki with no legacy controls', () => {
     const html = renderToStaticMarkup(
       createElement(WorkspaceWikiPanel, { workspace, repos: [] })
     );
-    expect(html).toContain('value="llm-wiki" selected=""');
-    expect(html).toContain('OpenWiki · openwiki/ (read-only)');
+    expect(html).not.toContain('Wiki format');
+    expect(html).not.toContain('.llm-wiki/');
+    expect(html).toContain('openwiki/');
     expect(html).toContain('Current workspace');
   });
-  it('restores the workspace-specific OpenWiki view after reload', () => {
+  it('ignores obsolete format storage on reload', () => {
     const getItem = vi.fn((key: string) =>
-      key === 'evk-wiki-viewer-format:workspace-one' ? 'openwiki' : null
+      key === 'evk-wiki-viewer-format:workspace-one' ? 'llm-wiki' : null
     );
     vi.stubGlobal('sessionStorage', { getItem });
     const html = renderToStaticMarkup(
       createElement(WorkspaceWikiPanel, { workspace, repos: [] })
     );
-    expect(getItem).toHaveBeenCalledWith(
-      'evk-wiki-viewer-format:workspace-one'
-    );
-    expect(html).toContain('value="openwiki" selected=""');
+    expect(getItem).not.toHaveBeenCalled();
+    expect(html).toContain('openwiki/');
     expect(html).toContain('including unpublished changes');
     expect(html).not.toContain('Wiki output language');
     expect(html).not.toContain('Create Wiki from existing code');
@@ -50,6 +48,7 @@ describe('Wiki Viewer format selection', () => {
         repos: [],
       })
     );
-    expect(other).toContain('value="llm-wiki" selected=""');
+    expect(other).toContain('openwiki/');
+    expect(other).not.toContain('.llm-wiki/');
   });
 });

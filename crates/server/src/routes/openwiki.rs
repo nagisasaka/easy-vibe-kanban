@@ -13,7 +13,7 @@ use axum::{
     extract::{Path, State},
 };
 use db::models::{
-    agent_runtime::{AgentRunRecord, NativeAuditStreamRecord},
+    agent_runtime::AgentRunRecord,
     pull_request::PullRequest,
     repo::Repo,
     session::{CreateSession, Session},
@@ -21,15 +21,11 @@ use db::models::{
     workspace_repo::{CreateWorkspaceRepo, WorkspaceRepo},
 };
 use deployment::Deployment;
-use executors::{
-    executors::BaseCodingAgent,
-    profile::ExecutorConfig,
-    runtime::{AgentRunStatus, NativeAuditDirection, NativeAuditReader},
-};
+use executors::{executors::BaseCodingAgent, profile::ExecutorConfig, runtime::AgentRunStatus};
 use serde::Deserialize;
 use services::services::{
     container::ContainerService,
-    openwiki::{HostReconciliationProof, OpenWikiAdapter},
+    openwiki::{OpenWikiAdapter, completion::WriterPhase},
     repository_memory::{pending_events, recover_integrations, unresolved_integration},
 };
 use ts_rs::TS;
@@ -268,21 +264,11 @@ async fn prepare_run(
         Err(error) => return Err(error.into()),
     }
     let events = pending_events(store, &branch)?;
-    let mut memories = Vec::new();
-    let workspace_ids: std::collections::BTreeSet<_> =
-        events.iter().map(|event| event.workspace_id).collect();
-    for workspace_id in workspace_ids {
-        if let Some(memory) = store.read_memory(workspace_id)? {
-            memories
-                .push(serde_json::json!({"workspace_id": workspace_id, "semantic_memory": memory}));
-        }
-    }
-    let hints = serde_json::to_string_pretty(
-        &serde_json::json!({"change_manifests": events, "workspace_memories": memories}),
-    )?;
+
     // First bootstrap is explicit init; subsequent sync preserves existing Wiki.
     let initial = !root.join("openwiki/index.md").exists();
     if initial {
+        state.active_sync_input_digest = None;
         state.active_source_commit = Some(source.clone());
         state.active_event_ids = events.iter().map(|event| event.event_id).collect();
         state.error = None;
@@ -291,8 +277,15 @@ async fn prepare_run(
         )
         .await;
     }
-    let prompt =
-        OpenWikiAdapter::maintenance_prompt(&root, initial, &state.output_language, &hints);
+    let (input_digest, hints) = services::services::openwiki::sync_input::prepare(
+        store,
+        repo.id,
+        workspace.id,
+        &source,
+        &branch,
+        &events,
+    )?;
+    let prompt = OpenWikiAdapter::maintenance_prompt(&root, false, &state.output_language, &hints);
     let skill_path = OpenWikiAdapter::installed_skill_path(&root, project_scope)?;
     let session = Session::create(
         &deployment.db().pool,
@@ -311,6 +304,7 @@ async fn prepare_run(
     };
     state.maintenance_workspace_id = Some(workspace.id);
     state.maintenance_session_id = Some(session.id);
+    state.active_sync_input_digest = Some(input_digest);
     state.active_source_commit = Some(source.clone());
     state.active_event_ids = events.iter().map(|event| event.event_id).collect();
     state.error = None;
@@ -350,41 +344,6 @@ async fn prepare_run(
     super::sessions::launch_reserved_coding_agent_execution(deployment, snapshot.agent_run_id)
         .await?;
     Ok(())
-}
-
-/// Native Audit checksum validation precedes inspection; only root-thread
-/// OpenWiki MCP completion frames can acknowledge semantic events.
-pub(crate) async fn completion_proof(
-    deployment: &DeploymentImpl,
-    run: &AgentRunRecord,
-    root: &FsPath,
-) -> anyhow::Result<HostReconciliationProof> {
-    let stream: NativeAuditStreamRecord = sqlx::query_as("SELECT * FROM native_audit_streams WHERE agent_run_id = ? ORDER BY created_at DESC LIMIT 1")
-        .bind(run.id).fetch_one(&deployment.db().pool).await?;
-    let path = utils::assets::asset_dir().join(&stream.manifest_relative_path);
-    let audit = NativeAuditReader::read(path.parent().context("Invalid audit path")?)?;
-    let provider_thread: String = sqlx::query_scalar(
-        "SELECT provider_session_id FROM agent_provider_sessions WHERE session_id = ?",
-    )
-    .bind(run.session_id)
-    .fetch_one(&deployment.db().pool)
-    .await?;
-    let mut proof = HostReconciliationProof::default();
-    for frame in audit.frames() {
-        if frame.direction != NativeAuditDirection::Output {
-            continue;
-        }
-        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&frame.payload_bytes()?) else {
-            continue;
-        };
-        proof.observe_codex_frame(&value, &provider_thread, root)?;
-    }
-    if !proof.complete {
-        bail!(
-            "Codex exited without a verified OpenWiki begin-noop or finish-complete result. Inspect the maintenance session and retry; pending events were not acknowledged."
-        );
-    }
-    Ok(proof)
 }
 
 async fn recover_repository(deployment: &DeploymentImpl, repo: &Repo) -> anyhow::Result<()> {
@@ -430,6 +389,23 @@ async fn recover_repository(deployment: &DeploymentImpl, repo: &Repo) -> anyhow:
         return Ok(());
     }
     let result = finish_run(deployment, repo, &store, &state, &run).await;
+    if let Some(error) = result.as_ref().err()
+        && error
+            .downcast_ref::<completion::MaintenanceFenced>()
+            .is_some()
+    {
+        state.status = RepositoryWikiStatus::Error;
+        state.error = Some(format!("{error:#}"));
+        store.save_state(&state)?;
+        return Ok(());
+    }
+    if result.as_ref().err().is_some_and(|error| {
+        error
+            .downcast_ref::<completion::CompletionPending>()
+            .is_some()
+    }) {
+        return Ok(());
+    }
     if result
         .as_ref()
         .err()
@@ -497,6 +473,7 @@ pub(crate) fn record_reconciliation_result(
     state.active_run_id = None;
     state.bootstrap = None;
     state.active_event_ids.clear();
+    state.active_sync_input_digest = None;
     state.active_source_commit = None;
     store.save_state(state)?;
     Ok(())
@@ -540,23 +517,58 @@ async fn finish_run(
     if !run.status.is_terminal() {
         bail!("Cannot restore OpenWiki instructions while its AgentRun is active");
     }
+    if state.active_run_id != Some(run.id)
+        || state.maintenance_workspace_id != Some(run.workspace_id)
+        || state.maintenance_session_id != Some(run.session_id)
+        || state.bootstrap.is_some()
+    {
+        return Err(completion::MaintenanceFenced("Sync ownership mismatch".into()).into());
+    }
+    completion::ensure_processes_exited(&deployment.db().pool, run.id, run.status, run.updated_at)
+        .await
+        .map_err(|error| {
+            if error
+                .downcast_ref::<completion::CompletionPending>()
+                .is_some()
+            {
+                error
+            } else {
+                completion::MaintenanceFenced(format!("{error:#}")).into()
+            }
+        })?;
     let root = PathBuf::from(&run.workspace_path).join(&repo.name);
     let source = state
         .active_source_commit
         .as_deref()
-        .context("Missing source checkpoint")?;
+        .ok_or_else(|| completion::MaintenanceFenced("Missing source checkpoint".into()))?;
     // Wait for the host to exit before changing its fingerprinted source view.
     // Failed/cancelled hosts get their original instructions back too, but can
     // never publish their partial Wiki. A durable publication is already clean.
     if store.publication(run.id)?.is_none() {
         let completion = if run.status == AgentRunStatus::Succeeded {
-            completion_proof(deployment, run, &root).await.map(|_| ())
+            completion::writer_completion_proof(
+                &deployment.db().pool,
+                run,
+                run.workspace_id,
+                FsPath::new(&run.workspace_path),
+                &root,
+                WriterPhase::Sync,
+            )
+            .await
+            .and_then(|_| services::services::openwiki::sync_input::validate(store, repo.id, state))
         } else {
             Err(anyhow::anyhow!(
                 "OpenWiki AgentRun ended {:?}; generated files remain in its workspace for inspection",
                 run.status
             ))
         };
+        if completion.as_ref().err().is_some_and(|error| {
+            error
+                .downcast_ref::<completion::CompletionPending>()
+                .is_some()
+        }) {
+            return completion.map(|_| (None, false));
+        }
         let provenance = if completion.is_ok() {
             services::services::openwiki::setup::validate_provenance(
                 store,
@@ -567,7 +579,10 @@ async fn finish_run(
         } else {
             Ok(())
         };
-        services::services::openwiki::setup::restore(store, run.workspace_id, &root, source)?;
+        services::services::openwiki::setup::restore(store, run.workspace_id, &root, source)
+            .map_err(|error| {
+                completion::MaintenanceFenced(format!("Instruction restoration failed: {error:#}"))
+            })?;
         completion?;
         provenance?;
         services::services::openwiki::setup::validate_provenance(

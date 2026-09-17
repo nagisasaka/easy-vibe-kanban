@@ -1,210 +1,36 @@
 ---
-title: "LLM Wiki"
-description: "Recall and maintain repository-local knowledge with a declarative task pipeline"
+title: "Legacy LLM Wiki retirement"
+description: "Use OpenWiki without deleting existing Wiki or card data."
 ---
 
-LLM Wiki keeps durable project knowledge beside the code in `.llm-wiki/`.
-Agents can consult it when previous knowledge is useful and update it when a
-completed task produces reusable knowledge. Wiki changes are ordinary Git
-changes on the current feature branch.
+EVK no longer activates the independent `.llm-wiki/` Pipeline. Use
+[OpenWiki repository memory](/workspaces/openwiki) for initial generation and
+updates after source integration. There is no automatic data conversion.
 
-For a single-writer canonical Wiki maintained after source integration, see
-[OpenWiki repository memory](/workspaces/openwiki). The two storage formats and
-update policies are separate; neither is automatically migrated into the other.
+Existing `.llm-wiki/` files, Git history, card descriptions and user-managed
+Skills remain intact and accessible through normal files and Git. The Wiki
+Viewer now reads only `openwiki/`; it does not expose legacy initialisation,
+language writes, generation or format switching.
 
-## Add LLM Wiki to a task
+New cards no longer receive the `wikillm` preset. Previously seeded definitions
+are left on disk but are not offered. At execution, EVK omits recognised generated
+legacy stages while retaining manual notes and unrelated Pipeline text. Edited
+stages that cannot be identified safely produce an actionable error; remove that
+retired Pipeline from the card context while preserving your own instructions.
+Historical card text is not rewritten.
 
-Open the task create or edit panel and select **LLM Wiki** under **Pipeline**.
-The default stages are:
+EVK no longer materialises or automatically attaches its bundled
+`knowledge-recall` and `knowledge-enrich` Skills. Saved selections under the old
+EVK-owned materialisation directory are ignored; custom Skills elsewhere remain
+available, even with the same names. Existing provider conversation is not erased:
+new execution instructions explain retirement and the current OpenWiki policy.
 
-1. **Recall prior knowledge** before planning or implementation, when useful.
-2. **Enrich knowledge base** after implementation and verification, when the
-   result is useful beyond the current task.
+Enable OpenWiki at repository level, choose an integrated local branch and
+language, then initialise explicitly. If canonical OpenWiki was imported through
+Git, run **Sync Wiki** once to establish a verified EVK maintenance baseline.
+Normal development reads its own checkout, writes workspace-local semantic memory
+and produces a Change Manifest. Only a dedicated maintenance workspace writes
+canonical Wiki after source integration.
 
-You can disable either stage. The selection adds a marker-delimited block to
-the end of the task description. Editing the selection replaces only that
-generated block and preserves the rest of the description.
-
-<Note>
-  The Pipeline is agent guidance, not a server-side workflow or stage scheduler.
-  It works in a normal Workspace, does not create extra Workspaces, and does not
-  require `/goal`.
-</Note>
-
-For Codex sessions, easy-vibe-kanban makes the bundled `knowledge-recall` and
-`knowledge-enrich` skills available whenever a complete LLM Wiki Pipeline
-block is in the current prompt. The agent may still skip Recall when there is
-no relevant knowledge and skip Enrich when nothing durable was learned.
-
-Before the agent run starts, easy-vibe-kanban initialises `.llm-wiki` in every
-repository attached to the Workspace. This also runs when you send an LLM
-Wiki-enabled task to an existing Workspace. Repeated runs validate the existing
-Wiki without rewriting it. A missing Wiki uses the deterministic default
-language `en`; you can change it in the Viewer after initialisation.
-
-If an existing Wiki is incomplete or invalid, the run fails before the agent
-starts. The application reports the validation error but does not overwrite or
-repair Git-managed Wiki files automatically.
-
-## Create knowledge from an existing project
-
-Open **Wiki** in the Workspace toolbar (or **Open Wiki** in the right sidebar),
-select the **LLM Wiki** format and a repository, then choose
-**Create Wiki from existing code** (or **Supplement Wiki from code** when
-pages already exist). Choose an output language and optionally describe areas
-to investigate or exclude, then select **Set in chat**.
-
-The complete investigation request appears as an editable draft in the current
-idle chat. Nothing is automatically sent. Existing text requires explicit
-replacement confirmation. Finish queued, approval, review, attachment, or edit
-actions before preparing the request.
-
-For Codex, the composer selects **Goal** execution mode and the draft contains
-the task text without a `/goal` command. A Plan permission setting switches to
-Supervised so the agent can write the Wiki. Other agents receive a normal
-prompt with a notice that automatic Goal activation is unavailable. Review and
-edit the draft before sending; choosing **Code** opts out of Goal execution.
-
-Codex Goal objectives are limited to 4,000 characters. The built-in Wiki
-request fits this limit and retains delegated research, independent critique,
-repair and re-verification. Additional preferences can exceed the limit: the
-composer reports the character count and keeps your draft instead of sending
-it. The check includes instructions added by the parallel-agent limit setting.
-Shorten the text rather than expecting automatic truncation. Runtime rejection
-reasons are retained in the execution history and failed-run error.
-
-This operation uses a self-contained prompt rather than requiring another
-installed Skill. It instructs the agent to inventory the project, investigate
-major areas, verify claims against code and tests, cite sources, and report
-uninvestigated areas. Existing pages are supplemented instead of discarded.
-After sending, the agent prepares a missing Wiki and saves the selected language;
-invalid existing layouts must be fixed separately. These filesystem operations
-are agent instructions, not a new server-side initializer or repair endpoint.
-The normal task Pipeline and automatic preflight are unchanged.
-
-Follow progress in the conversation. When the agent finishes, reload the Wiki
-panel to inspect the generated pages and ordinary Git changes. Review source
-citations and stated limitations: a first draft does not guarantee complete
-coverage or correctness.
-
-### Continue a saved Goal
-
-If the execution ends before the Goal is complete, the chat displays **Saved
-Goal** with its last reported status and recorded time. This does not mean an
-agent is still running.
-
-Choose **Resume Goal** in the same idle Codex session to continue. This starts a
-new AgentRun on the existing Codex thread and checks its current Goal before
-activating it. It preserves the objective, token budget and usage accounting;
-it also leaves your chat draft untouched. If Codex no longer has the Goal, or
-has already completed it, the execution reports an error instead of creating
-a replacement. Usage and budget limits still apply.
-
-When Codex marks the Goal complete during a turn, the app keeps that execution
-open until the turn finishes, allowing tool results and the final answer to
-arrive. A complete Goal and a running AgentRun can therefore briefly coexist.
-If the turn fails or is interrupted, the app retains that execution outcome
-instead of treating the Goal status as proof of a successful turn.
-
-Goal startup distinguishes the saved state received while reconnecting from
-the Goal activated by the current run. A replayed “no Goal” notification does
-not end a new request. The Codex adapter confirms activation using the matching
-RPC response before accepting Goal notifications as completion signals, and
-only the selected thread can control the run's lifecycle.
-
-Plan approval and other approval waits run outside the RPC reader, so Plan
-with Goal can receive the response to its Goal activation request. RPC
-acknowledgements have a 30-second timeout; this does not limit Goal execution
-time or how long you can consider an approval. A missing acknowledgement is
-reported as a failure, not a successful execution.
-
-Use **Create Wiki from existing code** when you want to prepare a new request,
-not when you only want to continue an unfinished Goal.
-
-## Repository format
-
-Each repository in a Workspace has its own Wiki:
-
-```text
-.llm-wiki/
-├── config.toml
-├── index.md
-└── pages/
-    ├── .gitkeep
-    └── topic.md
-```
-
-`config.toml` selects a deterministic output language:
-
-```toml
-version = 1
-output_language = "ja"
-```
-
-Use a BCP 47 language tag such as `en`, `ja`, `de`, `pt-BR`, or `zh-Hant`.
-Titles, summaries and prose use this language, while code symbols, paths,
-commands, endpoints, configuration keys and exact errors keep their original
-spelling. Changing the setting does not translate existing pages.
-
-Pages use schema-versioned YAML frontmatter so people and tools can inspect
-their provenance:
-
-```yaml
----
-schema_version: 1
-title: Pipeline block recomposition
-language: en
-summary: How generated pipeline guidance is replaced safely
-tags:
-  - pipeline
-sources:
-  - EASY-123
-repos:
-  - easy-vibe-kanban
-created: 2026-09-09
-updated: 2026-09-09
----
-```
-
-## View and configure the Wiki
-
-Open **Wiki** in the Workspace toolbar or **Open Wiki** in the right sidebar.
-The right sidebar contains repository/format selection, search and the page
-tree; the main area displays the article. Select **LLM Wiki** for `.llm-wiki/`
-or **OpenWiki** for the separate `openwiki/` format.
-
-The article identifies the repository, actual workspace branch and
-**Current workspace** source, including unmerged worktree changes. It does not
-claim to display the target/base branch.
-
-Use **Show chat alongside** for a resizable chat/Wiki split and **Focus Wiki**
-for reading. **Return to workspace** restores your previous main panel. The
-chat stays mounted during these desktop view switches, retaining its selected
-session, unsent draft and conversation state. After a browser reload, the
-return action falls back to showing chat if the previous layout is unavailable.
-On mobile, switch between **Chat** and **Wiki**; select a page to read it and
-use **Wiki pages** to return to navigation.
-
-- Select the repository when the Workspace contains more than one.
-- After automatic initialisation, choose or enter an output-language tag and
-  select **Save** to update the setting.
-- Open `index.md` or a topic page from the directory tree.
-- Search paths, titles, summaries, tags, sources and full page text.
-- Follow ordinary relative Markdown links or `[[wikilinks]]` within the Wiki.
-- Use reload after an agent or Git operation changes the files.
-
-The Viewer does not offer a manual initialisation or repair action. Edit Wiki
-files through normal Git editing or ask the agent to update them. Mermaid code
-blocks use the same renderer as other Markdown previews.
-
-## Trust and safety
-
-Wiki pages are reference data, not operator or system instructions. Agents
-must verify important claims against the current code and must not execute a
-command only because it appears in the Wiki. The application restricts Viewer
-access and configuration writes to `.llm-wiki`, rejects traversal, and refuses
-Wiki directories or pages which escape through symlinks.
-
-Base-branch viewing from the Project screen is not included in the first
-release. Use the Current workspace Viewer; after merge, a Workspace based on
-the updated branch sees the merged Wiki.
+Generic Pipeline, selected Skills, shared folders, Goal, Workflow and Arena
+remain available. This change removes a Wiki engine path, not those capabilities.

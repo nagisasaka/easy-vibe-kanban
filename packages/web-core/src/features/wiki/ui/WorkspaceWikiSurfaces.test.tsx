@@ -10,7 +10,6 @@ import {
 
 const context = vi.hoisted(() => ({
   get: (): unknown => null,
-  bootstrapProps: null as { onReturnToChat?: () => void } | null,
 }));
 vi.mock('./WorkspaceWikiProvider', () => ({
   useWorkspaceWiki: () => context.get(),
@@ -20,18 +19,13 @@ vi.mock('@/shared/hooks/useTheme', () => ({
   useTheme: () => ({ theme: 'light' }),
   getResolvedTheme: () => 'light',
 }));
-vi.mock('./WikiBootstrapDialog', () => ({
-  WikiBootstrapDialog: (props: { onReturnToChat?: () => void }) => {
-    context.bootstrapProps = props;
-    return null;
-  },
-}));
+
 vi.mock('@/shared/components/MermaidDiagram', () => ({
   MermaidDiagram: ({ chart }: { chart: string }) =>
     createElement('div', { 'data-mermaid': true }, chart),
 }));
 
-async function fixture(openwiki = true) {
+async function fixture() {
   const workspace = {
     id: 'workspace',
     name: 'Reading workspace',
@@ -49,7 +43,7 @@ async function fixture(openwiki = true) {
     ],
     wiki: {
       exists: true,
-      config: { version: 1, output_language: 'ja' },
+      config: null,
       index: {
         path: 'index.md',
         content: '# Home\n[Job](concepts/job.md)',
@@ -82,10 +76,8 @@ async function fixture(openwiki = true) {
   };
   const api = {
     snapshot: vi.fn().mockResolvedValue(snapshot),
-    updateConfig: vi.fn(),
   };
   const controller = createWikiViewerController(workspace.id, 'repo', api);
-  if (openwiki) controller.selectFormat(true);
   await controller.reload();
   context.get = () => ({
     workspace,
@@ -164,30 +156,20 @@ describe('split Wiki navigation and article surfaces', () => {
     expect(controller.getSnapshot().selectedPath).toBe('concepts/execution.md');
   });
 
-  it('retains legacy configuration and bootstrap controls in navigation, never in the read-only article', async () => {
-    const { api } = await fixture(false);
+  it('does not expose retired configuration or bootstrap controls in either surface', async () => {
+    await fixture();
     const navigation = renderToStaticMarkup(
       createElement(WorkspaceWikiNavigation)
     );
-    expect(navigation).toContain('Wiki output language');
-    expect(navigation).toContain('Supplement Wiki from code');
+    expect(navigation).not.toContain('Wiki output language');
+    expect(navigation).not.toContain('Supplement Wiki from code');
     const article = renderToStaticMarkup(createElement(WorkspaceWikiArticle));
-    expect(article).toContain('.llm-wiki/');
+    expect(article).not.toContain('.llm-wiki/');
     expect(article).not.toContain('Supplement Wiki from code');
-    expect(api.updateConfig).not.toHaveBeenCalled();
   });
 
-  it('makes reload accessible from empty mobile navigation and forwards prepared-draft chat return', async () => {
-    const { controller, snapshot } = await fixture(false);
-    const returnToChat = vi.fn();
-    controller.setBootstrapOpen(true);
-    renderToStaticMarkup(
-      createElement(WorkspaceWikiNavigation, {
-        onReturnToChat: returnToChat,
-      })
-    );
-    expect(context.bootstrapProps?.onReturnToChat).toBe(returnToChat);
-    controller.setBootstrapOpen(false);
+  it('makes reload accessible from empty mobile navigation', async () => {
+    const { snapshot } = await fixture();
     snapshot.wiki.exists = false;
     snapshot.wiki.index = null;
     snapshot.wiki.pages = [];

@@ -62,7 +62,13 @@ async function readProjectWorkspaceDefault(
 }
 
 function isScratchNotFound(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 404;
+  // The local scratch route historically returns this exact 400 for absence.
+  // Do not hide malformed payloads or other bad requests as an empty setting.
+  return (
+    error instanceof ApiError &&
+    (error.status === 404 ||
+      (error.status === 400 && error.message === 'Scratch not found'))
+  );
 }
 
 /**

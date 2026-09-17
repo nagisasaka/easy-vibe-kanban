@@ -120,6 +120,18 @@ describe('project workspace defaults', () => {
     ).resolves.toBeNull();
   });
 
+  it('recognises the local scratch API missing-record response without hiding other bad requests', async () => {
+    mockScratchGet.mockRejectedValue(new ApiError('Scratch not found', 400));
+    await expect(
+      getProjectWorkspaceDefaultOrThrow('project-1')
+    ).resolves.toBeNull();
+    const invalid = new ApiError('Invalid scratch data format.', 400);
+    mockScratchGet.mockRejectedValue(invalid);
+    await expect(getProjectWorkspaceDefaultOrThrow('project-1')).rejects.toBe(
+      invalid
+    );
+  });
+
   it('preserves read failures for visible UI without changing lenient callers', async () => {
     const failure = new ApiError('Unavailable', 503);
     mockScratchGet.mockRejectedValue(failure);

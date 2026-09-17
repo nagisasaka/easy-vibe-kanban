@@ -658,31 +658,11 @@ export const workspacesApi = {
   wiki: {
     snapshot: async (
       workspaceId: string,
-      repoId: string,
-      openwiki = false
+      repoId: string
     ): Promise<WorkspaceWikiSnapshot> => {
       const query = new URLSearchParams({ repo_id: repoId });
-      if (openwiki) query.set('openwiki', 'true');
       const response = await makeRequest(
         `/api/workspaces/${workspaceId}/wiki?${query.toString()}`
-      );
-      return handleApiResponse<WorkspaceWikiSnapshot>(response);
-    },
-
-    updateConfig: async (
-      workspaceId: string,
-      repoId: string,
-      outputLanguage: string
-    ): Promise<WorkspaceWikiSnapshot> => {
-      const response = await makeRequest(
-        `/api/workspaces/${workspaceId}/wiki/config`,
-        {
-          method: 'PUT',
-          body: JSON.stringify({
-            repo_id: repoId,
-            output_language: outputLanguage,
-          }),
-        }
       );
       return handleApiResponse<WorkspaceWikiSnapshot>(response);
     },

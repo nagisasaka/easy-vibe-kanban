@@ -62,26 +62,26 @@ describe('card context', () => {
     ).toBe('Task');
   });
 
-  it('passes both presets through the existing initial workspace request', () => {
+  it('passes shared directories without reactivating Wiki through the existing initial workspace request', () => {
     const stored = defaultCardContext('Implement CRUD', [wiki]);
     const prompt = buildWorkspaceCreatePrompt('Feature', stored);
     expect(prompt).toBe(`Feature\n\n${stored}`);
-    expect(hasWikiLlmPipeline(prompt!)).toBe(true);
+    expect(hasWikiLlmPipeline(prompt!)).toBe(false);
     expect(prompt).toContain(SHARED_DIRECTORIES_CONTEXT);
     expect(
       splitCardContext(JSON.parse(JSON.stringify(stored))).description
     ).toBe('Implement CRUD');
   });
 
-  it('defaults both presets while keeping the task editor free of generated text', () => {
+  it('defaults shared directories only while keeping the task editor free of generated text', () => {
     const stored = defaultCardContext('Build a feature', [wiki]);
     const split = splitCardContext(stored);
     expect(split.description).toBe('Build a feature');
-    expect(hasWikiLlmPipeline(stored)).toBe(true);
+    expect(hasWikiLlmPipeline(stored)).toBe(false);
     expect(hasSharedDirectories(split.context)).toBe(true);
     expect(defaultCardContext(stored, [wiki])).toBe(stored);
     expect(cardContextPreview(split.context)).not.toContain('<!--');
-    expect(cardContextPreview(split.context)).toContain(
+    expect(cardContextPreview(split.context)).not.toContain(
       'Consult prior knowledge.'
     );
   });
@@ -109,7 +109,10 @@ describe('card context', () => {
   });
 
   it('preserves stored context even if the preset definition changes', () => {
-    const original = defaultCardContext('Task', [wiki]);
+    const original = withCardContext(
+      'Task',
+      composePipelineBlock(wiki, ['recall'])
+    );
     const changed = { ...wiki, stages: [] };
     expect(
       splitCardContext(
@@ -119,9 +122,10 @@ describe('card context', () => {
   });
 
   it('toggles shared directories independently of Wiki and never duplicates them', () => {
-    const context = splitCardContext(
-      defaultCardContext('Task', [wiki])
-    ).context;
+    const context = toggleSharedDirectories(
+      composePipelineBlock(wiki, ['recall']),
+      true
+    );
     const noWiki = updatePipelineBlock(context, null, [], [wiki]);
     expect(hasSharedDirectories(noWiki)).toBe(true);
     expect(hasWikiLlmPipeline(noWiki)).toBe(false);

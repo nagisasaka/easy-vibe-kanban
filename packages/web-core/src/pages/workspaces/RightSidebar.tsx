@@ -55,9 +55,6 @@ export const RightSidebar = memo(function RightSidebar({
     (s) => s.setRightMainPanelMode
   );
   const openWiki = useUiPreferencesStore((s) => s.openWiki);
-  const setLeftMainPanelVisible = useUiPreferencesStore(
-    (s) => s.setLeftMainPanelVisible
-  );
   const { expandTerminal, isTerminalExpanded } = useLogsPanel();
   const { target: selectedFileTarget, openTarget: openFileTarget } =
     useWorkspaceFilesSelection(selectedWorkspace?.id);
@@ -248,11 +245,7 @@ export const RightSidebar = memo(function RightSidebar({
         className="h-full min-h-0 border-l bg-secondary flex flex-col"
       >
         <div className="p-base border-b text-high shrink-0">Wiki pages</div>
-        <WorkspaceWikiNavigation
-          onReturnToChat={() =>
-            setLeftMainPanelVisible(true, selectedWorkspace?.id)
-          }
-        />
+        <WorkspaceWikiNavigation />
       </aside>
     );
   }

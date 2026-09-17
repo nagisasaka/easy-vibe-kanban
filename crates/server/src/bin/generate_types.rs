@@ -240,7 +240,6 @@ fn generate_types_content() -> String {
         server::routes::workspaces::wiki::WorkspaceWikiSnapshot::decl(),
         server::routes::workspaces::wiki::WikiSourceLink::decl(),
         server::routes::workspaces::wiki::WikiSnapshotSource::decl(),
-        server::routes::workspaces::wiki::UpdateWikiConfigRequest::decl(),
         db::models::requests::WorkspaceRepoInput::decl(),
         server::routes::workspaces::integration::RunAgentSetupRequest::decl(),
         server::routes::workspaces::integration::RunAgentSetupResponse::decl(),

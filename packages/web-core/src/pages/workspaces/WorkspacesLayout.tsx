@@ -388,10 +388,6 @@ export function WorkspacesLayout() {
                     <div className="p-base border-b text-high">Wiki pages</div>
                     <WorkspaceWikiNavigation
                       showReload
-                      onReturnToChat={() => {
-                        closeWiki(workspaceId);
-                        setMobileTab('chat');
-                      }}
                       onSelectPage={() => setWikiMobileNavigation(false)}
                     />
                   </div>

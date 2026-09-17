@@ -68,8 +68,10 @@ function toSidebarWorkspace(
     filesChanged: summary?.files_changed ?? undefined,
     linesAdded: summary?.lines_added ?? undefined,
     linesRemoved: summary?.lines_removed ?? undefined,
-    // Real data from stream
-    isRunning: ws.is_running,
+    // The legacy workspace stream does not observe every AgentRun transition.
+    // Existing periodic summaries carry the all-active-runs/scripts aggregate;
+    // never infer this from the latest run alone. Older hosts fall back to WS.
+    isRunning: summary?.is_running ?? ws.is_running,
     isPinned: ws.pinned,
     isArchived: ws.archived,
     // Additional data from summary

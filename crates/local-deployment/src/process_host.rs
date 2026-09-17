@@ -48,11 +48,12 @@ use crate::transport::{TransportError, read_json_frame, write_json_frame};
 
 const HOST_ATTACH_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 const HOST_CONTROL_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
-const HOST_CANCEL_COMMAND_TIMEOUT: Duration = Duration::from_secs(25);
+const HOST_CANCEL_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const HOST_LAUNCH_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
-const HOST_CANCEL_RESULT_TIMEOUT: Duration = Duration::from_secs(20);
+const HOST_CANCEL_RESULT_TIMEOUT: Duration = Duration::from_secs(25);
 const PROCESS_OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
-const HOST_TERMINAL_ACK_GRACE_PERIOD: Duration = Duration::from_secs(30);
+const PROVIDER_CANCEL_GRACE: Duration = Duration::from_secs(2);
+const HOST_TERMINAL_ACK_GRACE_PERIOD: Duration = Duration::from_secs(35);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct HostBootstrap {
@@ -799,6 +800,12 @@ async fn monitor_process(
                 let Some(ProcessCommand::Control { bytes, control: direct_control, cancel, result }) = command else {
                     continue;
                 };
+                // Snapshot before native interrupt can reparent tool children.
+                let descendants = if cancel {
+                    utils::process::CancelledDescendants::capture(child.inner().id())
+                } else {
+                    Ok(utils::process::CancelledDescendants::default())
+                };
                 let sent_bytes = if let Some(control_peer) = control.as_ref() {
                     match direct_control {
                         Some(direct_control) => control_peer
@@ -863,12 +870,31 @@ async fn monitor_process(
                 }
                 if cancel {
                     cancellation_requested = true;
-                    if let Some(cancellation) = cancellation.as_ref() {
-                        cancellation.cancel();
-                    }
+                    // Native interrupt is asynchronous. Closing its transport
+                    // immediately can kill the provider before it terminates
+                    // tool jobs in their own process groups. Never require an
+                    // acknowledgement: unavailable/unresponsive control still
+                    // falls back to bounded process cleanup below.
+                    cancel_provider_transport(
+                        !sent_bytes.is_empty(),
+                        &mut exit_signal,
+                        cancellation.as_ref(),
+                        PROVIDER_CANCEL_GRACE,
+                    ).await;
                     cancel_result = Some(result);
-                    let kill_result = utils::process::kill_process_group(&mut child).await;
-                    match kill_result {
+                    // Both cleanups are bounded and run concurrently so the
+                    // native grace + process cleanup + audit drain fit inside
+                    // the cancellation protocol deadline.
+                    let (kill_result, descendant_result) = tokio::join!(
+                        utils::process::kill_process_group(&mut child),
+                        async {
+                            match descendants {
+                                Ok(descendants) => descendants.terminate().await,
+                                Err(error) => Err(error),
+                            }
+                        }
+                    );
+                    match kill_result.and(descendant_result) {
                         Ok(()) => break ExitCause::Cancelled,
                         Err(error) => break ExitCause::WaitFailure(error.to_string()),
                     }
@@ -977,6 +1003,20 @@ async fn monitor_process(
                 .unwrap_or_else(|| format!("cancellation converged to terminal status {status:?}")))
         };
         let _ = result.send(acknowledgement);
+    }
+}
+
+async fn cancel_provider_transport<T>(
+    native_interrupt_sent: bool,
+    provider_exit: impl Future<Output = T>,
+    cancellation: Option<&CancellationToken>,
+    grace: Duration,
+) {
+    if native_interrupt_sent {
+        let _ = tokio::time::timeout(grace, provider_exit).await;
+    }
+    if let Some(cancellation) = cancellation {
+        cancellation.cancel();
     }
 }
 
@@ -1117,6 +1157,42 @@ async fn send_host_command_with_timeout(
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn native_interrupt_can_clean_up_before_transport_closes() {
+        let cancellation = CancellationToken::new();
+        let native_cleanup = async {
+            tokio::task::yield_now().await;
+            assert!(!cancellation.is_cancelled());
+        };
+        cancel_provider_transport(
+            true,
+            native_cleanup,
+            Some(&cancellation),
+            Duration::from_secs(1),
+        )
+        .await;
+        assert!(cancellation.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn unresponsive_or_unavailable_native_interrupt_cannot_block_cancel() {
+        for available in [true, false] {
+            let cancellation = CancellationToken::new();
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                cancel_provider_transport(
+                    available,
+                    std::future::pending::<()>(),
+                    Some(&cancellation),
+                    Duration::from_millis(10),
+                ),
+            )
+            .await
+            .unwrap();
+            assert!(cancellation.is_cancelled());
+        }
+    }
+
     #[test]
     fn terminal_failure_retains_provider_reason_but_cancel_does_not() {
         let error = executors::runtime::AgentRuntimeError::new(

@@ -23,12 +23,12 @@ use codex_app_server_protocol::{
     RequestId, ReviewStartParams, ReviewStartResponse, ReviewTarget, ServerRequest,
     SkillsListParams, SkillsListResponse, ThreadCompactStartParams, ThreadCompactStartResponse,
     ThreadGoalClearParams, ThreadGoalClearResponse, ThreadGoalGetParams, ThreadGoalGetResponse,
-    ThreadGoalSetParams, ThreadGoalSetResponse, ThreadGoalStatus, ThreadItem, ThreadReadParams,
-    ThreadReadResponse, ThreadResumeParams, ThreadSettingsUpdateParams,
-    ThreadSettingsUpdateResponse, ThreadStartParams, ThreadStartResponse,
-    ToolRequestUserInputAnswer, ToolRequestUserInputQuestion, ToolRequestUserInputResponse,
-    TurnInterruptParams, TurnStartParams, TurnStartResponse, TurnStatus, TurnSteerParams,
-    TurnSteerResponse, UserInput,
+    ThreadGoalSetParams, ThreadGoalSetResponse, ThreadGoalStatus, ThreadInjectItemsParams,
+    ThreadInjectItemsResponse, ThreadItem, ThreadReadParams, ThreadReadResponse,
+    ThreadResumeParams, ThreadSettingsUpdateParams, ThreadSettingsUpdateResponse,
+    ThreadStartParams, ThreadStartResponse, ToolRequestUserInputAnswer,
+    ToolRequestUserInputQuestion, ToolRequestUserInputResponse, TurnInterruptParams,
+    TurnStartParams, TurnStartResponse, TurnStatus, TurnSteerParams, TurnSteerResponse, UserInput,
 };
 use codex_protocol::{
     config_types::{CollaborationMode, ModeKind, Settings},
@@ -274,6 +274,7 @@ impl AppServerClient {
         // A Vibe follow-up continues the same native Codex conversation.
         // `thread/fork` would create another CLI-visible thread on every turn.
         let requested_thread_id = params.thread_id.clone();
+        let developer_instructions = params.developer_instructions.clone();
         *self.thread_id.lock().await = Some(requested_thread_id.clone());
         let request = ClientRequest::ThreadResume {
             request_id: self.next_request_id(),
@@ -282,6 +283,26 @@ impl AppServerClient {
         let response: ResumedThread = self.send_request(request, "thread/resume").await?;
         ensure_resumed_thread_id(&requested_thread_id, &response.thread.id)?;
         self.adopt_thread_settings(response.model.clone(), response.reasoning_effort.clone());
+        // Resume updates configuration, but Codex's incremental context does
+        // not necessarily replay changed developer instructions into history.
+        // Make this host's current run identity visible before chat/Goal/review
+        // or compaction starts. Keep the same instructions in resume config for
+        // later full-context reconstruction; do not inflate the Goal objective
+        // or start a synthetic user turn. A failed injection stops continuation.
+        if let Some(instructions) = developer_instructions.filter(|text| !text.trim().is_empty()) {
+            let request = ClientRequest::ThreadInjectItems {
+                request_id: self.next_request_id(),
+                params: ThreadInjectItemsParams {
+                    thread_id: requested_thread_id,
+                    items: vec![serde_json::json!({
+                        "type":"message", "role":"developer",
+                        "content":[{"type":"input_text","text":instructions}]
+                    })],
+                },
+            };
+            let _: ThreadInjectItemsResponse =
+                self.send_request(request, "thread/inject_items").await?;
+        }
         Ok(response)
     }
 
@@ -318,9 +339,9 @@ impl AppServerClient {
                     params: TurnInterruptParams { thread_id, turn_id },
                 };
                 // Cancellation is authoritative at the host boundary.  The
-                // interrupt frame only needs to be written successfully; the
-                // process host kills the process immediately afterwards and
-                // must not wait for an app-server acknowledgement.
+                // interrupt frame only needs to be written successfully. The
+                // process host allows a bounded cleanup grace before killing
+                // the process; an app-server acknowledgement is not required.
                 self.rpc().send_with_raw(&request).await
             }
             DirectControl::Steer { text } => {
@@ -1785,6 +1806,7 @@ fn request_id(request: &ClientRequest) -> RequestId {
         ClientRequest::Initialize { request_id, .. }
         | ClientRequest::ThreadStart { request_id, .. }
         | ClientRequest::ThreadResume { request_id, .. }
+        | ClientRequest::ThreadInjectItems { request_id, .. }
         | ClientRequest::ThreadFork { request_id, .. }
         | ClientRequest::TurnStart { request_id, .. }
         | ClientRequest::GetAccount { request_id, .. }
@@ -2210,6 +2232,99 @@ mod version_check_tests {
         *client.thread_id.try_lock().unwrap() = Some("thread-1".into());
         arm_goal(&client);
         client
+    }
+
+    #[test]
+    #[ignore = "stdio fixture launched by resumed_host_context_is_visible_before_any_new_turn"]
+    fn resumed_host_context_stdio_fixture() {
+        use std::io::{BufRead, Write};
+        let mut lines = std::io::stdin().lock().lines();
+        let resume: serde_json::Value =
+            serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap();
+        assert_eq!(resume["method"], "thread/resume");
+        println!(
+            "{}",
+            json!({"id":resume["id"],"result":{"thread":{"id":"resumed"},"model":"fixture","reasoningEffort":"high"}})
+        );
+        std::io::stdout().flush().unwrap();
+        let injection: serde_json::Value =
+            serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap();
+        assert_eq!(injection["method"], "thread/inject_items");
+        assert_eq!(injection["params"]["threadId"], "resumed");
+        let item = &injection["params"]["items"][0];
+        assert_eq!(item["role"], "developer");
+        assert!(
+            item["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("drafts/current-run.json")
+        );
+        let _: codex_protocol::models::ResponseItem = serde_json::from_value(item.clone()).unwrap();
+        let response = if std::env::var_os("EVK_TEST_REJECT_INJECTION").is_some() {
+            json!({"id":injection["id"],"error":{"code":-32601,"message":"unsupported fixture injection"}})
+        } else {
+            json!({"id":injection["id"],"result":{}})
+        };
+        println!("{response}");
+        std::io::stdout().flush().unwrap();
+    }
+
+    #[tokio::test]
+    async fn resumed_host_context_is_visible_before_any_new_turn() {
+        use super::super::jsonrpc::{ExitSignalSender, JsonRpcPeer};
+        for (mode, reject) in [
+            (ExecutionMode::Code, false),
+            (ExecutionMode::Plan, false),
+            (ExecutionMode::Goal, false),
+            (ExecutionMode::PlanWithGoal, false),
+            (ExecutionMode::Code, true),
+        ] {
+            let cancel = CancellationToken::new();
+            let client = AppServerClient::new(
+                LogWriter::new(tokio::io::sink()),
+                None,
+                false,
+                false,
+                mode,
+                None,
+                None,
+                Default::default(),
+                false,
+                String::new(),
+                cancel.clone(),
+            );
+            let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+            command.args(["--exact", "executors::codex::client::version_check_tests::resumed_host_context_stdio_fixture", "--ignored", "--nocapture"])
+                .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::inherit()).kill_on_drop(true);
+            if reject {
+                command.env("EVK_TEST_REJECT_INJECTION", "1");
+            }
+            let mut child = command.spawn().unwrap();
+            let (exit_tx, _exit_rx) = tokio::sync::oneshot::channel();
+            client.connect(JsonRpcPeer::spawn(
+                child.stdin.take().unwrap(),
+                child.stdout.take().unwrap(),
+                client.clone(),
+                ExitSignalSender::new(exit_tx),
+                cancel.clone(),
+            ));
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                let result = client
+                    .thread_resume(codex_app_server_protocol::ThreadResumeParams {
+                        thread_id: "resumed".into(),
+                        developer_instructions: Some(
+                            "Current EVK run: drafts/current-run.json".into(),
+                        ),
+                        ..Default::default()
+                    })
+                    .await;
+                assert_eq!(result.is_err(), reject);
+                assert!(child.wait().await.unwrap().success());
+            })
+            .await
+            .expect("resume must acknowledge visible context before continuation");
+            cancel.cancel();
+        }
     }
 
     fn arm_goal(client: &AppServerClient) {

@@ -64,10 +64,6 @@ import {
   RIGHT_MAIN_PANEL_MODES,
 } from '@/shared/stores/useUiPreferencesStore';
 import { useInspectModeStore } from '../model/store/useInspectModeStore';
-import {
-  registerWikiComposer,
-  wikiChatDraft,
-} from '@/features/wiki/model/wikiBootstrap';
 import { Actions } from '@/shared/actions';
 import {
   isSpecialIcon,
@@ -781,66 +777,6 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
       setLocalMessage,
     ]
   );
-
-  // Wiki requests are staged in the current idle composer, never auto-sent.
-  useEffect(() => {
-    if (!workspaceId) return;
-    return registerWikiComposer(workspaceId, (prompt, replace) => {
-      if (
-        isScratchLoading ||
-        !hasInitialValue ||
-        !executorConfig ||
-        isAgentRunActive ||
-        isSending ||
-        isStopping ||
-        isQueued ||
-        pendingApproval ||
-        isInEditMode ||
-        isInFeedbackMode ||
-        hasReviewComments ||
-        localAttachments.length > 0
-      )
-        return 'unavailable';
-      if (localMessage.trim() && !replace) return 'occupied';
-      const { goal, text, overrides } = wikiChatDraft(
-        prompt,
-        executorConfig.executor,
-        executorConfig.permission_policy
-      );
-      localMessageRef.current = text;
-      cancelDebouncedSave();
-      setLocalMessage(text);
-      if (goal) {
-        setExecutorOverrides(overrides);
-      } else {
-        void saveToScratch(text, executorConfig);
-      }
-      onScrollToBottom('auto');
-      return goal ? 'goal' : 'plain';
-    });
-  }, [
-    workspaceId,
-    sessionId,
-    isScratchLoading,
-    hasInitialValue,
-    executorConfig,
-    isAgentRunActive,
-    isSending,
-    isStopping,
-    isQueued,
-    pendingApproval,
-    isInEditMode,
-    isInFeedbackMode,
-    hasReviewComments,
-    localAttachments.length,
-    localMessage,
-    effectiveExecutor,
-    cancelDebouncedSave,
-    setLocalMessage,
-    saveToScratch,
-    setExecutorOverrides,
-    onScrollToBottom,
-  ]);
 
   // Handle feedback submission
   const handleSubmitFeedback = useCallback(async () => {

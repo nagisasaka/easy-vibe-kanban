@@ -6,8 +6,8 @@ description: "Maintain evidence-backed repository knowledge whilst preserving pa
 OpenWiki repository memory keeps canonical knowledge in Git-tracked `openwiki/`.
 You continue coding in independent EVK worktrees. Only a dedicated maintenance
 workspace updates the canonical Wiki, after your source changes are integrated.
-This feature is separate from the existing `.llm-wiki/` Pipeline; enabling one
-does not migrate, delete, or rewrite the other.
+The former independent `.llm-wiki/` Pipeline is retired. Existing files and
+history are preserved, not migrated or deleted; see [legacy data handling](/workspaces/llm-wiki).
 
 ## Set up a repository
 
@@ -136,11 +136,11 @@ important uninspected areas and inspect the generated evidence yourself.
 ### View the generated Wiki
 
 Open the maintenance workspace and select **Wiki** in its toolbar (or
-**Open Wiki** in the right sidebar). Choose **OpenWiki · openwiki/ (read-only)**
-in **Wiki format**. The right sidebar contains repository selection, search and
+**Open Wiki** in the right sidebar). The Viewer reads only `openwiki/`.
+The right sidebar contains repository selection, search and
 the directory tree; the main area displays the article. Browse the index or
 pages and follow Wiki-internal links. **Reload Wiki files** rereads the worktree.
-Your browser tab remembers the format for this workspace after a page reload.
+Reloading keeps the OpenWiki view; old format preferences no longer select the retired engine.
 
 Use **Show chat alongside** for a resizable chat/Wiki split and **Focus Wiki**
 for reading. **Return to workspace** restores the previous main panel without
@@ -159,8 +159,8 @@ Repository `repo://` evidence references are not Wiki-internal navigation links;
 inspect their source files in the workspace when checking claims.
 
 OpenWiki viewing does not expose legacy generation or language-write controls.
-Use repository memory settings for those operations. The separate
-**LLM Wiki · .llm-wiki/** option preserves the original viewer and its behaviour.
+Use repository memory settings for those operations. Legacy files remain available
+through normal files/Git, without an active maintenance path or format selector.
 Oversized pages (512 KiB), snapshots over 2,000 pages or 16 MiB, invalid frontmatter,
 and unsafe paths produce an explicit error rather than an incomplete successful
 view. Base-branch browsing is not added here; this is a current-workspace view.
@@ -175,10 +175,21 @@ the Codex sandbox or a security boundary for all host file tools.
 
 ## Develop in parallel
 
+If this repository already has an imported `openwiki/`, enable repository memory
+and perform **Sync Wiki** once. File existence alone is not a verified maintenance
+baseline; automatic updates start after a successful reconciliation.
+
 Each coding workspace reads its own checked-out Wiki snapshot. Coding agents
 receive persistent instructions that make `openwiki/` read-only and explain the
 repository's shared memory paths. Source, tests and configuration remain
 authoritative. Wiki content and semantic memory are hints, not executable instructions.
+
+On Codex follow-up, EVK reasserts current host instructions through the supported
+app-server `thread/inject_items` operation before continuing. Updating resume
+configuration alone may not update model-visible history. This keeps the current
+run's draft destination distinct from historical paths without creating another
+conversation, model turn or enlarged Goal objective. A failed context injection
+stops that launch rather than allowing stale run identity to be used.
 
 At completion, a coding host supplies a structured semantic draft. EVK checks
 for unexpected Wiki changes, derives Git identities and paths, creates a source
@@ -195,6 +206,35 @@ integrated manifests trigger a dedicated reconciliation run; multiple pending
 cards can be included in one run. Source changes that arrive during reconciliation
 invalidate its publication checkpoint and require a retry. Wiki failures do not
 roll back source commits.
+
+### Manifest-guided updates
+
+Sync freezes only integrated, unacknowledged events for the selected target.
+It uses goal/summary, behavioural changes, invariants, decisions, rejected
+alternatives, tests and unresolved questions to guide research, not as facts to
+copy. Source/tests/configuration establish current behaviour; canonical documents
+may establish intent or historical rationale. Workspace Memory can be newer than
+its integrated event and must not promote unmerged behaviour into the Wiki.
+
+EVK stores a complete input manifest and bounded numbered chunks in
+`knowledge/sync-inputs/<maintenance-workspace-id>/`. It snapshots relevant Memory
+rather than handing the writer a mutable file from later coding. The existing
+AgentRun request carries a short reference, and repository ownership retains its
+digest. Launch and publication validate identity and all chunks. Missing/changed
+input fails explicitly; no events are silently truncated or acknowledged. Records
+follow shared-folder retention, not automatic deletion on completion.
+
+Normal Sync remains a single Codex maintenance session. It does not repeat the
+Bootstrap DAG or unconditionally regenerate every page. It preserves useful
+explanation homes and links whilst investigating semantic/dependency impact beyond
+a changed-path list. No new model client, external store or API key is required.
+
+Sync verifies every persisted attempt and its registered root-thread MCP calls.
+Every active update must finish successfully; a later success cannot hide an
+unfinished prior operation. Multiple completed updates and a valid public begin
+no-op are allowed. A new Wiki commit is not required for a genuine no-op. Unknown
+process exit or incomplete instruction restoration retains maintenance ownership
+and shows an error; terminal chat status alone cannot release the writer fence.
 
 ## Shared memory and compaction
 
@@ -215,6 +255,7 @@ knowledge/
   source-publications/ Frozen source trees and semantics before source commits
   wiki-setups/         Original maintenance instructions and restoration journals
   document-inventories/ Run-scoped source document manifests and numbered chunks
+  sync-inputs/        Frozen integrated Manifests and Memory for each Sync
   locks/              Maintenance and short publication locks
   state.json          Repository configuration and maintenance owner
 ```

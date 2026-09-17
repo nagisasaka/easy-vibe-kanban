@@ -482,8 +482,17 @@ async fn bootstrap_cleanup_restores_and_releases_only_after_all_children_exit() 
             .fetch_one(&f.pool)
             .await
             .unwrap();
+    let agent_run = Uuid::new_v4();
     sqlx::query("INSERT INTO agent_runs (id, session_id, workspace_id, request_id, idempotency_key, correlation_id, schema_version, payload_version, runtime_profile_id, provider_id, workspace_mode, workspace_path, request_envelope, status) VALUES (?, ?, ?, ?, 'cleanup-host', ?, 1, 1, 'codex:default', 'codex', 'isolated_worktree', ?, '{}', 'running')")
-        .bind(Uuid::new_v4()).bind(session).bind(f.workspace_id).bind(Uuid::new_v4()).bind(run_id).bind(f.maintenance.to_str()).execute(&f.pool).await.unwrap();
+        .bind(agent_run).bind(session).bind(f.workspace_id).bind(Uuid::new_v4()).bind(run_id).bind(f.maintenance.to_str()).execute(&f.pool).await.unwrap();
+    let turn = Uuid::new_v4();
+    let attempt = Uuid::new_v4();
+    sqlx::query("INSERT INTO agent_turns (id, agent_run_id, request_id, intent, input_message) VALUES (?, ?, ?, 'initial', '{}')")
+        .bind(turn).bind(agent_run).bind(Uuid::new_v4()).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO agent_run_attempts (id, agent_run_id, turn_id, request_id, idempotency_key, attempt_number, mode, transport, schema_version, payload_version, capability_snapshot, request_envelope, status) VALUES (?, ?, ?, ?, 'cleanup-attempt', 1, 'launch', 'app_server_jsonrpc', 1, 1, '{}', '{}', 'failed')")
+        .bind(attempt).bind(agent_run).bind(turn).bind(Uuid::new_v4()).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO agent_process_registry (id, run_attempt_id, registry_status, pid, process_started_at) VALUES (?, ?, 'running', 456, ?)")
+        .bind(Uuid::new_v4()).bind(attempt).bind(chrono::Utc::now()).execute(&f.pool).await.unwrap();
     assert!(
         super::super::bootstrap::cleanup_with_service(&f.pool, &repo, &f.store, &service)
             .await
@@ -498,6 +507,24 @@ async fn bootstrap_cleanup_restores_and_releases_only_after_all_children_exit() 
         .execute(&f.pool)
         .await
         .unwrap();
+    super::super::bootstrap::cleanup_with_service(&f.pool, &repo, &f.store, &service)
+        .await
+        .unwrap();
+    assert!(
+        f.store.state().unwrap().bootstrap.is_some(),
+        "Terminal projection alone must not release ownership"
+    );
+    assert_eq!(
+        f.store.wiki_setup(f.workspace_id).unwrap().unwrap().phase,
+        utils::repository_memory::WikiSetupPhase::Prepared
+    );
+    sqlx::query(
+        "UPDATE agent_process_registry SET registry_status = 'exited', observed_exited_at = ?",
+    )
+    .bind(chrono::Utc::now())
+    .execute(&f.pool)
+    .await
+    .unwrap();
     super::super::bootstrap::cleanup_with_service(&f.pool, &repo, &f.store, &service)
         .await
         .unwrap();

@@ -15,7 +15,7 @@ function snapshot(
     source_links: [],
     wiki: {
       exists: true,
-      config: { version: 1, output_language: 'ja' },
+      config: null,
       index: { path: 'index.md', metadata: null, content: '# Wiki' },
       pages: [
         { path: 'pages/concept.md', metadata: null, content: 'A concept' },
@@ -40,7 +40,6 @@ describe('shared Wiki viewer controller', () => {
   it('shares one fetch, page selection and links across navigation/article, preserving state while hidden', async () => {
     const api = {
       snapshot: vi.fn().mockResolvedValue(snapshot()),
-      updateConfig: vi.fn(),
     };
     const controller = createWikiViewerController('workspace', 'repo', api);
     const navigation = vi.fn();
@@ -52,7 +51,7 @@ describe('shared Wiki viewer controller', () => {
     expect(controller.getSnapshot().selectedPath).toBe('index.md');
     controller.selectPage('pages/concept.md');
     controller.setQuery('concept');
-    controller.rememberScroll('workspace:repo:legacy:pages/concept.md', 321);
+    controller.rememberScroll('workspace:repo:openwiki:pages/concept.md', 321);
     controller.toggleDirectory('pages');
     controller.setEnabled(true);
     controller.setEnabled(false);
@@ -64,7 +63,7 @@ describe('shared Wiki viewer controller', () => {
       collapsedDirectories: ['pages'],
     });
     expect(
-      controller.scrollPosition('workspace:repo:legacy:pages/concept.md')
+      controller.scrollPosition('workspace:repo:openwiki:pages/concept.md')
     ).toBe(321);
     expect(controller.followLink('../index.md')).toBe(true);
     expect(controller.getSnapshot().selectedPath).toBe('index.md');
@@ -80,7 +79,6 @@ describe('shared Wiki viewer controller', () => {
   it('reloads the same source without dropping current selection, query or scroll', async () => {
     const api = {
       snapshot: vi.fn().mockResolvedValue(snapshot()),
-      updateConfig: vi.fn(),
     };
     const controller = createWikiViewerController('workspace', 'repo', api);
     await controller.reload();
@@ -102,7 +100,7 @@ describe('shared Wiki viewer controller', () => {
     expect(controller.getSnapshot().selectedPath).toBe('index.md');
   });
 
-  it('does not let stale repository/format responses replace the selected source', async () => {
+  it('does not let stale repository responses replace the selected source', async () => {
     const old = deferred<WorkspaceWikiSnapshot>();
     const next = deferred<WorkspaceWikiSnapshot>();
     const api = {
@@ -110,7 +108,6 @@ describe('shared Wiki viewer controller', () => {
         .fn()
         .mockReturnValueOnce(old.promise)
         .mockReturnValueOnce(next.promise),
-      updateConfig: vi.fn(),
     };
     const controller = createWikiViewerController('workspace', 'repo', api);
     const first = controller.reload();
@@ -133,11 +130,11 @@ describe('shared Wiki viewer controller', () => {
     api.snapshot.mockReturnValueOnce(stale.promise);
     const third = controller.reload();
     controller.rememberScroll('old-format', 80);
-    controller.selectFormat(true);
+    controller.selectRepository('third');
     stale.reject(new Error('old format failed'));
     await third;
     expect(controller.getSnapshot()).toMatchObject({
-      openwiki: true,
+      repoId: 'third',
       snapshot: null,
       selectedPath: 'index.md',
       query: '',
@@ -149,7 +146,6 @@ describe('shared Wiki viewer controller', () => {
   it('rejects response identity mismatches and treats errors/absence explicitly', async () => {
     const api = {
       snapshot: vi.fn().mockResolvedValue(snapshot('another-workspace')),
-      updateConfig: vi.fn(),
     };
     const controller = createWikiViewerController('workspace', 'repo', api);
     await controller.reload();
@@ -172,46 +168,29 @@ describe('shared Wiki viewer controller', () => {
     });
   });
 
-  it('retains legacy language writes but prevents OpenWiki writes and stale save results', async () => {
-    const pending = deferred<WorkspaceWikiSnapshot>();
-    const api = {
-      snapshot: vi.fn().mockResolvedValue(snapshot()),
-      updateConfig: vi.fn().mockReturnValue(pending.promise),
-    };
-    const controller = createWikiViewerController('workspace', 'repo', api);
-    await controller.reload();
-    controller.setLanguage('de');
-    const saving = controller.saveLanguage();
-    expect(api.updateConfig).toHaveBeenCalledWith('workspace', 'repo', 'de');
-    controller.selectRepository('other');
-    pending.resolve(snapshot());
-    await saving;
-    expect(controller.getSnapshot()).toMatchObject({
-      repoId: 'other',
-      snapshot: null,
-      saving: false,
-    });
-    controller.selectFormat(true);
-    await controller.saveLanguage();
-    expect(api.updateConfig).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps workspace-specific formats and independent read/scroll state', async () => {
-    const values = new Map([['evk-wiki-viewer-format:one', 'openwiki']]);
+  it('ignores retired format preferences and keeps independent workspace read/scroll state', async () => {
+    const values = new Map([['evk-wiki-viewer-format:one', 'llm-wiki']]);
     vi.stubGlobal('sessionStorage', {
       getItem: (key: string) => values.get(key),
       setItem: (key: string, value: string) => values.set(key, value),
     });
-    const api = { snapshot: vi.fn(), updateConfig: vi.fn() };
+    const api = {
+      snapshot: vi
+        .fn()
+        .mockImplementation((workspaceId: string) =>
+          Promise.resolve(snapshot(workspaceId))
+        ),
+    };
     const one = createWikiViewerController('one', 'repo', api);
     const two = createWikiViewerController('two', 'repo', api);
-    expect(one.getSnapshot().openwiki).toBe(true);
-    expect(two.getSnapshot().openwiki).toBe(false);
+    expect(one).not.toHaveProperty('selectFormat');
+    expect(one).not.toHaveProperty('saveLanguage');
+    await one.reload();
+    await two.reload();
+    expect(api.snapshot).toHaveBeenCalledWith('one', 'repo');
+    expect(api.snapshot).toHaveBeenCalledWith('two', 'repo');
     one.rememberScroll('page', 100);
     expect(two.scrollPosition('page')).toBe(0);
-    two.selectFormat(true);
-    expect(values.get('evk-wiki-viewer-format:two')).toBe('openwiki');
-    expect(api.snapshot).not.toHaveBeenCalled();
-    expect(api.updateConfig).not.toHaveBeenCalled();
+    expect(values.get('evk-wiki-viewer-format:one')).toBe('llm-wiki');
   });
 });

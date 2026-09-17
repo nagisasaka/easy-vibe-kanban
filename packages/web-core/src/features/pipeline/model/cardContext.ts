@@ -1,9 +1,5 @@
 import type { Pipeline } from 'shared/types';
-import {
-  composePipelineBlock,
-  extractPipelineBlock,
-  removePipelineBlock,
-} from './cardPipeline';
+import { extractPipelineBlock, removePipelineBlock } from './cardPipeline';
 
 const START = '<!-- evk:card-context:start -->';
 const END = '<!-- evk:card-context:end -->';
@@ -79,23 +75,11 @@ export function toggleSharedDirectories(
 
 export function defaultCardContext(
   description: string,
-  pipelines: readonly Pipeline[]
+  _pipelines: readonly Pipeline[]
 ): string {
   if (description.includes(START) || extractPipelineBlock(description))
     return description;
-  const wiki = pipelines.find((pipeline) => pipeline.id === 'wikillm');
-  const wikiBlock = wiki
-    ? composePipelineBlock(
-        wiki,
-        wiki.stages
-          .filter((stage) => stage.default_enabled)
-          .map((stage) => stage.id)
-      )
-    : '';
-  return withCardContext(
-    description,
-    join(wikiBlock, SHARED_DIRECTORIES_CONTEXT)
-  );
+  return withCardContext(description, SHARED_DIRECTORIES_CONTEXT);
 }
 
 export function cardContextPreview(context: string): string {

@@ -157,11 +157,6 @@ pub fn shared_resources_dir(repo_name: &str, repo_id: uuid::Uuid) -> PathBuf {
         .join(format!("{name}-{repo_id}"))
 }
 
-/// Application-managed Codex skills bundled with LLM Wiki.
-pub fn llm_wiki_skills_dir() -> PathBuf {
-    asset_dir().join("skills").join("llm-wiki")
-}
-
 /// Expand leading ~ to user's home directory.
 pub fn expand_tilde(path_str: &str) -> std::path::PathBuf {
     shellexpand::tilde(path_str).as_ref().into()

@@ -8,10 +8,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
-const BUNDLED: &[(&str, &str)] = &[(
-    "wikillm.toml",
-    include_str!("../../../../assets/pipelines/wikillm.toml"),
-)];
+// Built-ins may be added here; the retired wikillm definition is not seeded.
+const BUNDLED: &[(&str, &str)] = &[];
 const PIPELINE_MARKER_PREFIX: &str = "<!-- vk:pipeline:";
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
@@ -163,6 +161,10 @@ pub fn load_pipelines(dir: &Path) -> Vec<Pipeline> {
                 return None;
             }
             let id = path.file_stem()?.to_str()?;
+            if id == "wikillm" {
+                tracing::debug!(path = %path.display(), "retired Wiki Pipeline remains on disk but is not offered");
+                return None;
+            }
             let input = std::fs::read_to_string(&path).ok()?;
             match parse_pipeline(id, &input) {
                 Ok(pipeline) => Some(pipeline),
@@ -252,18 +254,21 @@ prompt = "<!-- vk:pipeline:end -->"
     }
 
     #[test]
-    fn seeds_wikillm_without_overwriting_it() {
+    fn does_not_seed_or_offer_retired_wikillm_and_preserves_saved_file() {
         let temp = tempdir().unwrap();
         ensure_seeded(temp.path()).unwrap();
         let seeded = load_pipelines(temp.path());
-        assert_eq!(seeded[0].id, "wikillm");
-        assert_eq!(seeded[0].stages.len(), 2);
+        assert!(seeded.is_empty());
+        assert!(!temp.path().join("wikillm.toml").exists());
 
-        std::fs::write(temp.path().join("wikillm.toml"), "custom").unwrap();
+        let persisted = "name = \"LLM Wiki\"\n[[stage]]\nid = \"recall\"\nlabel = \"Recall\"\nprompt = \"User-edited legacy instruction\"\n";
+        assert!(parse_pipeline("wikillm", persisted).is_ok());
+        std::fs::write(temp.path().join("wikillm.toml"), persisted).unwrap();
         ensure_seeded(temp.path()).unwrap();
+        assert!(load_pipelines(temp.path()).is_empty());
         assert_eq!(
             std::fs::read_to_string(temp.path().join("wikillm.toml")).unwrap(),
-            "custom"
+            persisted
         );
     }
 
@@ -288,7 +293,7 @@ prompt = "one"
                 .iter()
                 .map(|pipeline| pipeline.id.as_str())
                 .collect::<Vec<_>>(),
-            ["wikillm", "alpha"]
+            ["alpha"]
         );
     }
 }

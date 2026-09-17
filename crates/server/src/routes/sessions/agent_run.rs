@@ -1,13 +1,11 @@
-use std::path::{Component, Path};
+use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use db::models::{
     agent_runtime::{AgentProviderSessionRecord, AgentRuntimePersistenceError},
     session::{Session, SessionError},
     workspace::{Workspace, WorkspaceKind},
-    workspace_repo::WorkspaceRepo,
 };
-use deployment::Deployment;
 use executors::{
     actions::SelectedSkill,
     executors::provider_adapter::DirectProvider,
@@ -22,7 +20,6 @@ use executors::{
     },
 };
 use serde_json::Value;
-use services::services::wiki::{self, WikiError};
 use sha2::{Digest, Sha256};
 use sqlx::{SqlitePool, types::Json};
 use uuid::Uuid;
@@ -42,76 +39,6 @@ pub(super) struct AgentRunLaunch {
 pub(super) enum AgentRunDispatch {
     Immediate,
     Reserved,
-}
-
-fn initialise_workspace_wikis(
-    workspace_path: &Path,
-    repo_names: &[String],
-    use_workspace_root: bool,
-) -> Result<(), WikiError> {
-    let workspace_root = std::fs::canonicalize(workspace_path)?;
-    let repo_roots = if repo_names.is_empty() {
-        if !use_workspace_root {
-            return Err(WikiError::InvalidLayout(
-                "an LLM Wiki-enabled workspace requires at least one repository".to_string(),
-            ));
-        }
-        vec![workspace_root.clone()]
-    } else {
-        repo_names
-            .iter()
-            .map(|name| {
-                let path = Path::new(name);
-                if path.components().count() != 1
-                    || !matches!(path.components().next(), Some(Component::Normal(_)))
-                {
-                    return Err(WikiError::UnsafePath(name.clone()));
-                }
-                let root = std::fs::canonicalize(workspace_root.join(path))?;
-                if !root.starts_with(&workspace_root) {
-                    return Err(WikiError::UnsafePath(root.display().to_string()));
-                }
-                Ok(root)
-            })
-            .collect::<Result<Vec<_>, WikiError>>()?
-    };
-
-    // Validate every existing Wiki before creating any missing Wiki so one bad
-    // repository cannot leave a multi-repository preflight half-applied.
-    for repo_root in &repo_roots {
-        if repo_root.join(wiki::WIKI_DIR).exists() {
-            wiki::load_snapshot(repo_root)?;
-        }
-    }
-    for repo_root in repo_roots {
-        wiki::initialise_if_missing(&repo_root, wiki::DEFAULT_OUTPUT_LANGUAGE)?;
-    }
-    Ok(())
-}
-
-async fn prepare_llm_wiki(
-    deployment: &DeploymentImpl,
-    workspace: &Workspace,
-    workspace_path: &Path,
-    prompt: &str,
-) -> Result<(), ApiError> {
-    if !executors::knowledge_skills::contains_wikillm_block(prompt) {
-        return Ok(());
-    }
-
-    let repo_names = WorkspaceRepo::find_repos_for_workspace(&deployment.db().pool, workspace.id)
-        .await?
-        .into_iter()
-        .map(|repo| repo.name)
-        .collect::<Vec<_>>();
-    let workspace_path = workspace_path.to_path_buf();
-    let use_workspace_root = workspace.is_direct_folder() && repo_names.is_empty();
-    tokio::task::spawn_blocking(move || {
-        initialise_workspace_wikis(&workspace_path, &repo_names, use_workspace_root)
-    })
-    .await
-    .map_err(|error| ApiError::BadRequest(format!("LLM Wiki preflight failed: {error}")))?
-    .map_err(|error| ApiError::BadRequest(format!("LLM Wiki preflight failed: {error}")))
 }
 
 pub(super) async fn has_active_agent_run_for_session(
@@ -438,9 +365,14 @@ pub(super) async fn create_agent_run(
     session: &Session,
     workspace: &Workspace,
     workspace_path: String,
-    launch: AgentRunLaunch,
+    mut launch: AgentRunLaunch,
     dispatch: AgentRunDispatch,
 ) -> Result<AgentRunPortSnapshot, ApiError> {
+    launch.prompt =
+        executors::legacy_wiki::execution_prompt(&launch.prompt).map_err(ApiError::BadRequest)?;
+    launch.selected_skills = launch
+        .selected_skills
+        .map(executors::legacy_wiki::filter_skills);
     let provider = direct_provider(&launch.executor_config)?;
     let runtime_profile_id = launch.executor_config.profile_id().cache_key();
     let capability_snapshot =
@@ -465,13 +397,6 @@ pub(super) async fn create_agent_run(
         launch.provider_session.is_some(),
         &capability_snapshot,
     )?;
-    prepare_llm_wiki(
-        deployment,
-        workspace,
-        Path::new(&workspace_path),
-        &launch.prompt,
-    )
-    .await?;
 
     let request_id = Uuid::new_v4();
     let agent_run_id = Uuid::new_v4();
@@ -627,9 +552,9 @@ mod tests {
     };
 
     use super::{
-        direct_provider, explicit_provider_session, initialise_workspace_wikis,
-        native_adoption_profile_context, native_adoption_profile_fingerprint,
-        native_adoption_reference, validate_native_resume_identity,
+        direct_provider, explicit_provider_session, native_adoption_profile_context,
+        native_adoption_profile_fingerprint, native_adoption_reference,
+        validate_native_resume_identity,
     };
 
     async fn active_run_test_pool() -> sqlx::SqlitePool {
@@ -684,84 +609,6 @@ mod tests {
                 expected
             );
         }
-    }
-
-    #[test]
-    fn wiki_preflight_initialises_each_workspace_repository() {
-        let workspace = tempfile::tempdir().unwrap();
-        for name in ["frontend", "backend"] {
-            std::fs::create_dir(workspace.path().join(name)).unwrap();
-        }
-
-        initialise_workspace_wikis(
-            workspace.path(),
-            &["frontend".to_string(), "backend".to_string()],
-            false,
-        )
-        .unwrap();
-
-        for name in ["frontend", "backend"] {
-            let snapshot =
-                services::services::wiki::load_snapshot(&workspace.path().join(name)).unwrap();
-            assert!(snapshot.exists);
-            assert_eq!(
-                snapshot.config.unwrap().output_language,
-                services::services::wiki::DEFAULT_OUTPUT_LANGUAGE
-            );
-        }
-    }
-
-    #[test]
-    fn wiki_preflight_uses_workspace_root_for_a_repo_less_direct_folder() {
-        let workspace = tempfile::tempdir().unwrap();
-        initialise_workspace_wikis(workspace.path(), &[], true).unwrap();
-
-        assert!(
-            services::services::wiki::load_snapshot(workspace.path())
-                .unwrap()
-                .exists
-        );
-    }
-
-    #[test]
-    fn wiki_preflight_refuses_invalid_existing_data() {
-        let workspace = tempfile::tempdir().unwrap();
-        let repo = workspace.path().join("repo");
-        std::fs::create_dir(&repo).unwrap();
-        std::fs::create_dir(repo.join(services::services::wiki::WIKI_DIR)).unwrap();
-
-        assert!(
-            initialise_workspace_wikis(workspace.path(), &["repo".to_string()], false).is_err()
-        );
-        assert!(!repo.join(".llm-wiki/config.toml").exists());
-    }
-
-    #[test]
-    fn wiki_preflight_validates_all_repositories_before_writing() {
-        let workspace = tempfile::tempdir().unwrap();
-        let clean = workspace.path().join("clean");
-        let invalid = workspace.path().join("invalid");
-        std::fs::create_dir(&clean).unwrap();
-        std::fs::create_dir(&invalid).unwrap();
-        std::fs::create_dir(invalid.join(services::services::wiki::WIKI_DIR)).unwrap();
-
-        assert!(
-            initialise_workspace_wikis(
-                workspace.path(),
-                &["clean".to_string(), "invalid".to_string()],
-                false,
-            )
-            .is_err()
-        );
-        assert!(!clean.join(".llm-wiki").exists());
-    }
-
-    #[test]
-    fn wiki_preflight_rejects_a_repo_less_worktree_workspace() {
-        let workspace = tempfile::tempdir().unwrap();
-
-        assert!(initialise_workspace_wikis(workspace.path(), &[], false).is_err());
-        assert!(!workspace.path().join(".llm-wiki").exists());
     }
 
     #[test]

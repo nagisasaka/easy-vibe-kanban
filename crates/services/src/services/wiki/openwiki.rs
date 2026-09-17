@@ -147,7 +147,7 @@ mod tests {
         assert_eq!(snapshot.pages[0].metadata.as_ref().unwrap().summary, "根拠");
         assert!(snapshot.config.is_none());
         assert_eq!(fs::read_to_string(path).unwrap(), page);
-        assert!(!super::super::load_snapshot(temp.path()).unwrap().exists);
+        assert!(!temp.path().join(".llm-wiki").exists());
         assert!(parse_page("bad.md", "---\nx: [\n---\nbody").is_err());
     }
 
@@ -163,6 +163,34 @@ mod tests {
         fs::create_dir(&wiki).unwrap();
         std::os::unix::fs::symlink(other.path(), wiki.join("nested")).unwrap();
         assert!(load_snapshot(temp.path()).is_err());
+    }
+
+    #[test]
+    fn existing_legacy_files_are_ignored_and_preserved() {
+        let temp = tempfile::tempdir().unwrap();
+        let legacy = temp.path().join(".llm-wiki");
+        fs::create_dir(&legacy).unwrap();
+        fs::write(
+            legacy.join("config.toml"),
+            "invalid legacy config, retained",
+        )
+        .unwrap();
+        fs::write(legacy.join("index.md"), "User knowledge").unwrap();
+        assert!(!load_snapshot(temp.path()).unwrap().exists);
+        fs::create_dir(temp.path().join("openwiki")).unwrap();
+        fs::write(temp.path().join("openwiki/index.md"), "# Canonical").unwrap();
+        assert_eq!(
+            load_snapshot(temp.path()).unwrap().index.unwrap().content,
+            "# Canonical"
+        );
+        assert_eq!(
+            fs::read_to_string(legacy.join("config.toml")).unwrap(),
+            "invalid legacy config, retained"
+        );
+        assert_eq!(
+            fs::read_to_string(legacy.join("index.md")).unwrap(),
+            "User knowledge"
+        );
     }
 
     #[test]
