@@ -705,9 +705,7 @@ mod tests {
 
     #[test]
     fn parallel_cards_reconcile_sequentially_from_the_latest_canonical_wiki() {
-        use super::super::openwiki::{
-            HostReconciliationProof, WikiPublicationRequest, publish_validated_wiki,
-        };
+        use super::super::openwiki::{WikiPublicationRequest, publish_validated_wiki};
 
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("repo");
@@ -811,22 +809,10 @@ mod tests {
             assert!(maintenance.join("a.txt").is_file());
             assert_eq!(maintenance.join("b.txt").is_file(), name == "b");
 
-            // Deterministic public host results; no real model invocation.
-            let mut proof = HostReconciliationProof::default();
-            proof
-                .observe(
-                    "openwiki_begin",
-                    &serde_json::json!({"root": maintenance}),
-                    &serde_json::json!({"structuredContent": {"status":"active", "runId":name}}),
-                    &maintenance,
-                )
-                .unwrap();
+            // Publication fixture supplies a validated output; registered MCP/all-attempt
+            // proof is covered through the production gate in server completion tests.
             expected_wiki = format!("Validated Wiki after {name}\n");
             std::fs::write(maintenance.join("openwiki/index.md"), &expected_wiki).unwrap();
-            proof.observe("openwiki_finish", &serde_json::json!({"runId":name}),
-                &serde_json::json!({"structuredContent": {"status":"complete", "sourceChanged":false}}),
-                &maintenance).unwrap();
-            assert!(proof.complete);
             let (wiki_commit, no_op) = publish_validated_wiki(
                 &git,
                 &store,

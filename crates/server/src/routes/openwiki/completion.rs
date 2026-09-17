@@ -1,4 +1,4 @@
-//! Bootstrap proof joins all durable attempts, not just available/latest audits.
+//! OpenWiki proof joins all durable attempts, not just available/latest audits.
 use std::path::Path;
 
 use anyhow::{Context, ensure};
@@ -13,10 +13,78 @@ use uuid::Uuid;
 /// Terminal projection commits just before process-exit registration. The
 /// existing monitor may poll again during this bounded normal handoff.
 #[derive(Debug, thiserror::Error)]
-#[error("Waiting for Bootstrap process-exit registration")]
+#[error("Waiting for OpenWiki process-exit registration")]
 pub(crate) struct CompletionPending;
 
-pub(crate) async fn bootstrap_completion_proof(
+#[derive(Debug, thiserror::Error)]
+#[error("OpenWiki cleanup is unconfirmed; maintenance remains fenced: {0}")]
+pub(crate) struct MaintenanceFenced(pub String);
+
+/// Terminal projection is not evidence of exit. This also protects restoration
+/// after cancellation/failure, when there is no successful operation proof.
+pub(crate) async fn ensure_processes_exited(
+    pool: &SqlitePool,
+    run_id: Uuid,
+    status: AgentRunStatus,
+    updated_at: chrono::DateTime<chrono::Utc>,
+) -> anyhow::Result<()> {
+    let attempts: Vec<(Uuid, AgentRunStatus)> = sqlx::query_as(
+        "SELECT id, status FROM agent_run_attempts WHERE agent_run_id = ? ORDER BY attempt_number",
+    )
+    .bind(run_id)
+    .fetch_all(pool)
+    .await?;
+    if attempts.is_empty() || !status.is_terminal() {
+        return Err(MaintenanceFenced("Missing attempts or active AgentRun".into()).into());
+    }
+    for (index, (attempt_id, attempt_status)) in attempts.iter().enumerate() {
+        let process: Option<AgentProcessRegistryRecord> =
+            sqlx::query_as("SELECT * FROM agent_process_registry WHERE run_attempt_id = ?")
+                .bind(attempt_id)
+                .fetch_optional(pool)
+                .await?;
+        if let Some(process) = &process {
+            // A host endpoint is durably reserved before spawning. No endpoint
+            // on a failed terminal attempt means no spawn, or confirmed startup
+            // cleanup. This is cleanup evidence only, never successful proof.
+            if attempt_status.is_terminal()
+                && *attempt_status != AgentRunStatus::Succeeded
+                && process.registry_status == "reserved"
+                && process.host_endpoint.is_none()
+                && process.host_token.is_none()
+                && process.host_pid.is_none()
+                && process.pid.is_none()
+            {
+                continue;
+            }
+            if attempt_status.is_terminal()
+                && process.registry_status == "exited"
+                && process.observed_exited_at.is_some()
+            {
+                continue;
+            }
+            if index + 1 == attempts.len()
+                && matches!(process.registry_status.as_str(), "spawned" | "running")
+                && chrono::Utc::now()
+                    .signed_duration_since(updated_at)
+                    .num_seconds()
+                    < 10
+            {
+                return Err(CompletionPending.into());
+            }
+        }
+        // A reserved endpoint may already have a live host: never infer exit
+        // from provider PID absence alone.
+        return Err(MaintenanceFenced(format!(
+            "Attempt {} process exit is unconfirmed",
+            attempt_id
+        ))
+        .into());
+    }
+    Ok(())
+}
+
+pub(crate) async fn writer_completion_proof(
     pool: &SqlitePool,
     run: &AgentRunRecord,
     workspace_id: Uuid,
@@ -26,7 +94,7 @@ pub(crate) async fn bootstrap_completion_proof(
 ) -> anyhow::Result<PhaseCompletionProof> {
     ensure!(
         run.workspace_id == workspace_id && run.status == AgentRunStatus::Succeeded,
-        "Bootstrap AgentRun is not a successful delegated workspace run"
+        "OpenWiki AgentRun is not a successful delegated workspace run"
     );
     let attempts: Vec<AgentRunAttemptRecord> = sqlx::query_as(
         "SELECT * FROM agent_run_attempts WHERE agent_run_id = ? ORDER BY attempt_number",
@@ -34,10 +102,10 @@ pub(crate) async fn bootstrap_completion_proof(
     .bind(run.id)
     .fetch_all(pool)
     .await?;
-    ensure!(!attempts.is_empty(), "Bootstrap has no RunAttempts");
+    ensure!(!attempts.is_empty(), "OpenWiki has no RunAttempts");
     ensure!(
         attempts.last().unwrap().status == AgentRunStatus::Succeeded,
-        "Latest Bootstrap attempt did not succeed"
+        "Latest OpenWiki attempt did not succeed"
     );
     let mut proof = PhaseCompletionProof::new(phase);
     let mut previous_exit = None;
@@ -52,11 +120,11 @@ pub(crate) async fn bootstrap_completion_proof(
                 && request.turn_id == attempt.turn_id
                 && i64::from(request.attempt_number) == attempt.attempt_number
                 && request.workspace.workspace_id == workspace_id,
-            "Bootstrap attempt identity/sequence mismatch"
+            "OpenWiki attempt identity/sequence mismatch"
         );
         ensure!(
             attempt.status.is_terminal(),
-            "Earlier Bootstrap attempt is still active"
+            "Earlier OpenWiki attempt is still active"
         );
         let process: AgentProcessRegistryRecord =
             sqlx::query_as("SELECT * FROM agent_process_registry WHERE run_attempt_id = ?")
@@ -75,11 +143,11 @@ pub(crate) async fn bootstrap_completion_proof(
         }
         ensure!(
             process.registry_status == "exited" && process.observed_exited_at.is_some(),
-            "Bootstrap attempt {} process exit is unconfirmed",
+            "OpenWiki attempt {} process exit is unconfirmed",
             attempt.id
         );
         if let (Some(previous), Some(started)) = (previous_exit, process.process_started_at) {
-            ensure!(previous <= started, "Bootstrap attempts overlapped");
+            ensure!(previous <= started, "OpenWiki attempts overlapped");
         }
         previous_exit = process.observed_exited_at;
         let stream: NativeAuditStreamRecord =
@@ -89,13 +157,13 @@ pub(crate) async fn bootstrap_completion_proof(
                 .await?
                 .with_context(|| {
                     format!(
-                        "Bootstrap attempt {} audit missing; side effects cannot be excluded",
+                        "OpenWiki attempt {} audit missing; side effects cannot be excluded",
                         attempt.id
                     )
                 })?;
         let path = utils::assets::asset_dir().join(&stream.manifest_relative_path);
         let audit = NativeAuditReader::read(path.parent().context("Invalid audit path")?)
-            .with_context(|| format!("Bootstrap attempt {} audit integrity failed", attempt.id))?;
+            .with_context(|| format!("OpenWiki attempt {} audit integrity failed", attempt.id))?;
         let manifest = audit.manifest();
         ensure!(
             stream.session_id == run.session_id
@@ -111,14 +179,14 @@ pub(crate) async fn bootstrap_completion_proof(
                     == workspace_path.canonicalize()?
                 && Path::new(&manifest.workspace_path).canonicalize()?
                     == workspace_path.canonicalize()?,
-            "Bootstrap Native Audit identity does not match the delegated attempt"
+            "OpenWiki Native Audit identity does not match the delegated attempt"
         );
         let root_observed = proof
             .replay_attempt(&audit, root)
-            .with_context(|| format!("Bootstrap attempt {} operation proof failed", attempt.id))?;
+            .with_context(|| format!("OpenWiki attempt {} operation proof failed", attempt.id))?;
         ensure!(
             attempt.status != AgentRunStatus::Succeeded || root_observed,
-            "Successful Bootstrap attempt has no audited root thread"
+            "Successful OpenWiki attempt has no audited root thread"
         );
     }
     proof.validate()?;
@@ -184,7 +252,7 @@ mod tests {
                 input: CanonicalMessage {
                     message_id: Uuid::new_v4(),
                     role: AgentRuntimeMessageRole::User,
-                    content: "Bootstrap fixture".into(),
+                    content: "OpenWiki fixture".into(),
                 },
                 created_at: now,
             };
@@ -305,7 +373,7 @@ mod tests {
             let run = AgentRunRecord::find(&self.pool, self.request.agent_run_id)
                 .await?
                 .unwrap();
-            bootstrap_completion_proof(
+            writer_completion_proof(
                 &self.pool,
                 &run,
                 self.request.workspace.workspace_id,
@@ -436,5 +504,52 @@ mod tests {
             let result = f.proof(WriterPhase::Generate).await;
             assert_eq!(result.is_ok(), earlier == "empty", "{earlier}: {result:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn sync_gate_checks_all_attempts_and_process_exit_before_cleanup() {
+        for earlier in ["empty", "missing", "unfinished"] {
+            let mut f = Fixture::new().await;
+            f.attempt(match earlier {
+                "missing" => None,
+                "unfinished" => Some(f.operations(&["update"], false)),
+                _ => Some(vec![]),
+            })
+            .await;
+            f.attempt(Some(f.operations(&["update", "update"], true)))
+                .await;
+            assert_eq!(
+                f.proof(WriterPhase::Sync).await.is_ok(),
+                earlier == "empty",
+                "{earlier}"
+            );
+        }
+        let mut f = Fixture::new().await;
+        f.attempt(Some(vec![])).await;
+        assert!(f.proof(WriterPhase::Sync).await.is_err());
+        let mut run = AgentRunRecord::find(&f.pool, f.request.agent_run_id)
+            .await
+            .unwrap()
+            .unwrap();
+        run.status = AgentRunStatus::Cancelled;
+        ensure_processes_exited(&f.pool, run.id, run.status, run.updated_at)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE agent_process_registry SET registry_status = 'running', observed_exited_at = NULL").execute(&f.pool).await.unwrap();
+        assert!(
+            ensure_processes_exited(&f.pool, run.id, run.status, run.updated_at)
+                .await
+                .unwrap_err()
+                .downcast_ref::<CompletionPending>()
+                .is_some()
+        );
+        run.updated_at -= chrono::Duration::seconds(20);
+        assert!(
+            ensure_processes_exited(&f.pool, run.id, run.status, run.updated_at)
+                .await
+                .unwrap_err()
+                .downcast_ref::<MaintenanceFenced>()
+                .is_some()
+        );
     }
 }

@@ -711,7 +711,7 @@ mod tests {
         assert!(prompt.contains("A begin status=noop is successful"));
         assert!(prompt.contains("{\"change_manifests\":[]}"));
         assert!(
-            prompt.contains("locate existing canonical explanation homes for changed concepts")
+            prompt.contains("Locate existing canonical explanation homes for changed concepts")
         );
         assert!(prompt.contains("reconcile affected summaries, workflow explanations and links"));
         assert!(prompt.contains("Preserve useful page paths and structure"));

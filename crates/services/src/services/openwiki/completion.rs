@@ -1,5 +1,5 @@
-//! Bootstrap operation proof, reconstructed from existing Native Audit streams.
-//! No operation history is persisted here. Sync retains its existing contract.
+//! Writer operation proof reconstructed from existing Native Audit streams.
+//! Bootstrap and ordinary Sync share closure/identity checks, not operation policy.
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -33,6 +33,7 @@ fn fingerprint(value: &Value) -> [u8; 32] {
 pub enum WriterPhase {
     Generate,
     Refine,
+    Sync,
 }
 
 #[derive(Debug)]
@@ -48,6 +49,7 @@ pub struct PhaseCompletionProof {
     run_ids: HashSet<String>,
     initialised: bool,
     completed_updates: usize,
+    completed_noops: usize,
     pending: HashMap<String, (String, [u8; 32])>,
     completed_calls: HashMap<String, [u8; 32]>,
 }
@@ -60,6 +62,7 @@ impl PhaseCompletionProof {
             run_ids: HashSet::new(),
             initialised: false,
             completed_updates: 0,
+            completed_noops: 0,
             pending: HashMap::new(),
             completed_calls: HashMap::new(),
         }
@@ -132,6 +135,12 @@ impl PhaseCompletionProof {
         ensure!(
             self.phase != WriterPhase::Generate || self.initialised,
             "Generate has no completed init from this phase"
+        );
+        ensure!(
+            self.phase != WriterPhase::Sync
+                || self.completed_updates > 0
+                || self.completed_noops > 0,
+            "Sync has no completed update or audited public begin-noop"
         );
         Ok(())
     }
@@ -283,11 +292,11 @@ impl PhaseCompletionProof {
         );
         if mode == "update" {
             ensure!(
-                args["force"] == true,
+                self.phase == WriterPhase::Sync || args["force"] == true,
                 "Bootstrap corrections require update + force=true"
             );
             ensure!(
-                self.phase == WriterPhase::Refine || self.initialised,
+                self.phase != WriterPhase::Generate || self.initialised,
                 "Generate update preceded init completion"
             );
         } else {
@@ -296,8 +305,20 @@ impl PhaseCompletionProof {
                 "Bootstrap cannot reinitialise Wiki"
             );
         }
-        // Bootstrap writers explicitly request authoring. Sync's supported noop
-        // remains in HostReconciliationProof; it is not a forced authoring run.
+        // 0.5.1's public no-op response has no runId or resumed flag. It is
+        // successful only for an ordinary unforced update with no open run.
+        if data["status"] == "noop" {
+            ensure!(
+                self.phase == WriterPhase::Sync
+                    && mode == "update"
+                    && args["force"] != true
+                    && self.active.is_none()
+                    && matches!(data.get("sourceChanged"), None | Some(Value::Bool(false))),
+                "OpenWiki no-op cannot close an active or forced operation"
+            );
+            self.completed_noops += 1;
+            return Ok(());
+        }
         ensure!(
             data["status"] == "active",
             "Bootstrap begin did not start an authoring run"
@@ -606,5 +627,83 @@ mod tests {
         let mut proof = PhaseCompletionProof::new(WriterPhase::Generate);
         assert!(proof.replay_attempt(&bad, tmp.path()).is_err());
         assert!(proof.replay_attempt(&second, tmp.path()).is_err());
+    }
+
+    #[test]
+    fn sync_accepts_unforced_updates_multiple_operations_and_public_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut proof = PhaseCompletionProof::new(WriterPhase::Sync);
+        assert!(proof.validate().is_err());
+        for _ in 0..2 {
+            let id = Uuid::new_v4();
+            let mut input = begin(tmp.path(), "update", id);
+            for frame in &mut input {
+                frame["params"]["item"]["arguments"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("force");
+            }
+            feed(&mut proof, tmp.path(), input).unwrap();
+            assert!(proof.validate().is_err());
+            feed(&mut proof, tmp.path(), finish(id)).unwrap();
+            proof.validate().unwrap();
+        }
+        let mut noop = PhaseCompletionProof::new(WriterPhase::Sync);
+        feed(
+            &mut noop,
+            tmp.path(),
+            frames(
+                "openwiki_begin",
+                json!({"root":tmp.path(),"mode":"update"}),
+                json!({"structuredContent":{"root":tmp.path(),"mode":"update","status":"noop"}}),
+            ),
+        )
+        .unwrap();
+        noop.validate().unwrap();
+        assert!(!noop.has_completed_update());
+    }
+
+    #[test]
+    fn sync_cannot_hide_unfinished_operations_or_unaudited_calls_behind_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        for mutation in [
+            "active", "force", "init", "root", "mode", "source", "child", "failed",
+        ] {
+            let mut proof = PhaseCompletionProof::new(WriterPhase::Sync);
+            let mut input = frames(
+                "openwiki_begin",
+                json!({"root":tmp.path(),"mode":"update"}),
+                json!({"structuredContent":{"root":tmp.path(),"mode":"update","status":"noop"}}),
+            );
+            if mutation == "active" {
+                feed(
+                    &mut proof,
+                    tmp.path(),
+                    begin(tmp.path(), "update", Uuid::new_v4()),
+                )
+                .unwrap();
+            }
+            for frame in &mut input {
+                let item = &mut frame["params"]["item"];
+                match mutation {
+                    "force" => item["arguments"]["force"] = json!(true),
+                    "init" => {
+                        item["arguments"]["mode"] = json!("init");
+                        item["result"]["structuredContent"]["mode"] = json!("init");
+                    }
+                    "root" => item["result"]["structuredContent"]["root"] = json!("/unknown"),
+                    "mode" => item["result"]["structuredContent"]["mode"] = json!("init"),
+                    "source" => item["result"]["structuredContent"]["sourceChanged"] = json!(true),
+                    "failed" => item["result"]["isError"] = json!(true),
+                    "child" => frame["params"]["threadId"] = json!("child"),
+                    _ => {}
+                }
+            }
+            assert!(feed(&mut proof, tmp.path(), input).is_err(), "{mutation}");
+        }
+        let mut proof = PhaseCompletionProof::new(WriterPhase::Sync);
+        let (_tmp, audit) = audited(tmp.path(), vec![], 1);
+        proof.replay_attempt(&audit, tmp.path()).unwrap();
+        assert!(proof.validate().is_err()); // prose/custom stdio bridge is not MCP evidence
     }
 }

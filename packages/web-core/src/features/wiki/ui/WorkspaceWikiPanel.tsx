@@ -21,7 +21,6 @@ import {
 } from '@phosphor-icons/react';
 import { MarkdownPreview } from '@/shared/components/MarkdownPreview';
 import { getResolvedTheme, useTheme } from '@/shared/hooks/useTheme';
-import { WikiBootstrapDialog } from './WikiBootstrapDialog';
 import {
   WorkspaceWikiProvider,
   useWorkspaceWiki,
@@ -39,18 +38,6 @@ import {
 
 const useScrollLayoutEffect =
   typeof window === 'undefined' ? useEffect : useLayoutEffect;
-
-const LANGUAGE_OPTIONS = [
-  ['en', 'English'],
-  ['ja', '日本語'],
-  ['de', 'Deutsch'],
-  ['es', 'Español'],
-  ['fr', 'Français'],
-  ['ko', '한국어'],
-  ['pt-BR', 'Português (Brasil)'],
-  ['zh-Hans', '简体中文'],
-  ['zh-Hant', '繁體中文'],
-] as const;
 
 /** Compatibility surface for callers outside the workspace layout. */
 export function WorkspaceWikiPanel({
@@ -75,27 +62,14 @@ export function WorkspaceWikiPanel({
 /** Sidebar controls and the public page tree; the article has its own surface. */
 export function WorkspaceWikiNavigation({
   onSelectPage,
-  onReturnToChat,
   showReload = false,
 }: {
   onSelectPage?: () => void;
-  onReturnToChat?: () => void;
   showReload?: boolean;
 }) {
   const wiki = useWorkspaceWiki();
-  const {
-    workspace,
-    repositoryOptions,
-    repoId,
-    openwiki,
-    snapshot,
-    query,
-    language,
-    saving,
-    error,
-    bootstrapOpen,
-    controller,
-  } = wiki;
+  const { repositoryOptions, repoId, snapshot, query, error, controller } =
+    wiki;
   const pages = useMemo(
     () => (snapshot ? searchWikiPages(snapshot.wiki, query) : []),
     [snapshot, query]
@@ -105,9 +79,7 @@ export function WorkspaceWikiNavigation({
     <div className="flex h-full min-h-0 w-full flex-1 flex-col bg-secondary text-base">
       <div className="shrink-0 space-y-half border-b p-base">
         <div className="flex items-center justify-between gap-half">
-          <p className="text-sm text-low">
-            Current workspace · {openwiki ? 'openwiki/' : '.llm-wiki/'}
-          </p>
+          <p className="text-sm text-low">Current workspace · openwiki/</p>
           {showReload && (
             <button
               type="button"
@@ -133,82 +105,12 @@ export function WorkspaceWikiNavigation({
             </option>
           ))}
         </select>
-        <select
-          aria-label="Wiki format"
-          value={openwiki ? 'openwiki' : 'llm-wiki'}
-          onChange={(event) =>
-            controller.selectFormat(event.target.value === 'openwiki')
-          }
-          className="w-full rounded border bg-primary px-half py-half text-high"
-        >
-          <option value="llm-wiki">LLM Wiki · .llm-wiki/</option>
-          <option value="openwiki">OpenWiki · openwiki/ (read-only)</option>
-        </select>
-        {openwiki && (
-          <p className="text-sm text-low">
-            This shows the current worktree, including unpublished changes.
-            Initialisation and Sync use repository memory settings.
-          </p>
-        )}
-        {!openwiki && snapshot && !error && repoId && (
-          <button
-            type="button"
-            className="rounded border px-base py-half text-high hover:bg-panel"
-            onClick={() => controller.setBootstrapOpen(true)}
-          >
-            {snapshot.wiki.pages.length
-              ? 'Supplement Wiki from code'
-              : 'Create Wiki from existing code'}
-          </button>
-        )}
-        {!openwiki && bootstrapOpen && workspace && snapshot && !error && (
-          <WikiBootstrapDialog
-            key={`${workspace.id}:${repoId}`}
-            workspaceId={workspace.id}
-            repository={
-              repositoryOptions.find((repo) => repo.id === repoId)?.name ??
-              'Current direct-folder workspace'
-            }
-            initialLanguage={snapshot.wiki.config?.output_language ?? 'en'}
-            onClose={() => controller.setBootstrapOpen(false)}
-            onReturnToChat={onReturnToChat}
-          />
-        )}
+        <p className="text-sm text-low">
+          This shows the current worktree, including unpublished changes.
+          Initialisation and Sync use repository memory settings.
+        </p>
         {snapshot?.wiki.exists && (
           <>
-            {!openwiki && (
-              <>
-                <div className="flex gap-half">
-                  <input
-                    list="llm-wiki-language-options"
-                    aria-label="Wiki output language"
-                    value={language}
-                    onChange={(event) =>
-                      controller.setLanguage(event.target.value)
-                    }
-                    placeholder="BCP 47 language tag"
-                    className="min-w-0 flex-1 rounded border bg-primary px-half py-half text-high"
-                  />
-                  <datalist id="llm-wiki-language-options">
-                    {LANGUAGE_OPTIONS.map(([code, label]) => (
-                      <option key={code} value={code} label={label} />
-                    ))}
-                  </datalist>
-                  <button
-                    type="button"
-                    disabled={saving || !language.trim()}
-                    onClick={() => void controller.saveLanguage()}
-                    className="rounded bg-brand px-base py-half text-white disabled:opacity-50"
-                  >
-                    Save
-                  </button>
-                </div>
-                <p className="text-sm text-low">
-                  Titles and prose use this language. Existing pages are not
-                  translated.
-                </p>
-              </>
-            )}
             <input
               type="search"
               aria-label="Search Wiki"
@@ -320,7 +222,6 @@ export function WorkspaceWikiArticle({ actions }: { actions?: ReactNode }) {
     workspace,
     repositoryOptions,
     repoId,
-    openwiki,
     snapshot,
     selectedPath,
     loading,
@@ -333,12 +234,7 @@ export function WorkspaceWikiArticle({ actions }: { actions?: ReactNode }) {
   );
   const selectedPage = pages.find((page) => page.path === selectedPath) ?? null;
   const scrollRef = useRef<HTMLDivElement>(null);
-  const scrollKey = JSON.stringify([
-    workspace?.id,
-    repoId,
-    openwiki,
-    selectedPath,
-  ]);
+  const scrollKey = JSON.stringify([workspace?.id, repoId, selectedPath]);
   useScrollLayoutEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
@@ -355,7 +251,7 @@ export function WorkspaceWikiArticle({ actions }: { actions?: ReactNode }) {
         selectedPath,
         href,
         new Set(pages.map((page) => page.path)),
-        openwiki
+        true
       ),
       event,
       (path) => controller.selectPage(path)
@@ -364,17 +260,13 @@ export function WorkspaceWikiArticle({ actions }: { actions?: ReactNode }) {
   const missing = !workspace
     ? 'Select a workspace to read its Wiki.'
     : error
-      ? openwiki
-        ? 'OpenWiki files are invalid or unavailable. Inspect the reported error; this viewer does not repair or initialise files.'
-        : "The repository's .llm-wiki files are invalid or unavailable. Fix the files in the workspace before starting another LLM Wiki task."
+      ? 'OpenWiki files are invalid or unavailable. Inspect the reported error; this viewer does not repair or initialise files.'
       : !repoId
         ? 'This workspace has no repositories.'
         : loading && !snapshot
           ? 'Loading Wiki…'
           : snapshot && !snapshot.wiki.exists
-            ? openwiki
-              ? 'No openwiki/ exists in this repository. Use Initialize Wiki in repository memory settings.'
-              : 'No .llm-wiki exists in this repository. It will be initialised automatically before an LLM Wiki-enabled agent run starts.'
+            ? 'No openwiki/ exists in this repository. Use Initialize Wiki in repository memory settings.'
             : !selectedPage
               ? 'Select a Wiki page.'
               : null;
@@ -386,8 +278,7 @@ export function WorkspaceWikiArticle({ actions }: { actions?: ReactNode }) {
       <header className="flex shrink-0 flex-wrap items-start justify-between gap-base border-b bg-secondary p-base">
         <div className="min-w-0 flex-1 basis-[180px]">
           <p className="text-sm text-low">
-            Current workspace · {openwiki ? 'openwiki/' : '.llm-wiki/'} ·
-            Read-only
+            Current workspace · openwiki/ · Read-only
           </p>
           <p className="break-words text-base text-high">
             {snapshot?.repo_display_name ??

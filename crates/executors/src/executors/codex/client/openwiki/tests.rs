@@ -78,6 +78,12 @@ fn mcp_stdio_fixture() {
                     "sandbox":{"type":"readOnly"}, "reasoningEffort":"max"
                 })
             }
+            "thread/inject_items" => {
+                assert!(calls.iter().any(|call| call == "thread/resume"));
+                assert_eq!(request["params"]["threadId"], "writer-thread");
+                assert_eq!(request["params"]["items"][0]["role"], "developer");
+                json!({})
+            }
             "mcpServerStatus/list" => {
                 queries += 1;
                 assert_eq!(request["params"]["threadId"], "writer-thread");

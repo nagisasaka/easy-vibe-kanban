@@ -956,6 +956,22 @@ impl Codex {
                 serde_json::json!({"OPENWIKI_TELEMETRY_DISABLED":"1"}),
             );
         }
+        if !reviewer
+            && env
+                .get("EVK_OPENWIKI_MAINTENANCE")
+                .is_none_or(|value| value != "1")
+        {
+            params
+                .config
+                .get_or_insert_with(HashMap::new)
+                .insert("mcp_servers.openwiki.enabled".into(), Value::Bool(false));
+            params.developer_instructions = Some(match params.developer_instructions.take() {
+                Some(existing) => {
+                    format!("{existing}\n\n{}", crate::legacy_wiki::RETIREMENT_NOTICE)
+                }
+                None => crate::legacy_wiki::RETIREMENT_NOTICE.into(),
+            });
+        }
         if let Some(memory) = env
             .get("EVK_REPOSITORY_MEMORY_INSTRUCTIONS")
             .filter(|_| !reviewer)
@@ -1138,10 +1154,7 @@ impl Codex {
                 && config.get("mcp_servers.openwiki.enabled") != Some(&Value::Bool(false))
         });
         if client.execution_mode() == ExecutionMode::Goal {
-            let skills = crate::knowledge_skills::augment_for_wikillm(
-                &combined_prompt,
-                selected_skills.clone(),
-            );
+            let skills = crate::legacy_wiki::filter_skills(selected_skills.clone());
             add_goal_skill_context(&mut thread_start_params, &skills);
         }
         let account = client.get_account().await?;
@@ -1342,8 +1355,7 @@ fn build_chat_input(
     combined_prompt: String,
     selected_skills: Vec<SelectedSkill>,
 ) -> Vec<UserInput> {
-    let selected_skills =
-        crate::knowledge_skills::augment_for_wikillm(&combined_prompt, selected_skills);
+    let selected_skills = crate::legacy_wiki::filter_skills(selected_skills);
     let mut input = selected_skills
         .into_iter()
         .map(|skill| UserInput::Skill {
@@ -1777,7 +1789,10 @@ mod tests {
         let json = serde_json::to_value(&params).unwrap();
         assert_eq!(json["runtimeWorkspaceRoots"], json!([cwd, shared]));
         assert_eq!(json["sandbox"], "read-only");
-        assert!(params.developer_instructions.is_none());
+        assert_eq!(
+            params.developer_instructions.as_deref(),
+            Some(crate::legacy_wiki::RETIREMENT_NOTICE)
+        );
         let resume =
             serde_json::to_value(resume_params_from("thread-shared".into(), params)).unwrap();
         assert_eq!(
@@ -1951,19 +1966,18 @@ mod tests {
     }
 
     #[test]
-    fn build_chat_input_makes_wiki_skills_available_for_pipeline_turns() {
+    fn build_chat_input_does_not_augment_retired_wiki_and_filters_owned_skills() {
         let prompt = "task\n<!-- vk:pipeline:start -->\n## Pipeline: LLM Wiki\n1. recall\n<!-- vk:pipeline:end -->";
-        let input = build_chat_input(prompt.to_string(), vec![]);
-        assert_eq!(input.len(), 3);
-        assert!(matches!(
-            &input[0],
-            UserInput::Skill { name, .. } if name == "knowledge-recall"
-        ));
-        assert!(matches!(
-            &input[1],
-            UserInput::Skill { name, .. } if name == "knowledge-enrich"
-        ));
-        assert!(matches!(&input[2], UserInput::Text { text, .. } if text == prompt));
+        let input = build_chat_input(
+            prompt.to_string(),
+            vec![SelectedSkill {
+                name: "knowledge-recall".into(),
+                path: workspace_utils::assets::asset_dir()
+                    .join("skills/llm-wiki/knowledge-recall/SKILL.md"),
+            }],
+        );
+        assert_eq!(input.len(), 1);
+        assert!(matches!(&input[0], UserInput::Text { text, .. } if text == prompt));
     }
 }
 
@@ -2014,6 +2028,17 @@ mod goal_skill_tests {
                 .as_deref()
                 .unwrap()
                 .contains("after context compaction")
+        );
+        assert!(
+            params
+                .developer_instructions
+                .as_deref()
+                .unwrap()
+                .contains(crate::legacy_wiki::RETIREMENT_NOTICE)
+        );
+        assert_eq!(
+            params.config.as_ref().unwrap()["mcp_servers.openwiki.enabled"],
+            false
         );
         let resumed = resume_params_from("existing".into(), params.clone());
         assert_eq!(

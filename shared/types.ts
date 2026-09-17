@@ -6,7 +6,7 @@
 
 export type Repo = { id: string, path: string, name: string, display_name: string, setup_script: string | null, cleanup_script: string | null, archive_script: string | null, copy_files: string | null, parallel_setup_script: boolean, dev_server_script: string | null, default_target_branch: string | null, default_working_dir: string | null, created_at: Date, updated_at: Date, };
 
-export type RepositoryMemoryState = { version: number, enabled: boolean, status: RepositoryWikiStatus, target_branch: string | null, source_commit: string | null, wiki_commit: string | null, last_success: string | null, active_run_id: string | null, bootstrap: OpenWikiBootstrapOwner | null, maintenance_workspace_id: string | null, maintenance_session_id: string | null, error: string | null, output_language: string, active_source_commit: string | null, active_event_ids: Array<string>, coding_errors: Array<string>, };
+export type RepositoryMemoryState = { version: number, enabled: boolean, status: RepositoryWikiStatus, target_branch: string | null, source_commit: string | null, wiki_commit: string | null, last_success: string | null, active_run_id: string | null, bootstrap: OpenWikiBootstrapOwner | null, maintenance_workspace_id: string | null, maintenance_session_id: string | null, error: string | null, output_language: string, active_source_commit: string | null, active_event_ids: Array<string>, active_sync_input_digest: string | null, coding_errors: Array<string>, };
 
 export type OpenWikiBootstrapOwner = { workflow_run_id: string, server_instance_id: string, phase: OpenWikiBootstrapPhase, child: OpenWikiBootstrapChild | null, review_fingerprint: string | null, };
 
@@ -599,8 +599,6 @@ export type WikiSourceLink = { source: string, project_id: string, issue_id: str
 
 export type WikiSnapshotSource = "current_workspace";
 
-export type UpdateWikiConfigRequest = { repo_id: string, output_language: string, };
-
 export type WorkspaceRepoInput = { repo_id: string, target_branch: string, };
 
 export type RunAgentSetupRequest = { executor_profile_id: ExecutorProfileId, };
@@ -717,7 +715,7 @@ pr_number: bigint | null,
 /**
  * PR URL for this workspace (if any PR exists)
  */
-pr_url: string | null, };
+pr_url: string | null, is_running: boolean, };
 
 export type WorkspaceSummaryResponse = { summaries: Array<WorkspaceSummary>, };
 

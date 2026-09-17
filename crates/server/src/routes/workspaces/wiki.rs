@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 use axum::{
-    Extension, Json, Router,
+    Extension, Router,
     extract::{Query, State},
     response::Json as ResponseJson,
-    routing::{get, put},
+    routing::get,
 };
 use db::models::{workspace::Workspace, workspace_repo::WorkspaceRepo};
 use deployment::Deployment;
@@ -25,8 +25,6 @@ const MAX_SOURCE_LINKS: usize = 500;
 #[derive(Debug, Deserialize)]
 pub struct WikiRepoQuery {
     pub repo_id: Uuid,
-    #[serde(default)]
-    pub openwiki: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -54,16 +52,8 @@ pub enum WikiSnapshotSource {
     CurrentWorkspace,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-pub struct UpdateWikiConfigRequest {
-    pub repo_id: Uuid,
-    pub output_language: String,
-}
-
 pub fn router() -> Router<DeploymentImpl> {
-    Router::new()
-        .route("/", get(get_snapshot))
-        .route("/config", put(update_config))
+    Router::new().route("/", get(get_snapshot))
 }
 
 fn map_wiki_error(error: WikiError) -> ApiError {
@@ -162,43 +152,10 @@ pub async fn get_snapshot(
 ) -> Result<ResponseJson<ApiResponse<WorkspaceWikiSnapshot>>, ApiError> {
     let resolved = resolve_wiki_repo(&deployment, &workspace, query.repo_id).await?;
     let root = resolved.root.clone();
-    let wiki = tokio::task::spawn_blocking(move || {
-        if query.openwiki {
-            wiki::openwiki::load_snapshot(&root)
-        } else {
-            wiki::load_snapshot(&root)
-        }
-    })
-    .await
-    .map_err(|error| ApiError::BadRequest(error.to_string()))?
-    .map_err(map_wiki_error)?;
-    let source_links = resolve_source_links(&deployment, &wiki).await?;
-    Ok(ResponseJson(ApiResponse::success(WorkspaceWikiSnapshot {
-        workspace_id: workspace.id,
-        repo_id: resolved.id,
-        repo_name: resolved.name,
-        repo_display_name: resolved.display_name,
-        source: WikiSnapshotSource::CurrentWorkspace,
-        wiki,
-        source_links,
-    })))
-}
-
-pub async fn update_config(
-    Extension(workspace): Extension<Workspace>,
-    State(deployment): State<DeploymentImpl>,
-    Json(body): Json<UpdateWikiConfigRequest>,
-) -> Result<ResponseJson<ApiResponse<WorkspaceWikiSnapshot>>, ApiError> {
-    let resolved = resolve_wiki_repo(&deployment, &workspace, body.repo_id).await?;
-    let root = resolved.root.clone();
-    let output_language = body.output_language.trim().to_string();
-    let wiki = tokio::task::spawn_blocking(move || {
-        wiki::update_config(&root, &output_language)?;
-        wiki::load_snapshot(&root)
-    })
-    .await
-    .map_err(|error| ApiError::BadRequest(error.to_string()))?
-    .map_err(map_wiki_error)?;
+    let wiki = tokio::task::spawn_blocking(move || wiki::openwiki::load_snapshot(&root))
+        .await
+        .map_err(|error| ApiError::BadRequest(error.to_string()))?
+        .map_err(map_wiki_error)?;
     let source_links = resolve_source_links(&deployment, &wiki).await?;
     Ok(ResponseJson(ApiResponse::success(WorkspaceWikiSnapshot {
         workspace_id: workspace.id,

@@ -52,6 +52,8 @@ pub struct WorkspaceSummary {
     pub pr_number: Option<i64>,
     /// PR URL for this workspace (if any PR exists)
     pub pr_url: Option<String>,
+    // Any active canonical AgentRun or lifecycle script, not just the latest run.
+    pub is_running: bool,
 }
 
 /// Response containing summaries for requested workspaces
@@ -78,8 +80,16 @@ pub async fn get_workspace_summaries(
     let archived = request.archived;
 
     // 1. Fetch all workspaces with the given archived status
-    let workspaces: Vec<Workspace> = Workspace::find_all_with_status(pool, Some(archived), None)
-        .await?
+    let workspace_statuses = Workspace::find_all_with_status(pool, Some(archived), None).await?;
+    // The legacy workspace patch stream does not observe AgentRun transitions.
+    // Reuse this already-fetched aggregate in the polling summary so a terminal
+    // maintenance/coding run cannot leave the sidebar permanently "running".
+    let running_workspaces: std::collections::HashSet<_> = workspace_statuses
+        .iter()
+        .filter(|ws| ws.is_running)
+        .map(|ws| ws.workspace.id)
+        .collect();
+    let workspaces: Vec<Workspace> = workspace_statuses
         .into_iter()
         .map(|ws| ws.workspace)
         .collect();
@@ -151,6 +161,7 @@ pub async fn get_workspace_summaries(
 
             WorkspaceSummary {
                 workspace_id: id,
+                is_running: running_workspaces.contains(&id),
                 latest_session_id: latest.map(|p| p.session_id),
                 has_pending_approval: pending_approval_workspaces.contains(&id),
                 files_changed: stats.map(|s| s.files_changed),

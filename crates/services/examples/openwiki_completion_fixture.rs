@@ -7,12 +7,13 @@ fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     ensure!(
         args.len() >= 4,
-        "usage: openwiki_completion_fixture generate|refine REPOSITORY_ROOT AUDIT_ATTEMPT_DIR..."
+        "usage: openwiki_completion_fixture generate|refine|sync REPOSITORY_ROOT AUDIT_ATTEMPT_DIR..."
     );
     let phase = match args[1].as_str() {
         "generate" => WriterPhase::Generate,
         "refine" => WriterPhase::Refine,
-        _ => anyhow::bail!("phase must be generate or refine"),
+        "sync" => WriterPhase::Sync,
+        _ => anyhow::bail!("phase must be generate, refine or sync"),
     };
     let mut proof = PhaseCompletionProof::new(phase);
     for directory in &args[3..] {
