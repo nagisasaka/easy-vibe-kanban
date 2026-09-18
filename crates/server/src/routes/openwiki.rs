@@ -138,6 +138,18 @@ pub async fn sync(
 /// Reserve before activation so recovery always knows the exact process owner.
 pub async fn start_reconciliation(deployment: &DeploymentImpl, id: Uuid) -> anyhow::Result<()> {
     let repo = repo(deployment, id).await?;
+    let storage = deployment
+        .git()
+        .storage_identity(&repo.path)?
+        .to_string_lossy()
+        .into_owned();
+    let pending:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM integration_runs WHERE storage_identity=? AND status IN ('publishing','post_processing','recovery_required'))")
+        .bind(storage).fetch_one(&deployment.db().pool).await?;
+    if pending {
+        bail!(
+            "Formal Integration publication/semantic outbox is still being reconciled; source is retained"
+        );
+    }
     let store = RepositoryMemoryStore::for_repository(&repo.name, id)?;
     let _lock = store
         .try_lock()

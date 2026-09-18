@@ -263,8 +263,9 @@ pub(super) async fn prepare_child_dispatch(
     let repository_id: Option<Uuid> =
         sqlx::query_scalar("SELECT repository_id FROM workflow_runs WHERE id = ?")
             .bind(request.run_id)
-            .fetch_one(&deployment.db().pool)
-            .await?;
+            .fetch_optional(&deployment.db().pool)
+            .await?
+            .flatten();
     if repository_id.is_none() {
         return Ok(());
     }

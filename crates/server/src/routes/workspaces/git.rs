@@ -182,6 +182,7 @@ pub async fn merge_workspace(
     Json(request): Json<MergeWorkspaceRequest>,
 ) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
     let pool = &deployment.db().pool;
+    db::models::integration::guard_workspace(pool, workspace.id).await?;
 
     let workspace_repo =
         WorkspaceRepo::find_by_workspace_and_repo_id(pool, workspace.id, request.repo_id)

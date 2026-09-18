@@ -7,9 +7,9 @@ description: "既存Repository Memoryと機械的Workspace情報を利用した�
 
 文書ID: EVK-BOOTSTRAP / 版: 0.3 / 作成・改訂日: 2026-09-17
 
-状態: **コード照合レビュー反映済み・実装前**
+状態: **今回の採用範囲を実装・検証済み（2026-09-18）。実機試験・自動テスト・保証範囲は[実装記録](parallel-integration-implementation.md)を参照**
 
-> 初稿の取得失敗と、その後のmain／未commit変更を含むコード照合を区別する。基準SHA・コード根拠・未検証範囲は [レビューガイド](00-review-guide.md) 第2節を参照。本案の機能が既に実装・実行確認済みという意味ではない。
+> 初稿の取得失敗と、その後のmain／未commit変更を含むコード照合を区別する。レビュー時点の基準SHA・コード根拠・未検証範囲は [レビューガイド](00-review-guide.md) 第2節を参照。今回の実装・受入証拠は上記の実装記録に分離し、意味判断の試行を任意repositoryの保証とは扱わない。
 
 ## 1. 目的と設計境界
 
@@ -352,10 +352,12 @@ Workspace間でコードを合わせられること自体をAuto Merge専用能�
 
 意味検索、コンテキスト自動要約、Memory Group、live pushは、この二段階では解決できない具体的な失敗が出てから検討する。
 
-## 12. 実装担当への未確定事項
+## 12. 今回の採用範囲と実装時の確認事項
+
+2026-09-17の実装依頼により、同じWorkspaceの独立したfresh Sessionも初版の必須対象とする。継続SessionのCURRENT identity更新は維持し、peer履歴の大量再注入は行わない。通常の複数repo Workspaceとrepoごとの参照を維持する。実装・試験の事実は[実装記録](parallel-integration-implementation.md)へ分離して記録する。
 
 - 発見専用一覧を既存サービス/API/共有ファイルのどの公開経路へ最小追加するか。read-onlyな入口をAgentが実際に読めるかは実行検証する。
-- 独立新Sessionへの適用を初版に含めるか。含める場合、保存済み方針の出所とWorkspace再リンク時の扱いを明示する。
+- 独立新Sessionでは保存済み方針の出所とWorkspace再リンク時の扱いを明示する。過去eventのCard帰属を現在リンクから逆算しない。
 - Wiki参照版を既存状態からどこまで特定できるか。不明の表示と実際の読取ログを含め、鮮度を過大表示しない。
 - 大量eventで必要になる分割読取・再生成可能cacheを実測で決める。private Workspace Memoryへの参照を必要条件にしない。
 - providerごとのread許可とcontext伝達を実行検証する。Codexだけの成功を全executorの保証にしない。

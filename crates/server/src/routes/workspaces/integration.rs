@@ -53,6 +53,7 @@ pub struct OpenEditorPathQuery {
 
 pub fn router() -> Router<DeploymentImpl> {
     Router::new()
+        .route("/preview", post(crate::routes::parallel_context::preview))
         .route("/editor/path", get(get_workspace_editor_path))
         .route("/editor/open", post(open_workspace_in_editor))
         .route("/agent/setup", post(run_agent_setup))

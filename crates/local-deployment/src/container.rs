@@ -92,6 +92,10 @@ pub(crate) async fn should_disable_default_commit_for_workspace(
 ) -> Result<bool, sqlx::Error> {
     use db::models::arena_group::{ArenaLifecycleStatus, ArenaMode};
 
+    if db::models::integration::is_integration_workspace(pool, workspace_id).await? {
+        return Ok(true);
+    }
+
     let group = Workspace::find_arena_group_for_workspace(pool, workspace_id).await?;
 
     Ok(matches!(
@@ -245,6 +249,19 @@ impl LocalContainerService {
         map.get(id).cloned()
     }
 
+    /// A terminal ExecutionProcess row precedes finalisation/log draining and
+    /// process-group cleanup. Publication/admission must observe both owners,
+    /// including the durable process registry after a service restart.
+    async fn scripts_settled_inner(&self, workspace: Uuid) -> Result<bool, ContainerError> {
+        let ids: Vec<Uuid> = sqlx::query_scalar("SELECT p.id FROM execution_processes p JOIN sessions s ON s.id=p.session_id WHERE s.workspace_id=?")
+            .bind(workspace).fetch_all(&self.db.pool).await?;
+        let entries = self.agent_process_registry.entries().await?;
+        let children = self.child_store.read().await;
+        Ok(ids.iter().all(|id| {
+            !children.contains_key(id) && !entries.iter().any(|entry| entry.runtime_id == *id)
+        }))
+    }
+
     async fn add_child_to_store(&self, id: Uuid, exec: AsyncGroupChild) {
         let mut map = self.child_store.write().await;
         map.insert(id, Arc::new(RwLock::new(exec)));
@@ -347,6 +364,28 @@ impl LocalContainerService {
     }
 
     async fn handle_agent_run_terminal(&self, event: AgentRunTerminalEvent) {
+        // Integration owns its result commit and follow-ups. Ordinary terminal
+        // finalisation must not create an unvalidated R' or consume user queues.
+        match Session::find_by_id(&self.db.pool, event.session_id).await {
+            Ok(Some(session)) => match db::models::integration::is_integration_workspace(
+                &self.db.pool,
+                session.workspace_id,
+            )
+            .await
+            {
+                Ok(true) => return,
+                Ok(false) => {}
+                Err(error) => {
+                    tracing::error!(%error,"Cannot resolve Integration finalisation owner");
+                    return;
+                }
+            },
+            Ok(None) => return,
+            Err(error) => {
+                tracing::error!(%error,"Cannot resolve terminal Session");
+                return;
+            }
+        }
         if event.status == AgentRunStatus::Succeeded
             && let Err(error) = self
                 .complete_repository_memory(event.session_id, event.agent_run_id)
@@ -517,6 +556,15 @@ impl LocalContainerService {
     }
 
     async fn cleanup_workspace(&self, workspace: &Workspace) {
+        let _admission = services::services::integration_admission::MUTATIONS
+            .lock()
+            .await;
+        if let Err(error) =
+            db::models::integration::guard_workspace(&self.db.pool, workspace.id).await
+        {
+            tracing::info!(workspace_id=%workspace.id,%error,"Retaining reserved Integration source/worktree");
+            return;
+        }
         if !workspace.can_delete_container_path() {
             tracing::info!(
                 "Skipping filesystem cleanup for external workspace {}",
@@ -1219,6 +1267,17 @@ fn build_queued_agent_run_requests(
 
 #[async_trait]
 impl ContainerService for LocalContainerService {
+    async fn script_settled(&self, execution: Uuid) -> Result<bool, ContainerError> {
+        Ok(self.get_child_from_store(&execution).await.is_none()
+            && self
+                .agent_process_registry
+                .query_runtime(execution)
+                .await?
+                .is_none())
+    }
+    async fn scripts_settled(&self, workspace: Uuid) -> Result<bool, ContainerError> {
+        self.scripts_settled_inner(workspace).await
+    }
     fn msg_stores(&self) -> &Arc<RwLock<HashMap<Uuid, Arc<MsgStore>>>> {
         &self.msg_stores
     }
@@ -1891,6 +1950,7 @@ mod tests {
             .expect("connect sqlite");
 
         for statement in [
+            "CREATE TABLE integration_runs (workspace_id BLOB)",
             r#"
             CREATE TABLE arena_groups (
                 id BLOB PRIMARY KEY,
@@ -2107,5 +2167,33 @@ mod tests {
             .expect("policy lookup");
 
         assert!(!disabled);
+    }
+
+    #[tokio::test]
+    async fn integration_owner_disables_normal_commit_without_changing_ordinary_policy() {
+        let pool = setup_container_policy_pool().await;
+        let workspace_id = insert_workspace_in_arena(
+            &pool,
+            ArenaMode::Design,
+            ArenaLifecycleStatus::ImplementationStarted,
+        )
+        .await;
+        assert!(
+            !should_disable_default_commit_for_workspace(&pool, workspace_id)
+                .await
+                .unwrap()
+        );
+        sqlx::query("INSERT INTO integration_runs(workspace_id) VALUES(?)")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        // Even after the Agent terminates, only Integration may choose R and
+        // validate it. The ordinary finalizer must not append an untested R'.
+        assert!(
+            should_disable_default_commit_for_workspace(&pool, workspace_id)
+                .await
+                .unwrap()
+        );
     }
 }

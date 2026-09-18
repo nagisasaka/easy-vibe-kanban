@@ -28,6 +28,38 @@ export type MemoryTestResult = "passed" | "failed" | "not-run";
 
 export type ChangeManifest = { version: number, event_id: string, repository_id: string, workspace_id: string, task_id: string | null, created_at: string, base_commit: string, source_commit: string, target_branch: string | null, changed_paths: Array<string>, goal: string, summary: string, behavioral_changes: Array<string>, architectural_changes: Array<string>, invariants_affected: Array<string>, decisions: Array<MemoryDecision>, rejected_alternatives: Array<RejectedAlternative>, unresolved_questions: Array<string>, tests: Array<MemoryTest>, };
 
+export type ManifestReference = { event_id: string, repository_id: string, workspace_id: string, base_commit: string, source_commit: string, target_branch: string | null, created_at: string, path: string, };
+
+export type ManifestDiscoveryError = { filename: string, error: string, };
+
+export type ManifestDiscoveryPage = { records: Array<ManifestReference>, errors: Array<ManifestDiscoveryError>, next_after: string | null, };
+
+export type WorkspaceActivity = { workspace_id: string, branch: string, target_branch: string, name: string | null, archived: boolean, worktree_deleted: boolean, current_issue_id: string | null, current_issue_title: string | null, current_issue_status: string | null, latest_session_id: string | null, latest_agent_run_id: string | null, latest_agent_status: string | null, active_agent_runs: bigint, active_scripts: bigint, observed_head_oid: string | null, observation_error: string | null, };
+
+export type ParallelContextPage = { repository_id: string, observed_at: string, activities: Array<WorkspaceActivity>, next_workspace: string | null, manifests: ManifestDiscoveryPage, memory_available: boolean, memory_error: string | null, wiki_target: string | null, wiki_source_commit: string | null, wiki_publication_commit: string | null, };
+
+export type PinnedFile = { path: string, object_id: string, mode: number, content: string | null, unavailable_reason: string | null, };
+
+export type PinnedSnapshot = { repository_id: string, commit: string, files: Array<PinnedFile>, next_after: string | null, };
+
+export type PeerSnapshot = { workspace_id: string, commit: string, };
+
+export type CreatePreview = { repository_id: string, base_commit: string, peers: Array<PeerSnapshot>, };
+
+export type CombinationPreview = { repository_id: string, owner_workspace_id: string, path: string, base_commit: string, peers: Array<PeerSnapshot>, instructions: string, };
+
+export type IntegrationSelection = { card_id: string, workspace_id: string, expected_commit: string, };
+
+export type IntegrationSource = { selection: IntegrationSelection, branch: string, commit: string, title: string, description: string | null, status_id: string, requirements_revision: bigint, event_ids: Array<string>, related_workspaces: Array<string>, done_result: string | null, };
+
+export type IntegrationValidation = { command: string, cwd: string, required: boolean, evidence: string, environment_requirements: string, execution_process_id: string | null, exit_code: bigint | null, result: string | null, };
+
+export type IntegrationPayload = { sources: Array<IntegrationSource>, observed_target: string, base_commit: string | null, result_commit: string | null, validation: Array<IntegrationValidation>, exclusions: Array<string>, semantic_summary: string | null, semantics: SemanticChanges | null, integration_manifest: ChangeManifest | null, publication_intent: boolean, published: boolean, wiki_result: string | null, executor_config: JsonValue | null, };
+
+export type IntegrationRun = { id: string, request_key: string, project_id: string, repository_id: string, storage_identity: string, target_ref: string, status: string, workspace_id: string | null, session_id: string | null, agent_run_id: string | null, payload: IntegrationPayload, cancel_requested: boolean, error: string | null, created_at: string, updated_at: string, };
+
+export type CreateIntegrationRequest = { request_id: string, project_id: string, repository_id: string, target_branch: string, selections: Array<IntegrationSelection>, executor_config: ExecutorConfig | null, };
+
 export type WikiReconciliationReceipt = { event_id: string, reconciled_at: string, target_commit: string, wiki_commit: string | null, result: ReconciliationResult, error: string | null, };
 
 export type ReconciliationResult = "updated" | "no_op" | "failed";
@@ -361,7 +393,7 @@ dropped: boolean, started_at: string, completed_at: string | null, created_at: s
 
 export enum ExecutionProcessStatus { running = "running", completed = "completed", failed = "failed", killed = "killed" }
 
-export type ExecutionProcessRunReason = "setupscript" | "cleanupscript" | "archivescript" | "devserver";
+export type ExecutionProcessRunReason = "setupscript" | "cleanupscript" | "archivescript" | "devserver" | "integrationvalidation";
 
 export type ExecutionProcessRepoState = { id: string, execution_process_id: string, repo_id: string, before_head_commit: string | null, after_head_commit: string | null, merge_commit: string | null, created_at: Date, updated_at: Date, };
 
@@ -959,7 +991,7 @@ goal_max_concurrent_agents?: number | null, };
 
 export enum ExecutionMode { code = "code", plan = "plan", goal = "goal", plan_with_goal = "plan_with_goal" }
 
-export type ScriptContext = "SetupScript" | "CleanupScript" | "ArchiveScript" | "DevServer" | "ToolInstallScript";
+export type ScriptContext = "SetupScript" | "CleanupScript" | "ArchiveScript" | "DevServer" | "ToolInstallScript" | "IntegrationValidation";
 
 export type ScriptRequest = { script: string, language: ScriptRequestLanguage, context: ScriptContext, 
 /**
@@ -1254,7 +1286,7 @@ export type UpdateAgentRunGoalRequest = { objective?: string, status?: AgentGoal
 
 export type UpdatePlanGoalDraftRequest = { objective: string, command_id: string, idempotency_key: string, correlation_id: string, created_at: string, };
 
-export enum OrchestrationProductKind { workflow = "workflow", arena = "arena" }
+export enum OrchestrationProductKind { workflow = "workflow", arena = "arena", integration = "integration" }
 
 export enum OrchestrationFailurePolicy { fail_fast = "fail_fast", allow_partial = "allow_partial" }
 

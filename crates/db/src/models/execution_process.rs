@@ -52,6 +52,7 @@ pub enum ExecutionProcessRunReason {
     CleanupScript,
     ArchiveScript,
     DevServer,
+    IntegrationValidation,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize, TS)]

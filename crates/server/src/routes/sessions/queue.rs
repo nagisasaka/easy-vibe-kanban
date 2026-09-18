@@ -35,6 +35,10 @@ async fn queue_message(
     )
     .await?;
 
+    let _admission = services::services::integration_admission::MUTATIONS
+        .lock()
+        .await;
+    db::models::integration::guard_workspace(&deployment.db().pool, session.workspace_id).await?;
     let data = DraftFollowUpData {
         message: payload.message,
         executor_config: payload.executor_config,

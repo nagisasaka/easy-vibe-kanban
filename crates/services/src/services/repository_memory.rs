@@ -30,17 +30,26 @@ pub fn begin_coding_run(
         return Ok(Some(existing));
     }
     let base_commit = GitService::new().get_head_info(root)?.oid;
-    let pending =
-        unresolved_integration(&store)? || !pending_events(&store, target_branch)?.is_empty();
-    let wiki_status = state.derived_status(
-        root.join("openwiki/index.md").is_file(),
-        pending,
-        state
-            .wiki_commit
-            .as_deref()
-            .or(state.source_commit.as_deref())
-            == Some(&base_commit),
-    );
+    // Freshness is discovery, not a publication gate. A malformed unrelated
+    // peer event must not prevent normal source work; strict readers below still
+    // reject it when an integration/reconciliation consumes durable evidence.
+    let pending = (|| -> anyhow::Result<bool> {
+        Ok(unresolved_integration(&store)? || !pending_events(&store, target_branch)?.is_empty())
+    })();
+    let wiki_status = if let Ok(pending) = pending {
+        state.derived_status(
+            root.join("openwiki/index.md").is_file(),
+            pending,
+            state
+                .wiki_commit
+                .as_deref()
+                .or(state.source_commit.as_deref())
+                == Some(&base_commit),
+        )
+    } else {
+        tracing::warn!(repository_id=%repo.id,"Repository Wiki freshness unavailable; strict publication evidence remains required");
+        utils::repository_memory::RepositoryWikiStatus::Error
+    };
     let run = RepositoryMemoryRun {
         run_id,
         repository_id: repo.id,
