@@ -104,6 +104,7 @@ pub async fn delete_workspace(
     let pool = &deployment.db().pool;
     let workspace_manager = deployment.workspace_manager();
     let workspace_id = workspace.id;
+    db::models::integration::guard_workspace(pool, workspace_id).await?;
 
     if ExecutionProcess::has_running_non_dev_server_processes_for_workspace(pool, workspace_id)
         .await?

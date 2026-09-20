@@ -11,6 +11,7 @@ use ts_rs::TS;
 use utils::diff::{Diff, DiffChangeKind};
 
 mod cli;
+pub mod publication;
 pub mod snapshot;
 mod validation;
 
@@ -683,6 +684,9 @@ impl GitService {
         base_branch_name: &str,
         commit_message: &str,
     ) -> Result<String, GitServiceError> {
+        // Manual merge and Wiki publication participate in the same short
+        // storage-scoped guard as exact-R Integration, even with Memory disabled.
+        let _publication_guard = self.try_publication_guard(base_worktree_path)?;
         // Open the repositories
         let task_repo = self.open_repo(task_worktree_path)?;
         let base_repo = self.open_repo(base_worktree_path)?;

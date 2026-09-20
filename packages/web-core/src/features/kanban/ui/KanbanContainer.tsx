@@ -7,7 +7,11 @@ import {
   type MouseEvent,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
+import { integrationApi } from '@/shared/lib/integrationApi';
 import { useProjectContext } from '@/shared/hooks/useProjectContext';
+import { isLocalRemoteApiEnabled } from '@/shared/lib/remoteApi';
+import { IntegrationPanel } from './IntegrationPanel';
 import { useOrgContext } from '@/shared/hooks/useOrgContext';
 import { useWorkspaceContext } from '@/shared/hooks/useWorkspaceContext';
 import { useActions } from '@/shared/hooks/useActions';
@@ -186,6 +190,15 @@ export function KanbanContainer() {
   } = useOrgContext();
   const { activeWorkspaces } = useWorkspaceContext();
   const { userId } = useAuth();
+  const [focusedIntegration, setFocusedIntegration] = useState<string | null>(
+    null
+  );
+  const integrations = useQuery({
+    queryKey: ['integrations', projectId],
+    queryFn: () => integrationApi.list(projectId),
+    enabled: isLocalRemoteApiEnabled() && !routeState.hostId,
+    refetchInterval: 3000,
+  });
 
   // Get project name by finding the project matching current projectId
   const projectName = projects.find((p) => p.id === projectId)?.name ?? '';
@@ -994,7 +1007,15 @@ export function KanbanContainer() {
             )}
           />
 
+          {isLocalRemoteApiEnabled() && !routeState.hostId && (
+            <IntegrationPanel
+              key={projectId}
+              focusedRunId={focusedIntegration}
+              onClearFocus={() => setFocusedIntegration(null)}
+            />
+          )}
           <DropdownMenu>
+            {/* Remote Board's existing merge/PR routes remain unchanged. */}
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
@@ -1199,6 +1220,27 @@ export function KanbanContainer() {
                                 ),
                               }}
                             />
+                            {integrations.data
+                              ?.filter((run) =>
+                                run.payload.sources.some(
+                                  (source) =>
+                                    source.selection.card_id === issue.id
+                                )
+                              )
+                              .map((run) => (
+                                <button
+                                  key={run.id}
+                                  type="button"
+                                  className="block text-brand text-sm mt-half"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setFocusedIntegration(run.id);
+                                  }}
+                                >
+                                  Integration: {run.status} ·{' '}
+                                  {run.target_ref.replace('refs/heads/', '')}
+                                </button>
+                              ))}
                             {(issueWorkflowAttempts.length > 0 ||
                               issueWorkspaces.length > 0) && (
                               <div className="mt-base flex flex-col gap-half">

@@ -689,6 +689,14 @@ impl LocalAgentRunPort {
                 "session and AgentRun workspace do not match".to_string(),
             ));
         }
+        db::models::integration::guard_agent_dispatch(
+            &self.db.pool,
+            request.workspace.workspace_id,
+            request.session_id,
+            request.correlation_id,
+        )
+        .await
+        .map_err(port_database)?;
         let workspace = Workspace::find_by_id(&self.db.pool, request.workspace.workspace_id)
             .await
             .map_err(port_database)?
@@ -740,8 +748,20 @@ impl LocalAgentRunPort {
         let mut memory_instructions = Vec::new();
         let mut openwiki_maintenance = false;
         let mut openwiki_reviewer = false;
-        let source_completion_allowed =
-            executors::executors::provider_adapter::memory_source_completion_allowed(
+        let parallel_policy = services::services::parallel_context::saved_context(
+            &self.db.pool,
+            workspace.id,
+            &request.input.content,
+        )
+        .await
+        .map_err(|error| AgentRunPortError::Rejected(format!("Card context: {error:#}")))?;
+        let local_api_port = utils::port_file::read_port_file("vibe-kanban").await.ok();
+        let integration_workspace =
+            db::models::integration::is_integration_workspace(&self.db.pool, workspace.id)
+                .await
+                .map_err(port_database)?;
+        let source_completion_allowed = !integration_workspace
+            && executors::executors::provider_adapter::memory_source_completion_allowed(
                 provider,
                 direct_intent(request.intent, attempt.mode),
                 &request.input.content,
@@ -812,6 +832,19 @@ impl LocalAgentRunPort {
                 }
             }
             let root = Path::new(&request.workspace.path).join(&repo.name);
+            if !openwiki_maintenance
+                && !openwiki_reviewer
+                && let Some(policy) = &parallel_policy
+            {
+                memory_instructions.push(services::services::parallel_context::instructions(
+                    repo,
+                    workspace,
+                    &root,
+                    local_api_port,
+                    policy,
+                    attempt.provider_session.is_none() && !request.input.content.contains(policy),
+                ));
+            }
             let membership =
                 WorkspaceRepo::find_by_workspace_and_repo_id(&self.db.pool, workspace.id, repo.id)
                     .await
@@ -2393,6 +2426,27 @@ impl AgentRunPort for LocalAgentRunPort {
             .validate_current()
             .map_err(|error| AgentRunPortError::Rejected(error.to_string()))?;
         self.validate_durable_command(&command).await?;
+        if !matches!(&command.command, AgentRunPortCommand::Cancel { .. }) {
+            let (request, _) = self.load_request(command.agent_run_id).await?;
+            if let Some(owner) = db::models::integration::workspace_owner(
+                &self.db.pool,
+                request.workspace.workspace_id,
+            )
+            .await
+            .map_err(port_database)?
+                && !(command.orchestration_run_id == Some(owner)
+                    || (request.correlation_id == owner
+                        && matches!(
+                            command.command,
+                            AgentRunPortCommand::SubmitInput { .. }
+                                | AgentRunPortCommand::ResolveApproval { .. }
+                        )))
+            {
+                return Err(AgentRunPortError::Rejected(format!(
+                    "Workspace reserved by Integration {owner}"
+                )));
+            }
+        }
         // Serialize controls within this supervisor. Durable command identity
         // still protects retries across supervisor instances, while this lock
         // prevents cancel/retry/input races between local tasks.

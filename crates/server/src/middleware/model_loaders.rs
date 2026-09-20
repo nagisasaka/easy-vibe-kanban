@@ -18,6 +18,19 @@ pub async fn load_workspace_middleware(
     mut request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    let mutating = !matches!(
+        *request.method(),
+        axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
+    );
+    let _admission = if mutating {
+        Some(
+            services::services::integration_admission::MUTATIONS
+                .lock()
+                .await,
+        )
+    } else {
+        None
+    };
     // Load the Workspace from the database
     let workspace = match Workspace::find_by_id(&deployment.db().pool, workspace_id).await {
         Ok(Some(w)) => w,
@@ -31,6 +44,26 @@ pub async fn load_workspace_middleware(
         }
     };
 
+    // Read/log operations remain available. All Workspace mutations (Git,
+    // branch, scripts, editor setup, files, lifecycle) share the reservation
+    // gate, rather than relying on disabled buttons or an incomplete route list.
+    if !matches!(
+        *request.method(),
+        axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
+    ) && !request.uri().path().ends_with("/seen")
+    {
+        match db::models::integration::workspace_owner(&deployment.db().pool, workspace_id).await {
+            Ok(Some(run)) => {
+                use axum::response::IntoResponse;
+                return Ok(crate::error::ApiError::Conflict(format!(
+                    "Workspace reserved by Integration {run}; use its Board progress/Cancel action"
+                ))
+                .into_response());
+            }
+            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+            Ok(None) => {}
+        }
+    }
     // Insert the workspace into extensions
     request.extensions_mut().insert(workspace);
 

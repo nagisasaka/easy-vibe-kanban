@@ -81,6 +81,38 @@ impl GitCli {
     pub fn new() -> Self {
         Self {}
     }
+
+    /// Two-tree fast-forward checkout without moving HEAD. The caller holds the
+    /// target ref lock and checks the old OID and clean state. Unlike reset this
+    /// refuses unsafe overwrites and retains Git's sparse-checkout semantics.
+    pub fn checkout_exact_trees(
+        &self,
+        root: &Path,
+        base: &str,
+        result: &str,
+    ) -> Result<(), GitCliError> {
+        self.git(root, ["read-tree", "-m", "-u", base, result])?;
+        Ok(())
+    }
+
+    pub fn worktree_add_detached(
+        &self,
+        root: &Path,
+        path: &Path,
+        commit: &str,
+    ) -> Result<(), GitCliError> {
+        self.git(
+            root,
+            [
+                OsString::from("worktree"),
+                OsString::from("add"),
+                OsString::from("--detach"),
+                path.as_os_str().to_owned(),
+                OsString::from(commit),
+            ],
+        )?;
+        Ok(())
+    }
     /// Run `git -C <repo> worktree add <path> <branch>` (optionally creating the branch with -b)
     pub fn worktree_add(
         &self,

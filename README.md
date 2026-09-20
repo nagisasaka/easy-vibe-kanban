@@ -75,12 +75,21 @@ npx easy-vibe-kanban
 
 ### Card context and shared local files
 
-New cards enable the **LLM Wiki** and **Shared directories** context presets by
-default. Expand **Card context** to toggle presets and read their instructions;
-write task-specific requests in the description. Existing cards retain their
-saved instructions. Context is included with the card's initial workspace
-request, not injected into every chat message or retroactively into existing
-sessions. LLM Wiki execution is unchanged.
+New cards enable the **Shared directories** context preset by default. Expand
+**Card context** to read its instructions; write task-specific requests in the
+description. Existing cards retain their saved, possibly customised text.
+Fresh Sessions inherit that saved policy, including fresh Sessions in an
+existing Workspace. EVK supplies current repository/Workspace identity and
+read-only, paginated parallel-activity/Change Manifest references. It does not
+inject peer conversations or repeatedly copy their history into follow-ups.
+
+OpenWiki/Repository Memory is configured per repository, independently of this
+preset. Ordinary coding Agents may read the Wiki in their checkout but must not
+write canonical `openwiki/`. Their semantic Change Manifests inform reconciliation
+after source integration into the configured Wiki target. An old Workspace does
+not acquire a new Wiki just because another Workspace was merged. Disabling
+Shared directories guidance does not disable Memory finalisation or its safety
+rules, remove files, or revoke operating-system permissions.
 
 Each repository in an EVK-managed Git workspace gets two Git-ignored links:
 
@@ -103,12 +112,36 @@ For cards saved with the old paths, turn the Shared directories preset off and
 on to refresh the instructions for subsequent workspace requests. Existing
 agent sessions need to be told about the new paths separately.
 
-There is no tool-specific configuration or concurrency protection for the
-contents: configure your tools to use these paths and avoid conflicting writes.
+There is no tool-specific configuration or concurrency protection for arbitrary
+user files: configure your tools to use these paths and avoid conflicting writes.
+EVK's own immutable Manifest records use a separate host-managed publication
+contract; do not edit or delete another Workspace's records or private memory.
 Disabling the context preset removes the agent's instructions, not the shared
 files or links. EVK refuses to overwrite existing conflicting `.evk-shared` paths.
 Direct-folder workspaces do not receive these links. On Windows, directory
 symlinks require Developer Mode or the corresponding privileges.
+
+### Parallel development and formal Integration
+
+You can ask an Agent to inspect a peer's fixed commit and test a combination in
+a retained, detached trial worktree. This does not update the peer, target branch
+or Card status. If the peer itself needs a change, the Agent reports the required
+change rather than editing that Workspace.
+
+On a **local Board**, choose **Integrate / Auto Merge**, select one repository
+and local target branch, then explicitly choose Cards and one adopted Workspace
+per Card. EVK freezes their source commits, creates one Integration Workspace
+and Session, and runs the proposed validation plan itself on the final commit.
+Only that validated commit is promoted, followed by conditional Card completion
+and the existing OpenWiki reconciliation. Git publication, Done and Wiki status
+are displayed separately. Existing manual merge/PR operations remain available.
+
+Sources must be clean and idle, including Goals, queues and scripts. Cards with
+unintegrated results in another repository are rejected. Cancel is available
+before publication; reopening Done is not Git undo. This is cooperative local
+execution in one EVK service, not an OS sandbox or a multi-service guarantee.
+See the [operation and recovery guide](docs/design/parallel-integration-implementation.md#operation-and-recovery)
+for reservations, retained trials, errors and recovery.
 
 ### Prerequisites
 

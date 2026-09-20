@@ -93,6 +93,26 @@ pub async fn get_repo_branches(
     Ok(ResponseJson(ApiResponse::success(branches)))
 }
 
+pub async fn get_parallel_context(
+    State(deployment): State<DeploymentImpl>,
+    Path(repo_id): Path<Uuid>,
+    Query(query): Query<services::services::parallel_context::DiscoveryQuery>,
+) -> Result<
+    ResponseJson<ApiResponse<services::services::parallel_context::ParallelContextPage>>,
+    ApiError,
+> {
+    let repo = deployment
+        .repo()
+        .get_by_id(&deployment.db().pool, repo_id)
+        .await?;
+    let page = services::services::parallel_context::discover(&deployment.db().pool, &repo, &query)
+        .await
+        .map_err(|error| {
+            ApiError::BadRequest(format!("Parallel context unavailable: {error:#}"))
+        })?;
+    Ok(ResponseJson(ApiResponse::success(page)))
+}
+
 pub async fn get_repo_remotes(
     State(deployment): State<DeploymentImpl>,
     Path(repo_id): Path<Uuid>,
@@ -376,6 +396,14 @@ pub fn router() -> Router<DeploymentImpl> {
             get(get_repo).put(update_repo).delete(delete_repo),
         )
         .route("/repos/{repo_id}/branches", get(get_repo_branches))
+        .route(
+            "/repos/{repo_id}/parallel-context",
+            get(get_parallel_context),
+        )
+        .route(
+            "/repos/{repo_id}/snapshot",
+            get(super::parallel_context::snapshot),
+        )
         .route("/repos/{repo_id}/remotes", get(get_repo_remotes))
         .route("/repos/{repo_id}/prs", get(list_open_prs))
         .route("/repos/pr-info", get(get_pr_info))

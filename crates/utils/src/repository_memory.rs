@@ -89,6 +89,34 @@ pub struct ChangeManifest {
     pub semantics: SemanticChanges,
 }
 
+/// Discovery deliberately returns references, not private Workspace Memory or
+/// unbounded semantic bodies. Publication continues to use the strict reader.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct ManifestReference {
+    pub event_id: Uuid,
+    pub repository_id: Uuid,
+    pub workspace_id: Uuid,
+    pub base_commit: String,
+    pub source_commit: String,
+    pub target_branch: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct ManifestDiscoveryError {
+    pub filename: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+pub struct ManifestDiscoveryPage {
+    pub records: Vec<ManifestReference>,
+    pub errors: Vec<ManifestDiscoveryError>,
+    // Lexical filename cursor; errors also advance it, never hide later items.
+    pub next_after: Option<String>,
+}
+
 impl ChangeManifest {
     pub fn validate(&self) -> io::Result<()> {
         if self.version != 1 || !commit_id(&self.base_commit) || !commit_id(&self.source_commit) {
@@ -732,6 +760,63 @@ impl RepositoryMemoryStore {
         Ok(events)
     }
 
+    pub fn discover_events(
+        &self,
+        repository_id: Uuid,
+        after: Option<&str>,
+        limit: usize,
+    ) -> io::Result<ManifestDiscoveryPage> {
+        let directory = self.root.join("events");
+        reject_symlinks(&directory)?;
+        // Only filenames are enumerated. Bodies are read after pagination and
+        // through event(), retaining bounded I/O, symlink and identity checks.
+        let mut names = Vec::new();
+        for entry in fs::read_dir(&directory)? {
+            let name = entry?
+                .file_name()
+                .into_string()
+                .map_err(|_| invalid("Manifest directory contains a non-UTF-8 filename"))?;
+            if name.ends_with(".json") && after.is_none_or(|cursor| name.as_str() > cursor) {
+                names.push(name);
+            }
+        }
+        names.sort();
+        let limit = limit.clamp(1, 100);
+        let mut page = ManifestDiscoveryPage::default();
+        if names.len() > limit {
+            page.next_after = Some(names[limit - 1].clone());
+        }
+        for name in names.into_iter().take(limit) {
+            let result = (|| {
+                let id = Uuid::parse_str(name.trim_end_matches(".json")).map_err(invalid)?;
+                let event = self
+                    .event(id)?
+                    .ok_or_else(|| invalid("Manifest disappeared during discovery"))?;
+                if event.repository_id != repository_id {
+                    return Err(invalid("Manifest belongs to another registered repository"));
+                }
+                Ok(ManifestReference {
+                    event_id: event.event_id,
+                    repository_id: event.repository_id,
+                    workspace_id: event.workspace_id,
+                    base_commit: event.base_commit,
+                    source_commit: event.source_commit,
+                    target_branch: event.target_branch,
+                    created_at: event.created_at,
+                    path: directory.join(&name).to_string_lossy().into_owned(),
+                })
+            })();
+            match result {
+                Ok(record) => page.records.push(record),
+                Err(error) => page.errors.push(ManifestDiscoveryError {
+                    filename: name,
+                    error: error.to_string(),
+                }),
+            }
+        }
+        Ok(page)
+    }
+
     pub fn event(&self, event_id: Uuid) -> io::Result<Option<ChangeManifest>> {
         let event: Option<ChangeManifest> =
             self.read_json(&self.root.join("events").join(format!("{event_id}.json")))?;
@@ -1095,6 +1180,108 @@ mod tests {
                 ..Default::default()
             },
         }
+    }
+
+    #[test]
+    fn discovery_reports_corruption_and_pages_without_weakening_publication() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = RepositoryMemoryStore::at_persistent(temp.path()).unwrap();
+        let mut a = event();
+        a.event_id = Uuid::from_u128(1);
+        let mut b = a.clone();
+        b.event_id = Uuid::from_u128(3);
+        store.publish_event(&a).unwrap();
+        store.publish_event(&b).unwrap();
+        std::fs::write(
+            store
+                .root
+                .join("events")
+                .join(format!("{}.json", Uuid::from_u128(2))),
+            "{",
+        )
+        .unwrap();
+        let first = store.discover_events(a.repository_id, None, 1).unwrap();
+        assert_eq!(first.records[0].event_id, a.event_id);
+        let second = store
+            .discover_events(a.repository_id, first.next_after.as_deref(), 1)
+            .unwrap();
+        assert!(second.records.is_empty());
+        assert_eq!(second.errors.len(), 1);
+        let third = store
+            .discover_events(a.repository_id, second.next_after.as_deref(), 1)
+            .unwrap();
+        assert_eq!(third.records[0].event_id, b.event_id);
+        assert!(third.next_after.is_none());
+        assert!(store.events().is_err(), "publication must remain strict");
+        let wrong_repo = store.discover_events(Uuid::new_v4(), None, 10).unwrap();
+        assert!(wrong_repo.records.is_empty());
+        assert_eq!(wrong_repo.errors.len(), 3);
+        // Cursor is compared to filenames, never resolved as a filesystem path.
+        assert!(
+            store
+                .discover_events(a.repository_id, Some("../../../"), 10)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn cache_removal_preserves_manifests_and_discovery_needs_no_saved_index() {
+        let temp = tempfile::tempdir().unwrap();
+        let persistent = temp.path().join("persistent");
+        let cache = temp.path().join("cache");
+        std::fs::create_dir(&persistent).unwrap();
+        std::fs::create_dir(&cache).unwrap();
+        let store = RepositoryMemoryStore::at_persistent(&persistent).unwrap();
+        let manifest = event();
+        store.publish_event(&manifest).unwrap();
+        std::fs::write(cache.join("reproducible-output"), "disposable").unwrap();
+        let before = store
+            .discover_events(manifest.repository_id, None, 10)
+            .unwrap();
+        assert_eq!(before.records.len(), 1);
+        // Only this test-owned cache is removed. The durable sibling and its
+        // immutable source record are not an index that can be regenerated.
+        std::fs::remove_dir_all(&cache).unwrap();
+        drop(store);
+        let reopened = RepositoryMemoryStore::at_persistent(&persistent).unwrap();
+        assert_eq!(reopened.events().unwrap(), vec![manifest.clone()]);
+        let after = reopened
+            .discover_events(manifest.repository_id, None, 10)
+            .unwrap();
+        assert_eq!(after.records[0].event_id, manifest.event_id);
+        assert_eq!(after.records[0].path, before.records[0].path);
+        assert!(after.errors.is_empty());
+        assert!(after.next_after.is_none());
+        assert!(!cache.exists(), "discovery must not require a cache index");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discovery_never_follows_symlinked_or_mismatched_events() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = RepositoryMemoryStore::at_persistent(temp.path()).unwrap();
+        let a = event();
+        let external = temp.path().join("outside.json");
+        std::fs::write(&external, serde_json::to_vec(&a).unwrap()).unwrap();
+        std::os::unix::fs::symlink(
+            external,
+            store
+                .root
+                .join("events")
+                .join(format!("{}.json", a.event_id)),
+        )
+        .unwrap();
+        std::fs::write(
+            store
+                .root
+                .join("events")
+                .join(format!("{}.json", Uuid::new_v4())),
+            serde_json::to_vec(&a).unwrap(),
+        )
+        .unwrap();
+        let page = store.discover_events(a.repository_id, None, 100).unwrap();
+        assert!(page.records.is_empty());
+        assert_eq!(page.errors.len(), 2);
     }
 
     #[test]

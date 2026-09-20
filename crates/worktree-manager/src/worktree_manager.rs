@@ -51,7 +51,105 @@ pub enum WorktreeError {
 
 pub struct WorktreeManager;
 
+#[tokio::test]
+async fn detached_preview_preserves_source_refs_and_survives_outside_workspace_root() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("repo");
+    fs::create_dir(&root).unwrap();
+    let git = |root: &Path, args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    };
+    git(&root, &["init", "-b", "main"]);
+    fs::write(root.join("source.txt"), "base").unwrap();
+    git(&root, &["add", "source.txt"]);
+    git(
+        &root,
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-m",
+            "base",
+        ],
+    );
+    let base = git(&root, &["rev-parse", "HEAD"]);
+    git(&root, &["branch", "peer"]);
+    let preview_root = temp.path().join("worktrees-previews");
+    let trial = WorktreeManager::create_detached_preview_at(&root, &base, &preview_root)
+        .await
+        .unwrap();
+    assert!(!trial.starts_with(temp.path().join("worktrees")));
+    assert_eq!(git(&trial, &["rev-parse", "--abbrev-ref", "HEAD"]), "HEAD");
+    fs::write(trial.join("source.txt"), "trial-only").unwrap();
+    assert_eq!(fs::read_to_string(root.join("source.txt")).unwrap(), "base");
+    assert_eq!(git(&root, &["rev-parse", "main"]), base);
+    assert_eq!(git(&root, &["rev-parse", "peer"]), base);
+    assert!(git(&root, &["status", "--porcelain"]).is_empty());
+    assert!(
+        WorktreeManager::create_detached_preview_at(&root, "main", &preview_root)
+            .await
+            .is_err()
+    );
+}
+
 impl WorktreeManager {
+    /// Retained detached trial, never a source/target branch. No setup, cleanup
+    /// scripts or normal Workspace finalizer run here. The caller owns the
+    /// returned trial and can use the existing explicit worktree cleanup later.
+    pub async fn create_detached_preview(
+        repo_path: &Path,
+        commit: &str,
+    ) -> Result<PathBuf, WorktreeError> {
+        // Ordinary orphan cleanup owns every directory immediately below the
+        // configured Workspace root. Trials are deliberately not Workspaces;
+        // keep them in its sibling preview root, retained for explicit cleanup.
+        let workspace_base = Self::get_worktree_base_dir();
+        let name = workspace_base
+            .file_name()
+            .ok_or_else(|| {
+                WorktreeError::InvalidPath("Workspace base has no directory name".into())
+            })?
+            .to_string_lossy();
+        let base = workspace_base.with_file_name(format!("{name}-previews"));
+        Self::create_detached_preview_at(repo_path, commit, &base).await
+    }
+
+    async fn create_detached_preview_at(
+        repo_path: &Path,
+        commit: &str,
+        base: &Path,
+    ) -> Result<PathBuf, WorktreeError> {
+        tokio::fs::create_dir_all(&base).await?;
+        let path = base.join(format!("preview-{}", uuid::Uuid::new_v4()));
+        let root = repo_path.to_owned();
+        let oid = commit.to_owned();
+        let target = path.clone();
+        tokio::task::spawn_blocking(move || {
+            // Validate a full object identity before invoking CLI, never a
+            // user-controlled option or mutable branch as the trial base.
+            GitService::new().snapshot(&root, &oid)?;
+            git::GitCli::new()
+                .worktree_add_detached(&root, &target, &oid)
+                .map_err(|error| WorktreeError::GitCli(error.to_string()))
+        })
+        .await
+        .map_err(|error| WorktreeError::TaskJoin(error.to_string()))??;
+        Ok(path)
+    }
+
     pub fn set_workspace_dir_override(path: PathBuf) {
         let _ = WORKSPACE_DIR_OVERRIDE.set(path);
     }

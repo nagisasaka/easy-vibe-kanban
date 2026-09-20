@@ -20,10 +20,12 @@ pub mod execution_processes;
 pub mod frontend;
 pub mod health;
 pub mod host_relay;
+pub mod integrations;
 pub mod local_remote;
 pub mod oauth;
 pub mod openwiki;
 pub mod organizations;
+pub mod parallel_context;
 pub mod pipelines;
 pub mod preview;
 pub mod relay_auth;
@@ -57,6 +59,7 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
         .merge(pipelines::router())
         .merge(filesystem::router())
         .merge(repo::router())
+        .merge(integrations::router())
         .merge(events::router(&deployment))
         .merge(approvals::router())
         .merge(scratch::router(&deployment))

@@ -82,6 +82,14 @@ pub enum ContainerError {
 
 #[async_trait]
 pub trait ContainerService {
+    /// Formal publication needs final process-group/log cleanup, not merely a
+    /// terminal process row. Unsupported deployments fail closed.
+    async fn scripts_settled(&self, _workspace: Uuid) -> Result<bool, ContainerError> {
+        Ok(false)
+    }
+    async fn script_settled(&self, _execution: Uuid) -> Result<bool, ContainerError> {
+        Ok(false)
+    }
     fn msg_stores(&self) -> &Arc<RwLock<HashMap<Uuid, Arc<MsgStore>>>>;
 
     fn db(&self) -> &DBService;
@@ -225,7 +233,7 @@ pub trait ContainerService {
         // Never finalize DevServer processes
         if matches!(
             ctx.execution_process.run_reason,
-            ExecutionProcessRunReason::DevServer
+            ExecutionProcessRunReason::DevServer | ExecutionProcessRunReason::IntegrationValidation
         ) {
             return false;
         }
