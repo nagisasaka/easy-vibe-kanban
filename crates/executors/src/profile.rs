@@ -15,6 +15,9 @@ use crate::{
     model_selector::PermissionPolicy,
 };
 
+mod runtime_identity;
+pub use runtime_identity::runtime_profile_ids_match;
+
 /// How an interactive coding request should be executed.
 ///
 /// This is intentionally separate from [`PermissionPolicy`]: planning and

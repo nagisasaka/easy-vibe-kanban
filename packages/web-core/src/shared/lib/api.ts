@@ -354,12 +354,26 @@ export const sessionsApi = {
     return handleApiResponse<Session>(response);
   },
 
-  create: async (data: {
-    workspace_id: string;
-    executor?: string;
-    name?: string;
-  }): Promise<Session> => {
-    const response = await makeRequest('/api/sessions', {
+  getExecutorConfig: async (
+    sessionId: string,
+    hostId?: string | null
+  ): Promise<ExecutorConfig | null> => {
+    const response = await makeHostAwareRequest(
+      `/api/sessions/${sessionId}/executor-config`,
+      hostId
+    );
+    return handleApiResponse<ExecutorConfig | null>(response);
+  },
+
+  create: async (
+    data: {
+      workspace_id: string;
+      executor?: string;
+      name?: string;
+    },
+    hostId?: string | null
+  ): Promise<Session> => {
+    const response = await makeHostAwareRequest('/api/sessions', hostId, {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -368,12 +382,17 @@ export const sessionsApi = {
 
   followUp: async (
     sessionId: string,
-    data: CreateFollowUpAttempt
+    data: CreateFollowUpAttempt,
+    hostId?: string | null
   ): Promise<AgentRunPortSnapshot> => {
-    const response = await makeRequest(`/api/sessions/${sessionId}/follow-up`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    const response = await makeHostAwareRequest(
+      `/api/sessions/${sessionId}/follow-up`,
+      hostId,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
     return handleApiResponse<AgentRunPortSnapshot>(response);
   },
 
@@ -1327,7 +1346,8 @@ export const attachmentsApi = {
   uploadForAttempt: async (
     workspaceId: string,
     sessionId: string,
-    attachment: File
+    attachment: File,
+    hostId?: string | null
   ): Promise<AttachmentResponse> => {
     const formData = new FormData();
     formData.append('image', attachment);
@@ -1338,6 +1358,9 @@ export const attachmentsApi = {
         method: 'POST',
         body: formData,
         credentials: 'include',
+        ...(hostId !== undefined
+          ? { hostScope: 'explicit' as const, hostId }
+          : {}),
       }
     );
 
@@ -1688,13 +1711,17 @@ export const scratchApi = {
   delete: async (
     scratchType: ScratchType,
     id: string,
-    hostId?: string | null
+    hostId?: string | null,
+    expectedPayload?: UpdateScratch['payload']
   ): Promise<void> => {
     const response = await makeHostAwareRequest(
       `/api/scratch/${scratchType}/${id}`,
       hostId,
       {
         method: 'DELETE',
+        ...(expectedPayload
+          ? { body: JSON.stringify({ expected_payload: expectedPayload }) }
+          : {}),
       }
     );
     return handleApiResponse<void>(response);
@@ -1744,30 +1771,48 @@ export const queueApi = {
    */
   queue: async (
     sessionId: string,
-    data: DraftFollowUpData
+    data: DraftFollowUpData,
+    hostId?: string | null
   ): Promise<QueueStatus> => {
-    const response = await makeRequest(`/api/sessions/${sessionId}/queue`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    const response = await makeHostAwareRequest(
+      `/api/sessions/${sessionId}/queue`,
+      hostId,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
     return handleApiResponse<QueueStatus>(response);
   },
 
   /**
    * Cancel a queued follow-up message
    */
-  cancel: async (sessionId: string): Promise<QueueStatus> => {
-    const response = await makeRequest(`/api/sessions/${sessionId}/queue`, {
-      method: 'DELETE',
-    });
+  cancel: async (
+    sessionId: string,
+    hostId?: string | null
+  ): Promise<QueueStatus> => {
+    const response = await makeHostAwareRequest(
+      `/api/sessions/${sessionId}/queue`,
+      hostId,
+      {
+        method: 'DELETE',
+      }
+    );
     return handleApiResponse<QueueStatus>(response);
   },
 
   /**
    * Get the current queue status for a session
    */
-  getStatus: async (sessionId: string): Promise<QueueStatus> => {
-    const response = await makeRequest(`/api/sessions/${sessionId}/queue`);
+  getStatus: async (
+    sessionId: string,
+    hostId?: string | null
+  ): Promise<QueueStatus> => {
+    const response = await makeHostAwareRequest(
+      `/api/sessions/${sessionId}/queue`,
+      hostId
+    );
     return handleApiResponse<QueueStatus>(response);
   },
 };

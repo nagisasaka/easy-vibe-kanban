@@ -4,6 +4,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import '../../../../packages/web-core/src/i18n/config';
 import './style.css';
 import { CardContextHarness } from './CardContextHarness';
+import { RuntimeInputHarness } from './RuntimeInputHarness';
 import {
   WORKFLOW_GRAPH_VERSION,
   createDefaultWorkflowGraph,
@@ -537,7 +538,7 @@ function TaskAttemptsHarness() {
 const mode = new URLSearchParams(window.location.search).get('mode');
 
 createRoot(document.getElementById('root')!).render(
-  mode === 'card-context' ? (
+  mode === 'runtime-input' ? <RuntimeInputHarness /> : mode === 'card-context' ? (
     <CardContextHarness />
   ) : mode === 'entry' ? (
     <WorkflowEntryHarness />

@@ -26,16 +26,19 @@ import {
   useEntries,
   useTokenUsage,
 } from '../model/contexts/EntriesContext';
-import { useExecutionProcesses } from '@/shared/hooks/useExecutionProcesses';
+import { useSessionExecutorConfig } from '@/shared/hooks/useSessionExecutorConfig';
 import { useReviewOptional } from '@/shared/hooks/useReview';
 import { useActions } from '@/shared/hooks/useActions';
 import { useTodos } from '../model/hooks/useTodos';
-import { getLatestConfigFromProcesses } from '@/shared/lib/executor';
 import { useExecutorConfig } from '@/shared/hooks/useExecutorConfig';
 import { useSessionMessageEditor } from '../model/hooks/useSessionMessageEditor';
 import { useSessionQueueInteraction } from '../model/hooks/useSessionQueueInteraction';
 import { useSessionSend } from '../model/hooks/useSessionSend';
 import { resumeGoalRequest } from '../model/resumeGoal';
+import {
+  isSessionDraftSubmissionCurrent,
+  type SessionDraftSubmission,
+} from '../model/sessionDraft';
 import { useSessionAttachments } from '../model/hooks/useSessionAttachments';
 import { useMessageEditRetry } from '../model/hooks/useMessageEditRetry';
 import { useAgentProviderPolicy } from '@/shared/hooks/useAgentProviderPolicy';
@@ -116,6 +119,7 @@ interface SharedProps {
   sessions: Session[];
   /** Number of files changed in current session */
   filesChanged: number;
+  diffStatsStatus?: 'loading' | 'error' | 'degraded' | 'ready';
   /** Number of lines added */
   linesAdded: number;
   /** Number of lines removed */
@@ -167,6 +171,7 @@ type SessionChatBoxContainerProps =
   | PlaceholderProps;
 
 export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+  const hostId = useHostId();
   const workspaceId =
     props.mode === 'existing-session'
       ? props.session.workspace_id
@@ -189,7 +194,16 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
       />
     );
   }
-  return <InteractiveSessionChatBox {...props} />;
+  return (
+    <InteractiveSessionChatBox
+      key={JSON.stringify([
+        hostId,
+        workspaceId,
+        props.mode === 'existing-session' ? props.session.id : props.mode,
+      ])}
+      {...props}
+    />
+  );
 }
 
 function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
@@ -197,6 +211,7 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
     mode,
     sessions,
     filesChanged,
+    diffStatsStatus,
     linesAdded,
     linesRemoved,
     onScrollToPreviousMessage,
@@ -469,31 +484,24 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
   // User profiles, config preference, and latest executor from processes
   const { profiles, config, capabilities } = useUserSystem();
 
-  // Fetch processes from last session to get full profile (only in new session mode)
-  const lastSessionId = isNewSessionMode ? sessions?.[0]?.id : undefined;
-  const { executionProcesses: lastSessionProcesses } =
-    useExecutionProcesses(lastSessionId);
-
-  // Compute latestConfig: current processes > last session processes > session metadata
+  const sessionConfig = useSessionExecutorConfig(
+    isNewSessionMode ? undefined : sessionId
+  );
+  const isSessionConfigReady = isNewSessionMode || sessionConfig.isSuccess;
+  // Restore only this Session's immutable launch settings. A fresh Session
+  // starts with an explicit preference or the user's defaults, not a sibling.
   const latestConfig = useMemo(() => {
-    // Current session's processes take priority (full ExecutorConfig)
-    const fromProcesses = getLatestConfigFromProcesses(processes);
-    if (fromProcesses) return fromProcesses;
-
-    // Try full config from last session's processes
-    const fromLastSession = getLatestConfigFromProcesses(lastSessionProcesses);
-    if (fromLastSession) return fromLastSession;
-
-    // Fallback: just executor from session metadata
-    const lastSessionExecutor = sessions?.[0]?.executor;
-    if (lastSessionExecutor) {
-      return {
-        executor: lastSessionExecutor as BaseCodingAgent,
-      };
-    }
-
+    if (isNewSessionMode || !sessionConfig.isSuccess) return null;
+    if (sessionConfig.data) return sessionConfig.data;
+    if (session?.executor)
+      return { executor: session.executor as BaseCodingAgent };
     return null;
-  }, [processes, lastSessionProcesses, sessions]);
+  }, [
+    isNewSessionMode,
+    sessionConfig.isSuccess,
+    sessionConfig.data,
+    session?.executor,
+  ]);
 
   const resolvedInitialConfig = preferredExecutorConfig ?? latestConfig;
   const needsExecutorSelection =
@@ -511,6 +519,7 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
     clearDraft,
     cancelDebouncedSave,
     handleMessageChange,
+    getDraftRevision,
   } = useSessionMessageEditor({ scratchId });
 
   // Ref to access current message value for attachment handler
@@ -646,7 +655,7 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
 
   useEffect(() => {
     setSelectedSkills([]);
-  }, [sessionId, workspaceId]);
+  }, [hostId, sessionId, workspaceId]);
 
   // Queue interaction
   const {
@@ -673,7 +682,53 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
     executorConfig,
   });
 
+  const currentDraft = useRef<SessionDraftSubmission>({
+    scope: '',
+    revision: 0,
+    content: '',
+  });
+  const composerMounted = useRef(true);
+  useEffect(() => {
+    composerMounted.current = true;
+    return () => {
+      composerMounted.current = false;
+    };
+  }, []);
+  currentDraft.current = {
+    scope: JSON.stringify([hostId, workspaceId, sessionId, scratchId]),
+    revision: getDraftRevision(),
+    content: JSON.stringify({
+      localMessage,
+      executorConfig,
+      selectedSkills,
+      localAttachments,
+      comments: reviewContext?.comments,
+      commentDrafts: reviewContext?.drafts,
+      stagedResumeSession,
+      resumeScopePath,
+    }),
+  };
+  const isCurrentSubmission = useCallback(
+    (submission: SessionDraftSubmission) =>
+      composerMounted.current &&
+      isSessionDraftSubmissionCurrent(
+        { ...currentDraft.current, revision: getDraftRevision() },
+        submission
+      ),
+    [getDraftRevision]
+  );
+
   const handleSend = useCallback(async () => {
+    if (!isSessionConfigReady) return;
+    if (!executorConfig) return;
+    const submission = {
+      ...currentDraft.current,
+      revision: getDraftRevision(),
+    };
+    cancelDebouncedSave();
+    // Ordered with conditional deletion, including when launch is faster than
+    // persistence. Newer edits enqueue after this snapshot and are retained.
+    void saveToScratch(localMessage, executorConfig);
     const { prompt, isSlashCommand } = buildAgentPrompt(localMessage, [
       reviewMarkdown,
     ]);
@@ -684,16 +739,22 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
       resumeSessionId: stagedResumeSession?.agent_session_id,
       resumeScopePath: resumeScopePath,
     });
-    if (success) {
+    if (success && isCurrentSubmission(submission)) {
       cancelDebouncedSave();
       setLocalMessage('');
       setSelectedSkills([]);
       setStagedResumeSession(null);
       clearUploadedAttachments();
-      if (isNewSessionMode) await clearDraft();
+      void clearDraft({
+        type: 'DRAFT_FOLLOW_UP',
+        data: { message: localMessage, executor_config: executorConfig },
+      }).catch((error) =>
+        console.error('Failed to acknowledge submitted draft', error)
+      );
       if (!isSlashCommand) {
         reviewContext?.clearComments();
       }
+      if (success.createdSessionId) onSelectSession?.(success.createdSessionId);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           onScrollToBottom('auto');
@@ -702,15 +763,21 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
     }
   }, [
     onScrollToBottom,
+    isSessionConfigReady,
+    executorConfig,
+    getDraftRevision,
+    saveToScratch,
+    isCurrentSubmission,
+    onSelectSession,
     send,
     localMessage,
     reviewMarkdown,
     selectedSkills,
     stagedResumeSession?.agent_session_id,
+    resumeScopePath,
     cancelDebouncedSave,
     setLocalMessage,
     clearUploadedAttachments,
-    isNewSessionMode,
     clearDraft,
     reviewContext,
   ]);
@@ -738,10 +805,17 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
 
   // Queue message handler
   const handleQueueMessage = useCallback(async () => {
+    if (!isSessionConfigReady) return;
     // Allow queueing if there's a message OR review comments, and we have a config
     if ((!localMessage.trim() && !reviewMarkdown) || !executorConfig) return;
+    const submission = {
+      ...currentDraft.current,
+      revision: getDraftRevision(),
+    };
 
     const { prompt } = buildAgentPrompt(localMessage, [reviewMarkdown]);
+    cancelDebouncedSave();
+    void saveToScratch(localMessage, executorConfig);
 
     if (activeGoal?.status === AgentGoalStatus.active && activeAgentRun) {
       try {
@@ -752,24 +826,42 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
       } catch {
         return;
       }
+      if (!isCurrentSubmission(submission)) return;
       cancelDebouncedSave();
       setLocalMessage('');
       setSelectedSkills([]);
       clearUploadedAttachments();
       reviewContext?.clearComments();
+      void clearDraft({
+        type: 'DRAFT_FOLLOW_UP',
+        data: { message: localMessage, executor_config: executorConfig },
+      }).catch((error) =>
+        console.error('Failed to acknowledge steered draft', error)
+      );
       return;
     }
 
-    cancelDebouncedSave();
-    await saveToScratch(localMessage, executorConfig);
     await queueMessage(prompt, executorConfig, selectedSkills);
+
+    if (!isCurrentSubmission(submission)) return;
 
     // Clear local state after queueing (same as handleSend)
     setLocalMessage('');
     setSelectedSkills([]);
     clearUploadedAttachments();
     reviewContext?.clearComments();
+    void clearDraft({
+      type: 'DRAFT_FOLLOW_UP',
+      data: { message: localMessage, executor_config: executorConfig },
+    }).catch((error) =>
+      console.error('Failed to acknowledge queued draft', error)
+    );
   }, [
+    isSessionConfigReady,
+    isCurrentSubmission,
+    getDraftRevision,
+    clearDraft,
+    selectedSkills,
     localMessage,
     reviewMarkdown,
     executorConfig,
@@ -809,11 +901,17 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
   // Handle feedback submission
   const handleSubmitFeedback = useCallback(async () => {
     if (!feedbackContext || !localMessage.trim()) return;
+    const submission = {
+      ...currentDraft.current,
+      revision: getDraftRevision(),
+    };
     try {
       await feedbackContext.submitFeedback(localMessage);
+      if (!isCurrentSubmission(submission)) return;
       cancelDebouncedSave();
       setLocalMessage('');
-      await clearDraft();
+      if (scratchData)
+        await clearDraft({ type: 'DRAFT_FOLLOW_UP', data: scratchData });
     } catch {
       // Error is handled in context
     }
@@ -823,6 +921,9 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
     cancelDebouncedSave,
     setLocalMessage,
     clearDraft,
+    scratchData,
+    getDraftRevision,
+    isCurrentSubmission,
   ]);
 
   // Handle cancel feedback mode
@@ -1026,6 +1127,10 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
   // Handle request changes (deny with feedback)
   const handleRequestChanges = useCallback(async () => {
     if (pendingApproval?.kind !== 'approval' || !localMessage.trim()) return;
+    const submission = {
+      ...currentDraft.current,
+      revision: getDraftRevision(),
+    };
 
     try {
       await denyAsync({
@@ -1033,9 +1138,11 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
         agentRunId: pendingApproval.agentRunId,
         reason: localMessage.trim(),
       });
+      if (!isCurrentSubmission(submission)) return;
       cancelDebouncedSave();
       setLocalMessage('');
-      await clearDraft();
+      if (scratchData)
+        await clearDraft({ type: 'DRAFT_FOLLOW_UP', data: scratchData });
 
       // Invalidate workspace summary cache to update sidebar
       queryClient.invalidateQueries({ queryKey: workspaceSummaryKeys.all });
@@ -1052,6 +1159,9 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
     clearDraft,
     queryClient,
     onScrollToBottom,
+    scratchData,
+    getDraftRevision,
+    isCurrentSubmission,
   ]);
 
   // Handle one-tap deny (reason optional): sends the typed text as the reason
@@ -1060,6 +1170,10 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
   // approval footer's dedicated Deny button.
   const handleDeny = useCallback(async () => {
     if (pendingApproval?.kind !== 'approval') return;
+    const submission = {
+      ...currentDraft.current,
+      revision: getDraftRevision(),
+    };
 
     try {
       await denyAsync({
@@ -1067,10 +1181,12 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
         agentRunId: pendingApproval.agentRunId,
         reason: localMessage.trim() || 'User denied this tool use request.',
       });
+      if (!isCurrentSubmission(submission)) return;
       if (localMessage.trim()) {
         cancelDebouncedSave();
         setLocalMessage('');
-        await clearDraft();
+        if (scratchData)
+          await clearDraft({ type: 'DRAFT_FOLLOW_UP', data: scratchData });
       }
 
       // Invalidate workspace summary cache to update sidebar
@@ -1088,6 +1204,9 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
     clearDraft,
     queryClient,
     onScrollToBottom,
+    scratchData,
+    getDraftRevision,
+    isCurrentSubmission,
   ]);
 
   // Handle AskUserQuestion answer submission
@@ -1147,7 +1266,7 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
         hasContent: hasMessageContent,
         hasWorkspace: !!workspaceId,
         hasSession: !!sessionId,
-        hasExecutor: !!executorConfig,
+        hasExecutor: !!executorConfig && isSessionConfigReady,
         isNewSessionMode,
         hasPriorAgentRun: (canonicalTimeline?.runs.length ?? 0) > 0,
         isAgentRunActive,
@@ -1173,6 +1292,7 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
       workspaceId,
       sessionId,
       executorConfig,
+      isSessionConfigReady,
       isNewSessionMode,
       canonicalTimeline?.runs.length,
       canonicalTimeline?.isTerminal,
@@ -1362,6 +1482,7 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
           ? () => {
               if (
                 !executorConfig ||
+                !isSessionConfigReady ||
                 isAgentRunActive ||
                 isSending ||
                 isStopping
@@ -1378,6 +1499,7 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
       }
       resumeSavedDisabled={
         !executorConfig ||
+        !isSessionConfigReady ||
         executorConfig.executor !== 'CODEX' ||
         isAgentRunActive ||
         isStopping ||
@@ -1499,13 +1621,14 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
         }
         stats={{
           filesChanged,
+          diffStatsStatus,
           linesAdded,
           linesRemoved,
           hasConflicts,
           conflictedFilesCount,
           onResolveConflicts: handleResolveConflicts,
         }}
-        error={sendError}
+        error={sessionConfig.error?.message ?? sendError}
         agent={effectiveExecutor}
         todos={todos}
         inProgressTodo={inProgressTodo}

@@ -384,6 +384,7 @@
     "chooseExistingRepo": "ファイルシステムから既存のリポジトリを選択してください"
   },
   "empty": {
+    "cachedChanges": "最後に取得した差分を表示しています。最新の状態とは異なる可能性があります。",
     "noChanges": "表示する変更がありません"
   },
   "commandBar": {

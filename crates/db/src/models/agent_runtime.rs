@@ -1,6 +1,9 @@
+use std::sync::LazyLock;
+
 use chrono::{DateTime, Utc};
 use executors::{
     actions::ExecutorAction,
+    profile::runtime_profile_ids_match,
     runtime::{
         AgentEventEnvelope, AgentLiveEvent, AgentLiveEventPayload, AgentRunPortCommand,
         AgentRunPortCommandEnvelope, AgentRunRequestEnvelope, AgentRunStatus, ContractVersionError,
@@ -12,6 +15,19 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqliteConnection, SqlitePool, types::Json};
 use thiserror::Error;
 use uuid::Uuid;
+
+// Wakeups are hints only: consumers must repair from the durable cursor even
+// when notifications are lost, lagged, or produced by another server process.
+static AGENT_EVENT_CHANGES: LazyLock<tokio::sync::broadcast::Sender<Uuid>> =
+    LazyLock::new(|| tokio::sync::broadcast::channel(256).0);
+
+pub fn subscribe_agent_event_changes() -> tokio::sync::broadcast::Receiver<Uuid> {
+    AGENT_EVENT_CHANGES.subscribe()
+}
+
+fn notify_agent_event_change(agent_run_id: Uuid) {
+    let _ = AGENT_EVENT_CHANGES.send(agent_run_id);
+}
 
 #[derive(Debug, Clone, FromRow)]
 pub struct AgentProviderSessionRecord {
@@ -1355,7 +1371,10 @@ impl AgentProviderSessionRecord {
         if let Some(existing) = &existing
             && (existing.provider_id != reference.provider_id
                 || existing.provider_session_id != reference.provider_session_id
-                || existing.runtime_profile_id != reference.runtime_profile_id)
+                || !runtime_profile_ids_match(
+                    &existing.runtime_profile_id,
+                    &reference.runtime_profile_id,
+                ))
         {
             return Err(AgentRuntimePersistenceError::IdentityConflict {
                 entity: "provider session",
@@ -1370,6 +1389,8 @@ impl AgentProviderSessionRecord {
 
         let mut stored_reference = reference.clone();
         if let Some(existing) = existing {
+            // Keep the original unique key, including its DEFAULT spelling.
+            stored_reference.runtime_profile_id = existing.runtime_profile_id;
             stored_reference.metadata = merge_provider_session_metadata(
                 existing.session_reference.0.metadata,
                 stored_reference.metadata,
@@ -1761,6 +1782,9 @@ impl AgentEventRecord {
             });
         }
         transaction.commit().await?;
+        if !inserted.is_empty() {
+            notify_agent_event_change(persisted_run_id);
+        }
         Ok(inserted)
     }
 
@@ -1977,6 +2001,7 @@ impl AgentEventRecord {
         .execute(&mut *transaction)
         .await?;
         transaction.commit().await?;
+        notify_agent_event_change(event.agent_run_id);
         Ok(applied)
     }
 }
@@ -2237,6 +2262,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn default_provider_binding_alias_keeps_original_unique_key_and_metadata() {
+        let pool = setup_pool().await;
+        let (session_id, _) = insert_anchors(&pool).await;
+        let reference = ProviderSessionReference {
+            schema_version: 1,
+            provider_id: "codex".into(),
+            runtime_profile_id: "CODEX:DEFAULT".into(),
+            provider_session_id: "native-default".into(),
+            observed_at: Utc::now(),
+            metadata: Some(serde_json::json!({"source":"native_adopted", "scope_path":"/repo"})),
+        };
+        AgentProviderSessionRecord::upsert(&pool, Uuid::new_v4(), session_id, &reference)
+            .await
+            .unwrap();
+        let mut incoming = reference.clone();
+        incoming.runtime_profile_id = "CODEX".into();
+        incoming.metadata = None;
+        AgentProviderSessionRecord::upsert(&pool, Uuid::new_v4(), session_id, &incoming)
+            .await
+            .unwrap();
+        let stored: Vec<AgentProviderSessionRecord> =
+            sqlx::query_as("SELECT * FROM agent_provider_sessions WHERE session_id = ?")
+                .bind(session_id)
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].runtime_profile_id, "CODEX:DEFAULT");
+        assert_eq!(
+            stored[0].session_reference.0.runtime_profile_id,
+            "CODEX:DEFAULT"
+        );
+        assert_eq!(stored[0].session_reference.0.metadata, reference.metadata);
+        incoming.runtime_profile_id = "CODEX:PLAN".into();
+        assert!(
+            AgentProviderSessionRecord::upsert(&pool, Uuid::new_v4(), session_id, &incoming)
+                .await
+                .is_err()
+        );
+        incoming.runtime_profile_id = "CODEX".into();
+        incoming.provider_session_id = "other-thread".into();
+        assert!(
+            AgentProviderSessionRecord::upsert(&pool, Uuid::new_v4(), session_id, &incoming)
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
     async fn persists_all_launch_identity_atomically_and_idempotently() {
         let pool = setup_pool().await;
         let (session_id, workspace_id) = insert_anchors(&pool).await;
@@ -2276,6 +2350,7 @@ mod tests {
 
     #[tokio::test]
     async fn host_batch_commits_events_projection_and_cursor_atomically() {
+        let mut changes = super::subscribe_agent_event_changes();
         let pool = setup_pool().await;
         let (session_id, workspace_id) = insert_anchors(&pool).await;
         let (request, attempt) = requests(session_id, workspace_id, "host-batch");
@@ -2315,6 +2390,11 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(inserted.len(), 2);
+        let mut notified = false;
+        while let Ok(id) = changes.try_recv() {
+            notified |= id == request.agent_run_id;
+        }
+        assert!(notified, "only a committed batch must wake its stream");
         assert_eq!(inserted[0].sequence, 1);
         assert_eq!(inserted[1].sequence, 2);
         let cursor: i64 = sqlx::query_scalar(
@@ -2369,6 +2449,12 @@ mod tests {
             error,
             Err(AgentRuntimePersistenceError::IdempotencyConflict { .. })
         ));
+        while let Ok(id) = changes.try_recv() {
+            assert_ne!(
+                id, request.agent_run_id,
+                "duplicate or rolled back batches must not notify"
+            );
+        }
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_events")
             .fetch_one(&pool)
             .await

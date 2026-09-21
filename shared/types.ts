@@ -212,6 +212,8 @@ export type CreateScratch = { payload: ScratchPayload, };
 
 export type UpdateScratch = { payload: ScratchPayload, };
 
+export type DeleteScratch = { expected_payload: ScratchPayload | null, };
+
 export type Workspace = { id: string, task_id: string | null, container_ref: string | null, workspace_kind: WorkspaceKind, container_ownership: ContainerOwnership, usage: WorkspaceUsage, execution_owner: WorkspaceExecutionOwner | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, 
 /**
  * AI Arena group this workspace belongs to, if any.

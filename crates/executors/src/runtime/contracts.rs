@@ -6,7 +6,7 @@ use ts_rs::TS;
 use uuid::Uuid;
 
 use super::{AgentRuntimeError, AgentRuntimeMessageRole, AgentRuntimeToolStatus};
-use crate::profile::ExecutorConfig;
+use crate::profile::{ExecutorConfig, runtime_profile_ids_match};
 
 pub const AGENT_REQUEST_SCHEMA_VERSION: u16 = 1;
 pub const AGENT_REQUEST_PAYLOAD_VERSION: u16 = 1;
@@ -337,8 +337,10 @@ impl RunAttemptRequest {
         }
         if let Some(provider_session) = &self.provider_session {
             provider_session.validate_current()?;
-            if provider_session.runtime_profile_id != self.runtime_profile_id
-                || provider_session.provider_id != self.provider_id
+            if !runtime_profile_ids_match(
+                &provider_session.runtime_profile_id,
+                &self.runtime_profile_id,
+            ) || provider_session.provider_id != self.provider_id
             {
                 return Err(RunAttemptRequestError::ExecutionContextMismatch);
             }

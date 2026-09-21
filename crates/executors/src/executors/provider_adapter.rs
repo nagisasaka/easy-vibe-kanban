@@ -21,7 +21,7 @@ use crate::{
     approvals::ExecutorApprovalService,
     env::ExecutionEnv,
     executors::{CodingAgent, ExecutorError, SpawnedChild},
-    profile::{ExecutorConfig, ExecutorConfigs},
+    profile::{ExecutorConfig, ExecutorConfigs, runtime_profile_ids_match},
     runtime::{
         AGENT_EVENT_PAYLOAD_VERSION, AGENT_EVENT_SCHEMA_VERSION, AGENT_LIVE_EVENT_SCHEMA_VERSION,
         AgentEvent, AgentEventEnvelope, AgentEventPayload, AgentLiveEvent, AgentLiveEventPayload,
@@ -146,7 +146,8 @@ fn validate_direct_launch(request: &DirectProviderLaunchRequest<'_>) -> Result<(
                 request.provider.id()
             ))
         })?;
-        if session.provider_id != request.provider.id() || session.runtime_profile_id != profile_id
+        if session.provider_id != request.provider.id()
+            || !runtime_profile_ids_match(&session.runtime_profile_id, &profile_id)
         {
             return Err(ExecutorError::FollowUpNotSupported(format!(
                 "provider session does not match {} profile {profile_id}",
@@ -2087,6 +2088,36 @@ mod tests {
         )
         .expect_err("session from another profile must not launch");
         assert!(matches!(error, ExecutorError::FollowUpNotSupported(_)));
+    }
+
+    #[test]
+    fn follow_up_accepts_explicit_default_identity_without_changing_other_bindings() {
+        let config = ExecutorConfig::new(BaseCodingAgent::Codex);
+        let mut session = provider_session(DirectProvider::Codex, &config);
+        session.runtime_profile_id = "CODEX:DEFAULT".to_string();
+        assert!(
+            validate_launch(
+                DirectProvider::Codex,
+                &config,
+                DirectIntent::FollowUp,
+                Some(&session),
+                None,
+            )
+            .is_ok()
+        );
+        for profile in ["CODEX:PLAN", "CODEX:default", "CLAUDE_CODE:DEFAULT"] {
+            session.runtime_profile_id = profile.to_string();
+            assert!(
+                validate_launch(
+                    DirectProvider::Codex,
+                    &config,
+                    DirectIntent::FollowUp,
+                    Some(&session),
+                    None,
+                )
+                .is_err()
+            );
+        }
     }
 
     #[test]

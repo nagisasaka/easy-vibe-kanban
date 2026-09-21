@@ -3,9 +3,11 @@ import {
   ScratchType,
   type DraftFollowUpData,
   type ExecutorConfig,
+  type UpdateScratch,
 } from 'shared/types';
 import { useScratch } from '@/shared/hooks/useScratch';
 import { useDebouncedCallback } from '@/shared/hooks/useDebouncedCallback';
+import { useHostId } from '@/shared/providers/HostIdProvider';
 
 interface UseSessionMessageEditorOptions {
   /** Scratch ID (workspaceId for new session, sessionId for existing) */
@@ -29,7 +31,8 @@ interface UseSessionMessageEditorResult {
     executorConfig: ExecutorConfig
   ) => Promise<void>;
   /** Delete the draft scratch */
-  clearDraft: () => Promise<void>;
+  clearDraft: (expectedPayload?: UpdateScratch['payload']) => Promise<void>;
+  getDraftRevision: () => number;
   /** Cancel pending debounced save */
   cancelDebouncedSave: () => void;
   /** Handle message change with debounced save */
@@ -43,6 +46,7 @@ interface UseSessionMessageEditorResult {
 export function useSessionMessageEditor({
   scratchId,
 }: UseSessionMessageEditorOptions): UseSessionMessageEditorResult {
+  const hostId = useHostId();
   const {
     scratch,
     updateScratch,
@@ -55,7 +59,16 @@ export function useSessionMessageEditor({
       ? scratch.payload.data
       : undefined;
 
-  const [localMessage, setLocalMessage] = useState('');
+  const [localMessage, setMessage] = useState('');
+  const hasLoadedRef = useRef(false);
+  const revision = useRef(0);
+  const getDraftRevision = useCallback(() => revision.current, []);
+  const setLocalMessage = useCallback((value: string) => {
+    revision.current++;
+    hasLoadedRef.current = true;
+    setHasInitialValue(true);
+    setMessage(value);
+  }, []);
   const [hasInitialValue, setHasInitialValue] = useState(false);
 
   const saveToScratch = useCallback(
@@ -78,25 +91,44 @@ export function useSessionMessageEditor({
     [scratchId, updateScratch]
   );
 
-  const { debounced: debouncedSave, cancel: cancelDebouncedSave } =
-    useDebouncedCallback(saveToScratch, 500);
+  const pendingSave = useRef<(() => Promise<void>) | null>(null);
+  const { debounced: debouncedSave, cancel } = useDebouncedCallback(() => {
+    const operation = pendingSave.current;
+    pendingSave.current = null;
+    void operation?.();
+  }, 500);
+  const cancelDebouncedSave = useCallback(() => {
+    cancel();
+    pendingSave.current = null;
+  }, [cancel]);
 
-  // Track whether initial load has happened to avoid re-syncing during typing
-  const hasLoadedRef = useRef(false);
+  // Flush to the captured identity when navigating/unmounting before debounce.
+  // A late write must never acquire the next Session's storage callback.
+  useEffect(
+    () => () => {
+      cancel();
+      const operation = pendingSave.current;
+      pendingSave.current = null;
+      void operation?.();
+    },
+    [hostId, scratchId, cancel]
+  );
 
   // Reset load state and clear message when scratchId changes (e.g., switching to approval mode)
   useEffect(() => {
+    cancelDebouncedSave();
     hasLoadedRef.current = false;
     setHasInitialValue(false);
-    setLocalMessage('');
-  }, [scratchId]);
+    revision.current++;
+    setMessage('');
+  }, [hostId, scratchId, cancelDebouncedSave]);
 
   // Sync local message from scratch only on initial load
   useEffect(() => {
     if (isScratchLoading) return;
     if (hasLoadedRef.current) return;
     hasLoadedRef.current = true;
-    setLocalMessage(scratchData?.message ?? '');
+    setMessage(scratchData?.message ?? '');
     setHasInitialValue(true);
   }, [isScratchLoading, scratchData?.message]);
 
@@ -105,9 +137,11 @@ export function useSessionMessageEditor({
   const handleMessageChange = useCallback(
     (value: string, executorConfig: ExecutorConfig) => {
       setLocalMessage(value);
-      debouncedSave(value, executorConfig);
+      // Capture the storage identity at edit time, not when the timer fires.
+      pendingSave.current = () => saveToScratch(value, executorConfig);
+      debouncedSave();
     },
-    [debouncedSave]
+    [debouncedSave, saveToScratch, setLocalMessage]
   );
 
   return {
@@ -118,6 +152,7 @@ export function useSessionMessageEditor({
     hasInitialValue,
     saveToScratch,
     clearDraft: deleteScratch,
+    getDraftRevision,
     cancelDebouncedSave,
     handleMessageChange,
   };

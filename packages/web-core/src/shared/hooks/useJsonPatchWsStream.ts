@@ -41,6 +41,7 @@ export const useJsonPatchWsStream = <T extends object>(
   const [isInitialized, setIsInitialized] = useState(false);
   const initializedForEndpointRef = useRef<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const activeEndpointRef = useRef<string | undefined>(undefined);
   const wsRef = useRef<WebSocket | null>(null);
   const dataRef = useRef<T | undefined>(undefined);
   const retryTimerRef = useRef<number | null>(null);
@@ -83,17 +84,25 @@ export const useJsonPatchWsStream = <T extends object>(
       return;
     }
 
-    // Initialize data
-    if (!dataRef.current) {
-      dataRef.current = initialData();
+    if (activeEndpointRef.current !== endpoint) {
+      activeEndpointRef.current = endpoint;
+      initializedForEndpointRef.current = undefined;
+      retryAttemptsRef.current = 0;
+      setData(undefined);
+      setError(null);
+      setIsInitialized(false);
+    }
+    // Replay starts from an empty accumulator; retain only the last published
+    // snapshot for this same endpoint while reconnecting.
+    dataRef.current = initialData();
 
-      // Inject initial entry if provided
-      if (injectInitialEntry) {
-        injectInitialEntry(dataRef.current);
-      }
+    // Inject initial entry if provided
+    if (injectInitialEntry) {
+      injectInitialEntry(dataRef.current);
     }
 
     let cancelled = false;
+    let ready = false;
 
     // Create WebSocket if it doesn't exist
     if (!wsRef.current) {
@@ -110,10 +119,8 @@ export const useJsonPatchWsStream = <T extends object>(
           }
 
           ws.onopen = () => {
-            setError(null);
+            if (cancelled) return;
             setIsConnected(true);
-            // Reset backoff on successful connection
-            retryAttemptsRef.current = 0;
             if (retryTimerRef.current) {
               window.clearTimeout(retryTimerRef.current);
               retryTimerRef.current = null;
@@ -121,6 +128,7 @@ export const useJsonPatchWsStream = <T extends object>(
           };
 
           ws.onmessage = (event) => {
+            if (cancelled) return;
             try {
               const msg: WsMsg = JSON.parse(event.data);
 
@@ -140,13 +148,16 @@ export const useJsonPatchWsStream = <T extends object>(
                 });
 
                 dataRef.current = next;
-                setData(next);
+                if (ready) setData(next);
               }
 
               // Handle Ready messages (initial data has been sent)
               if ('Ready' in msg) {
+                ready = true;
+                retryAttemptsRef.current = 0;
                 initializedForEndpointRef.current = endpoint;
                 setIsInitialized(true);
+                setData(dataRef.current);
                 setError(null);
               }
 
@@ -170,25 +181,20 @@ export const useJsonPatchWsStream = <T extends object>(
             // that was already received.
           };
 
-          ws.onclose = (evt) => {
+          ws.onclose = () => {
+            if (cancelled) return;
             setIsConnected(false);
             wsRef.current = null;
 
-            // Do not reconnect if we received a finished message or clean close
-            if (
-              cancelled ||
-              finishedRef.current ||
-              (evt?.code === 1000 && evt?.wasClean)
-            ) {
+            // Only an explicit finished message is terminal; a clean network
+            // close may still require cursor/snapshot repair.
+            if (cancelled || finishedRef.current) {
               return;
             }
 
             // Otherwise, reconnect on unexpected/error closures
             retryAttemptsRef.current += 1;
-            // Only show error if we haven't received any data yet
-            if (!dataRef.current && retryAttemptsRef.current > 6) {
-              setError('Connection failed');
-            }
+            setError('Connection lost; reconnecting');
             scheduleReconnect();
           };
 
@@ -199,6 +205,7 @@ export const useJsonPatchWsStream = <T extends object>(
           }
 
           console.error('Failed to open WebSocket stream:', error);
+          setError('Connection failed; reconnecting');
           retryAttemptsRef.current += 1;
           scheduleReconnect();
         }
@@ -226,8 +233,6 @@ export const useJsonPatchWsStream = <T extends object>(
       }
       finishedRef.current = false;
       dataRef.current = undefined;
-      setData(undefined);
-      setIsInitialized(false);
     };
   }, [
     endpoint,
@@ -239,12 +244,13 @@ export const useJsonPatchWsStream = <T extends object>(
   ]);
 
   const isInitializedForCurrentEndpoint =
-    isInitialized && initializedForEndpointRef.current === endpoint;
+    enabled && isInitialized && initializedForEndpointRef.current === endpoint;
 
   return {
-    data,
-    isConnected,
+    data: enabled && activeEndpointRef.current === endpoint ? data : undefined,
+    isConnected:
+      enabled && activeEndpointRef.current === endpoint && isConnected,
     isInitialized: isInitializedForCurrentEndpoint,
-    error,
+    error: enabled && activeEndpointRef.current === endpoint ? error : null,
   };
 };

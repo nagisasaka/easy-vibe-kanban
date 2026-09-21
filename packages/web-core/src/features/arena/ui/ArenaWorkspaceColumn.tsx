@@ -39,7 +39,7 @@ export function ArenaWorkspaceColumn({
   detailHref,
 }: ArenaWorkspaceColumnProps) {
   const { t } = useTranslation('common');
-  const { fileCount, added, deleted, error } = useDiffSummary(
+  const { fileCount, added, deleted, error, isInitialized } = useDiffSummary(
     workspace.workspace_id
   );
   const badgeClassName = STATUS_BADGE_CLASS[workspace.arena_status];
@@ -96,6 +96,10 @@ export function ArenaWorkspaceColumn({
         {error ? (
           <div className="text-xs text-error">
             {t('arena.errors.diffStream', { message: error })}
+          </div>
+        ) : !isInitialized ? (
+          <div role="status" className="text-xs text-low">
+            {t('states.loading')}
           </div>
         ) : fileCount === 0 ? (
           <div className="text-xs text-low">

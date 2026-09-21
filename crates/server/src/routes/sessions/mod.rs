@@ -1,4 +1,5 @@
 mod agent_run;
+mod executor_config;
 mod native_history;
 pub mod queue;
 pub mod review;
@@ -19,7 +20,6 @@ use db::models::{
     coding_agent_turn::ResumableAgentSession,
     execution_process::{ExecutionProcess, ExecutionProcessRunReason, ExecutionProcessView},
     requests::UpdateSession,
-    scratch::{Scratch, ScratchType},
     session::{CreateSession, Session, SessionError},
     workspace::{Workspace, WorkspaceError},
     workspace_repo::WorkspaceRepo,
@@ -439,13 +439,8 @@ async fn prepare_coding_agent_execution_for_session(
     )
     .await?;
 
-    if let Err(e) = Scratch::delete(pool, session.id, &ScratchType::DraftFollowUp).await {
-        tracing::debug!(
-            "Failed to delete draft follow-up scratch for session {}: {}",
-            session.id,
-            e
-        );
-    }
+    // The composer acknowledges only the submitted draft snapshot. A delayed
+    // launch must not delete a newer draft written while this request ran.
 
     Ok(agent_run)
 }
@@ -535,6 +530,10 @@ pub async fn run_setup_script(
 pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     let session_id_router = Router::new()
         .route("/", get(get_session).put(update_session))
+        .route(
+            "/executor-config",
+            get(executor_config::get_executor_config),
+        )
         .route("/follow-up", post(follow_up))
         .route("/setup", post(run_setup_script))
         .route("/review", post(review::start_review))

@@ -73,6 +73,7 @@ fn generate_types_content() -> String {
         db::models::scratch::Scratch::decl(),
         db::models::scratch::CreateScratch::decl(),
         db::models::scratch::UpdateScratch::decl(),
+        db::models::scratch::DeleteScratch::decl(),
         db::models::workspace::Workspace::decl(),
         db::models::workspace::WorkspaceKind::decl(),
         db::models::workspace::ContainerOwnership::decl(),

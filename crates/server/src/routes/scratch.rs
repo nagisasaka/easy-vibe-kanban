@@ -1,10 +1,11 @@
 use axum::{
     Json, Router,
+    body::Bytes,
     extract::{Path, State, ws::Message},
     response::{IntoResponse, Json as ResponseJson},
     routing::get,
 };
-use db::models::scratch::{CreateScratch, Scratch, ScratchType, UpdateScratch};
+use db::models::scratch::{CreateScratch, DeleteScratch, Scratch, ScratchType, UpdateScratch};
 use deployment::Deployment;
 use futures_util::{StreamExt, TryStreamExt};
 use serde::Deserialize;
@@ -93,12 +94,31 @@ pub async fn update_scratch(
 pub async fn delete_scratch(
     State(deployment): State<DeploymentImpl>,
     Path(ScratchPath { scratch_type, id }): Path<ScratchPath>,
+    body: Bytes,
 ) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+    let condition = parse_delete_condition(&body)?;
+    if let Some(expected) = condition.expected_payload {
+        expected
+            .validate_type(scratch_type)
+            .map_err(|error| ApiError::BadRequest(error.to_string()))?;
+        Scratch::delete_if_unchanged(&deployment.db().pool, id, &scratch_type, &expected).await?;
+        // Already absent and a newer draft are both safe acknowledgement no-ops.
+        return Ok(ResponseJson(ApiResponse::success(())));
+    }
     let rows = Scratch::delete(&deployment.db().pool, id, &scratch_type).await?;
     if rows == 0 {
         return Err(ApiError::BadRequest("Scratch not found".to_string()));
     }
     Ok(ResponseJson(ApiResponse::success(())))
+}
+
+fn parse_delete_condition(body: &[u8]) -> Result<DeleteScratch, ApiError> {
+    // Legacy clients send application/json with an empty DELETE body.
+    if body.is_empty() {
+        return Ok(DeleteScratch::default());
+    }
+    serde_json::from_slice(body)
+        .map_err(|error| ApiError::BadRequest(format!("Invalid draft acknowledgement: {error}")))
 }
 
 pub async fn stream_scratch_ws(
@@ -168,4 +188,25 @@ pub fn router(_deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
             "/scratch/{scratch_type}/{id}/stream/ws",
             get(stream_scratch_ws),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn legacy_empty_delete_and_conditional_acknowledgements_are_distinct() {
+        assert!(
+            super::parse_delete_condition(b"")
+                .unwrap()
+                .expected_payload
+                .is_none()
+        );
+        assert!(
+            super::parse_delete_condition(br#"{}"#)
+                .unwrap()
+                .expected_payload
+                .is_none()
+        );
+        assert!(super::parse_delete_condition(br#"{"expected_payload": false}"#).is_err());
+        assert!(super::parse_delete_condition(br#"{"expected_payload":{"type":"DRAFT_FOLLOW_UP","data":{"message":"a","executor_config":{"executor":"CODEX"}}}}"#).unwrap().expected_payload.is_some());
+    }
 }

@@ -108,6 +108,7 @@
     "label": "ベースブランチ"
   },
   "diff": {
+    "unavailable": "差分を取得できません",
     "filesChanged_one": "{{count}} file changed",
     "filesChanged_other": "{{count}} files changed"
   },

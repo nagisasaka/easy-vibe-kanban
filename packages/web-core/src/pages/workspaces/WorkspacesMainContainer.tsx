@@ -23,7 +23,11 @@ import { MessageEditProvider } from '@/features/workspace-chat/model/contexts/Me
 import { RetryUiProvider } from '@/features/workspace-chat/model/contexts/RetryUiContext';
 import { ApprovalFeedbackProvider } from '@/features/workspace-chat/model/contexts/ApprovalFeedbackContext';
 import { forwardWheelToScroller } from '@/features/workspace-chat/ui/forwardWheelToScroller';
-import { useDiffStats } from '@/shared/stores/useWorkspaceDiffStore';
+import {
+  useDiffStats,
+  useDiffError,
+  useIsDiffInitialized,
+} from '@/shared/stores/useWorkspaceDiffStore';
 import { useIsMobile } from '@/shared/hooks/useIsMobile';
 import { useHostId } from '@/shared/providers/HostIdProvider';
 import { WorkspaceWorkflowLink } from '@/features/workflow/ui/WorkspaceWorkflowLink';
@@ -59,6 +63,8 @@ function ChatBoxWithDiffStats({
   getActiveTurnPatchKey: () => string | null;
 }) {
   const diffStats = useDiffStats();
+  const diffError = useDiffError();
+  const diffReady = useIsDiffInitialized();
 
   return (
     <SessionChatBoxContainer
@@ -80,6 +86,15 @@ function ChatBoxWithDiffStats({
             })}
       sessions={sessions}
       filesChanged={diffStats.files_changed}
+      diffStatsStatus={
+        diffError
+          ? diffReady
+            ? 'degraded'
+            : 'error'
+          : diffReady
+            ? 'ready'
+            : 'loading'
+      }
       linesAdded={diffStats.lines_added}
       linesRemoved={diffStats.lines_removed}
       disableViewCode={false}

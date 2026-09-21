@@ -365,6 +365,73 @@ pub struct UpdateScratch {
     pub payload: ScratchPayload,
 }
 
+/// Conditional acknowledgement of a submitted draft. Omitting the condition
+/// preserves the existing explicit-delete API for other scratch consumers.
+#[derive(Debug, Default, Deserialize, TS)]
+pub struct DeleteScratch {
+    pub expected_payload: Option<ScratchPayload>,
+}
+
+#[cfg(test)]
+mod acknowledgement_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn delayed_acknowledgement_preserves_newer_draft_and_other_identity() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query("CREATE TABLE scratch (id BLOB, scratch_type TEXT, payload TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let id = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let payload = |text: &str| {
+            ScratchPayload::DraftFollowUp(DraftFollowUpData {
+                message: text.into(),
+                executor_config: ExecutorConfig::new(executors::executors::BaseCodingAgent::Codex),
+                selected_skills: None,
+            })
+        };
+        let old = payload("submitted");
+        let newer = payload("typed while sending");
+        for (key, value) in [(id, &newer), (other, &old)] {
+            sqlx::query("INSERT INTO scratch VALUES (?, ?, ?)")
+                .bind(key)
+                .bind(ScratchType::DraftFollowUp.to_string())
+                .bind(serde_json::to_string(value).unwrap())
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            Scratch::delete_if_unchanged(&pool, id, &ScratchType::DraftFollowUp, &old)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            Scratch::delete_if_unchanged(&pool, id, &ScratchType::DraftFollowUp, &newer)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            Scratch::delete_if_unchanged(&pool, id, &ScratchType::DraftFollowUp, &newer)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM scratch WHERE id = ?")
+                .bind(other)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            1
+        );
+    }
+}
+
 impl Scratch {
     pub async fn create(
         pool: &SqlitePool,
@@ -483,6 +550,22 @@ impl Scratch {
         .await?;
 
         Scratch::try_from(row)
+    }
+
+    pub async fn delete_if_unchanged(
+        pool: &SqlitePool,
+        id: Uuid,
+        scratch_type: &ScratchType,
+        expected: &ScratchPayload,
+    ) -> Result<u64, ScratchError> {
+        let result =
+            sqlx::query("DELETE FROM scratch WHERE id = ? AND scratch_type = ? AND payload = ?")
+                .bind(id)
+                .bind(scratch_type.to_string())
+                .bind(serde_json::to_string(expected)?)
+                .execute(pool)
+                .await?;
+        Ok(result.rows_affected())
     }
 
     pub async fn delete(

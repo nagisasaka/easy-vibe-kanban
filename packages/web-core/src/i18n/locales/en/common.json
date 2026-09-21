@@ -966,6 +966,7 @@
     "chooseExistingRepo": "Choose an existing repository from your file system"
   },
   "empty": {
+    "cachedChanges": "Showing the last loaded changes; they may be out of date.",
     "noChanges": "No changes to display"
   },
   "commandBar": {

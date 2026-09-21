@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useHostId } from '@/shared/providers/HostIdProvider';
 import { attachmentsApi } from '@/shared/lib/api';
 import type { LocalAttachmentMetadata } from '@vibe/ui/components/WorkspaceContext';
 import {
@@ -17,9 +18,14 @@ export function useSessionAttachments(
   sessionId: string | undefined,
   onInsertMarkdown: (markdown: string) => void
 ) {
+  const hostId = useHostId();
+  const scope = JSON.stringify([hostId, workspaceId, sessionId]);
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
   const [uploadedAttachments, setUploadedAttachments] = useState<
     AttachmentResponse[]
   >([]);
+  useEffect(() => setUploadedAttachments([]), [scope]);
 
   const uploadFiles = useCallback(
     async (files: File[]) => {
@@ -32,7 +38,8 @@ export function useSessionAttachments(
           const response = await attachmentsApi.uploadForAttempt(
             workspaceId,
             sessionId,
-            file
+            file,
+            hostId
           );
           uploadResults.push(response);
         } catch (error) {
@@ -40,7 +47,7 @@ export function useSessionAttachments(
         }
       }
 
-      if (uploadResults.length > 0) {
+      if (currentScope.current === scope && uploadResults.length > 0) {
         setUploadedAttachments((prev) => [...prev, ...uploadResults]);
         const allMarkdown = uploadResults
           .map(buildWorkspaceAttachmentMarkdown)
@@ -48,7 +55,7 @@ export function useSessionAttachments(
         onInsertMarkdown(allMarkdown);
       }
     },
-    [workspaceId, sessionId, onInsertMarkdown]
+    [workspaceId, sessionId, onInsertMarkdown, hostId, scope]
   );
 
   const clearUploadedAttachments = useCallback(() => {

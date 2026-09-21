@@ -1,4 +1,12 @@
-import { ReactNode, useMemo, useCallback, useEffect, useRef } from 'react';
+import {
+  ReactNode,
+  useMemo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from 'react';
+import { useHostId } from '@/shared/providers/HostIdProvider';
 import { useParams } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useWorkspaces } from '@/shared/hooks/useWorkspaces';
@@ -22,6 +30,7 @@ interface WorkspaceProviderProps {
 
 export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
   const { workspaceId } = useParams({ strict: false });
+  const hostId = useHostId();
   const appNavigation = useAppNavigation();
   const currentDestination = useCurrentAppDestination();
   const queryClient = useQueryClient();
@@ -78,7 +87,11 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
     enabled: !isCreateMode && hasPrAttached,
   });
 
-  const { diffs } = useDiffStream(workspaceId ?? null, !isCreateMode);
+  const {
+    diffs,
+    error: diffError,
+    isInitialized: isDiffInitialized,
+  } = useDiffStream(workspaceId ?? null, !isCreateMode);
 
   const diffPaths = useMemo(
     () =>
@@ -99,6 +112,8 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
   const batchCountRef = useRef(0);
 
   const latestDiffDataRef = useRef({
+    diffError,
+    isDiffInitialized,
     diffs,
     diffPaths,
     diffStats,
@@ -112,6 +127,8 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
     getFirstCommentLineForFile,
   });
   latestDiffDataRef.current = {
+    diffError,
+    isDiffInitialized,
     diffs,
     diffPaths,
     diffStats,
@@ -124,6 +141,15 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
     getFilesWithGitHubComments,
     getFirstCommentLineForFile,
   };
+
+  // Do not display a previous Host/Workspace's global diff slice even for one
+  // frame. Normal same-workspace patch updates remain animation-frame batched.
+  useLayoutEffect(() => {
+    useWorkspaceDiffStore
+      .getState()
+      .setWorkspaceDiffData(latestDiffDataRef.current);
+    return () => useWorkspaceDiffStore.getState().clearWorkspaceDiffData();
+  }, [hostId, workspaceId]);
 
   useEffect(() => {
     batchCountRef.current++;
@@ -143,6 +169,8 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
       }
     };
   }, [
+    diffError,
+    isDiffInitialized,
     diffs,
     diffPaths,
     diffStats,

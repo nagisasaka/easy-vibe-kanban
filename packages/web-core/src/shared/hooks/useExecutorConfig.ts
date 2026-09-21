@@ -8,6 +8,7 @@ import type {
 import { getVariantOptions } from '@/shared/lib/executor';
 import { filterVisibleAgents } from '@/shared/lib/agentVisibility';
 import { usePresetOptions } from '@/shared/hooks/usePresetOptions';
+import { resolveExecutorOverride } from '@/shared/lib/executorOverrides';
 
 function getProfileKey(
   executor: BaseCodingAgent | null,
@@ -173,16 +174,15 @@ function useEffectiveOverrides(
       const lastUsedModelMatches =
         !modelMustMatch || lastUsedConfig?.model_id === resolved.model_id;
 
-      const value =
-        field in userSelections
-          ? userSelections[field]
-          : ((scratchMatches && scratchModelMatches
-              ? scratchConfig?.[field]
-              : undefined) ??
-            (lastUsedMatches && lastUsedModelMatches
-              ? lastUsedConfig?.[field]
-              : undefined) ??
-            presetOptions?.[field]);
+      const value = resolveExecutorOverride(
+        field,
+        userSelections,
+        scratchMatches && scratchModelMatches ? scratchConfig : null,
+        lastUsedMatches && lastUsedModelMatches ? lastUsedConfig : null,
+        !modelMustMatch || presetOptions?.model_id === resolved.model_id
+          ? presetOptions
+          : null
+      );
       if (value !== undefined) {
         (resolved as Record<string, unknown>)[field] = value;
       }

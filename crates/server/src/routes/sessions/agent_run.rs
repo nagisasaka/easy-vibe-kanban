@@ -9,7 +9,7 @@ use db::models::{
 use executors::{
     actions::SelectedSkill,
     executors::provider_adapter::DirectProvider,
-    profile::{ExecutionMode, ExecutorConfig},
+    profile::{ExecutionMode, ExecutorConfig, runtime_profile_ids_match},
     provider_policy::direct_provider_capability_snapshot,
     runtime::{
         AGENT_REQUEST_PAYLOAD_VERSION, AGENT_REQUEST_SCHEMA_VERSION, AgentCapability,
@@ -118,16 +118,17 @@ pub(super) async fn latest_provider_session(
         r#"
         SELECT session_reference
         FROM agent_provider_sessions
-        WHERE session_id = ? AND provider_id = ? AND runtime_profile_id = ?
+        WHERE session_id = ? AND provider_id = ?
         LIMIT 1
         "#,
     )
     .bind(session_id)
     .bind(provider.id())
-    .bind(runtime_profile_id)
     .fetch_optional(pool)
     .await?;
-    Ok(reference.map(|reference| reference.0))
+    Ok(reference.map(|reference| reference.0).filter(|reference| {
+        runtime_profile_ids_match(&reference.runtime_profile_id, runtime_profile_id)
+    }))
 }
 
 pub(super) fn explicit_provider_session(
@@ -275,7 +276,7 @@ pub(super) async fn validate_session_provider_binding(
                 provider.id()
             )));
         }
-        if existing.runtime_profile_id != runtime_profile_id {
+        if !runtime_profile_ids_match(&existing.runtime_profile_id, runtime_profile_id) {
             return Err(ApiError::BadRequest(format!(
                 "Session is bound to runtime profile {}; create a new VK session for {}",
                 existing.runtime_profile_id, runtime_profile_id
@@ -310,7 +311,16 @@ pub(super) async fn validate_session_provider_binding(
                 .and_then(Value::as_object)
                 .and_then(|metadata| metadata.get("profile_fingerprint"))
                 .and_then(Value::as_str);
-            let actual_context = native_adoption_profile_context(executor_config, selected_skills);
+            // The persisted fingerprint retains the original DEFAULT spelling.
+            // Normalise only this equivalent alias, not overrides or Skills.
+            let mut bound_config = executor_config.clone();
+            if matches!(bound_config.variant.as_deref(), None | Some("DEFAULT")) {
+                bound_config.variant = existing
+                    .runtime_profile_id
+                    .split_once(':')
+                    .map(|(_, variant)| variant.to_string());
+            }
+            let actual_context = native_adoption_profile_context(&bound_config, selected_skills);
             let actual = native_adoption_profile_fingerprint(&actual_context);
             if expected != Some(actual.as_str()) {
                 return Err(ApiError::BadRequest(
@@ -542,7 +552,7 @@ pub(super) fn agent_run_port_error(error: AgentRunPortError) -> ApiError {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use executors::{
         actions::SelectedSkill,
@@ -552,9 +562,9 @@ mod tests {
     };
 
     use super::{
-        direct_provider, explicit_provider_session, native_adoption_profile_context,
-        native_adoption_profile_fingerprint, native_adoption_reference,
-        validate_native_resume_identity,
+        direct_provider, explicit_provider_session, latest_provider_session,
+        native_adoption_profile_context, native_adoption_profile_fingerprint,
+        native_adoption_reference, validate_native_resume_identity,
     };
 
     async fn active_run_test_pool() -> sqlx::SqlitePool {
@@ -741,6 +751,36 @@ mod tests {
             )
             .await
             .is_ok()
+        );
+
+        let mut explicit_default = config.clone();
+        explicit_default.variant = Some("DEFAULT".into());
+        assert!(
+            super::validate_session_provider_binding(
+                &pool,
+                session_id,
+                (DirectProvider::Codex, "CODEX:DEFAULT"),
+                Some(&reference),
+                &explicit_default,
+                Some(&skills),
+                Some(Path::new("C:/vk-worktree")),
+            )
+            .await
+            .is_ok()
+        );
+        assert_eq!(
+            latest_provider_session(&pool, session_id, DirectProvider::Codex, "CODEX:DEFAULT")
+                .await
+                .unwrap()
+                .unwrap()
+                .provider_session_id,
+            reference.provider_session_id
+        );
+        assert!(
+            latest_provider_session(&pool, session_id, DirectProvider::Codex, "CODEX:PLAN")
+                .await
+                .unwrap()
+                .is_none()
         );
 
         let scope_error = super::validate_session_provider_binding(

@@ -17,7 +17,7 @@ use db::{
         },
         execution_process_repo_state::ExecutionProcessRepoState,
         repo::Repo,
-        scratch::{DraftFollowUpData, Scratch, ScratchType},
+        scratch::DraftFollowUpData,
         session::{Session, SessionError},
         workspace::{Workspace, WorkspaceKind},
         workspace_repo::WorkspaceRepo,
@@ -31,6 +31,7 @@ use executors::{
         CancellationToken, ExecutorExitSignal,
         provider_adapter::{DirectProvider, require_capability},
     },
+    profile::runtime_profile_ids_match,
     provider_policy::direct_provider_capability_snapshot,
     runtime::{
         AGENT_REQUEST_PAYLOAD_VERSION, AGENT_REQUEST_SCHEMA_VERSION, AgentCapability,
@@ -417,16 +418,8 @@ impl LocalContainerService {
             return;
         }
 
-        if let Err(error) =
-            Scratch::delete(&self.db.pool, event.session_id, &ScratchType::DraftFollowUp).await
-        {
-            tracing::warn!(
-                agent_run_id = %event.agent_run_id,
-                session_id = %event.session_id,
-                %error,
-                "failed to delete scratch before consuming queued follow-up"
-            );
-        }
+        // Queue owns its submitted message, not the composer's newer draft.
+        // Draft acknowledgement is conditional and occurs in the client.
 
         match self
             .start_queued_follow_up(event.session_id, &queued_message.data)
@@ -1166,7 +1159,7 @@ impl LocalContainerService {
         .fetch_optional(&self.db.pool)
         .await?
         .map(|(bound_profile_id, reference)| {
-            if bound_profile_id != runtime_profile_id {
+            if !runtime_profile_ids_match(&bound_profile_id, &runtime_profile_id) {
                 return Err(ContainerError::Other(anyhow!(
                     "Session is bound to runtime profile {bound_profile_id}; create a new VK session for {runtime_profile_id}"
                 )));
