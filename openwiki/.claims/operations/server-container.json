@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:12a718ff1448ef4e02e65637169bac3eff63ccd1aaae26b26914f4ce80cc1d84",
+  "claims": [
+    {
+      "id": "claim_58a31267fd284cf6b691efe1ca720bfe",
+      "statement": "server 配布は単一信頼ユーザー向け local EVK の遠隔配置で、同一 appuser の agent/nginx を tenant 隔離せず、作業 checkout の build は稼働 binary を置換しない。",
+      "evidence": [
+        {
+          "resource": "repo://Dockerfile#L108-L171",
+          "version": "repo-lines-v1:sha256:a91a07cbb68357af25c9323a1974e9be26509fa0012bcd63b667c707694bc133:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0ODRhYmQ3MTU1NDVhNDY5YzYwYjYzYjI3N2M3MTAzODE4MDQ0NGRlMWM1YTZhZDcwZTBjZWMzZWEyNjFlYjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNiZDdhM2ViODEzZWRiYTExZmQ1N2UyMzYxNjRiZjAwOGU1ODhhZWIxNWNhM2NmODJjZGI0OWE4ZTZjMDg4YjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU5MDZiMWU3ZGRkMGE2ODJiZWYxZGU0MWE0OTQ4ZTg3MDE4ZjkwN2Q5ZDBhNzZjMGM0YjZmMmE2YjhlMjU4ZGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://docs/self-hosting/server-container.mdx#L6-L29",
+          "version": "repo-lines-v1:sha256:1434b0bbbf2def1f6979c818bb0ac6c16a8018b7f9c18eaf94921148c75e528f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzNTgxYTdhYzBkYTU4MDljMjVkOWNjMzMyNGIzMmFiY2UwNWNiMjUzOTEyYWY5ODk1NjgyMTM5NjY5NjgxZDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0OWJmZGM1MDJmYzFlODM3NjE2NTA5NDNhNGNlOTQxZTg5Yjc1YmY2ZDU2NDgzMDlhMWI5NmYzYTg2ZjM0ODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0YjJhOTdmOThkOWI1ZjUzY2Y3MWMxZGZiY2I0YmEzMmYwYjkxMTg0MjFkY2Q2YzFiNmFlNjM3MmNmYTg2M2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5MTE1NTZkYTJiY2MwYTA3MGM1NDUwYzIyZjE0MGM3MTBkYWNmNDFiNjAzOWMxZjk0MjczMDdhMjJiZTRjNTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fc16c4eefcbb4a17a1668f007640361f",
+      "statement": "Compose は443だけを公開し三つの named volume と read-only secrets を mount する。backend は loopback、許可 origin はアプリ HTTPS に固定する。",
+      "evidence": [
+        {
+          "resource": "repo://deploy/server/compose.yaml#L1-L30",
+          "version": "repo-lines-v1:sha256:3f0ecb4ac3aed4bacccb2bc1218b2d611249c3759370fb60a9e0a05f395857fa:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5ZDc3N2RlYzQ1ZDc0YTA3YmIwODUxODhjZmZkYjFhOTgyMzgyODg1NmYzM2RjZDkyZTgzOTk1MmVjYjlmMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjZGQ5MjcwNjI2ZTY5M2I1OTJhOTYwOWY3ODIxM2VmNzNjMjQwYjYzYTNjOTExMTk4NjljZDI0NjNkOWQ0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://deploy/server/server.mjs#L87-L98",
+          "version": "repo-lines-v1:sha256:671587b68ccd9b4afc0d9ae7c16d6a7bfe6289a02cbbd79c0cc927de2ab2a8af:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5NDBiMzkyMjYzMDJlMTBiNjU0MTRkNGNmNTYwOTQ3MWZlOGFlMTQ0N2E0OTg1OTNkZGQ5NTc1OTJlODcxYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyYTJjYjI1YTEyMmI0NDIyMWE2MjM0ZWM2NjBhN2I1ZmI3ZjliZGU3YjNiOWUyYjNjNTU5YTBkOTZmYWM3MzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNTgwZTk2NGY4M2E0NzNmNDNkNDQzODQ2Mjk0OWQ2OGI1NjAwZmRhNzg3ZjE2Mzc0NWQwMGRlODljYmYzNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRmMmRlZDc2ODQ2NjU5M2I4ZjU4OWQ4MGYyNzU1Zjc0NjlmODk5Njg3ZWUyZjUwMWU0YmE0MWM5MmIwYmZjMzYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_07677b6ba6c34969a18b360e351df5f9",
+      "statement": "起動は domain 分離、証明書期間/host/key、bcrypt htpasswd、volume 書込権、nginx 設定検査を要求する。証明書発行更新と trust chain 検証は別責任である。",
+      "evidence": [
+        {
+          "resource": "repo://deploy/server/server.mjs#L182-L215",
+          "version": "repo-lines-v1:sha256:9ffae3b8d8b2f5eaddd5e710cebb5c8338164ef2304c2f93ea2ee9316c8663c3:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlODIwMGViZDE3MDliNmE2NzViZWNiM2JlOWYzOWU1M2JiYWMwMmNjOTI3MjM0NjJjMDU0NjhlYjBkYTZhMTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1ZWYwMWJjMDhkYmMzYjYzZTRlNzVlYTNkMjZhNWI5NDE4OTE4NzdlMjdhZDg5MTMyOWM4NDExZDdkOGRjNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJkMGYyZDNhM2FhZGEyNzU4NjQ1NzhkMGE0MzkxNTYzOGQ1NDNmZWNhMmM5NDg1OGRiOTQxMjExZTg2Y2VmMmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjNzkzYzBkNTlmMmE4MzI1Yjg1ZTk2ZmU4YjNjMGM2YTdlMzhiNGMyNDM1MTFiYzZhOGRiMmQ2ODBjMDdhNDMifQ"
+        },
+        {
+          "resource": "repo://deploy/server/server.mjs#L7-L85",
+          "version": "repo-lines-v1:sha256:80ec499f28e6d27f34fadf3376fec4b72dbb76908c3b3640a05f02948f5296fc:eyJzZWxlY3RlZExpbmVDb3VudCI6NzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAzYWI5ZmI1MDc1NGQwYWUxNDgxMTMyODVhMGM4ZjY5Nzg2NjgzN2Q1ODlmZjMzYTg5OWE1MjlmMDU4NTcxNGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZlMTkxMjRiNWE0ZDE2OTU0MWMxODk5NzY0MmQzMTI4MTZiM2RkODdiNjcyYzM4MTdlZWUzZTNkZTRiY2M4ZDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjYzM2NWY4N2FjYmNkNjc0NmM0YmZkNzczYjY2MGI0MWI4NGQ5OWMxNTM3MmNjN2RjYzViZGYwMDZlZjYxZmQifQ"
+        },
+        {
+          "resource": "repo://docs/self-hosting/server-container.mdx#L50-L81",
+          "version": "repo-lines-v1:sha256:1bc1978dd0dee629038004ff896bd38a7749dd780d9093c3fb8d2c6d5f517d25:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhMjk4MjZkOTQ5YjFmYzM0ZTUyMDE1ZDIxN2UwNWE5ODFiNTkwY2I1YzkyZTVkYjE0ZDRkMGExMzIzZjgxNTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyODFkNDQ0MjNkZjU3Yjk0M2JhMjViNTA1NTQzNmJmOTA3OTQxNmU0ZmNlODIzYTM0ZWNmNmU5YTU5ODZmZmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMxMzYzMjVjZGYxZWZkZTFmNWY3MWVjMTYyY2RjNTcxM2NiZGI1ZDJhYmI5MWFmMTM2M2NiMTY3NDNkZDEwZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU5M2JhMTc4NmFkOThkMGJiNzI1NWRkN2Q0NjllYjMwYjk1N2RjZWMyZjZjNWI4ZWIxYTgxNTQ5ZWFhYzQ5N2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_991041501e0846b887c6bd9e7c3253b7",
+      "statement": "nginx の Basic 認証はアプリと preview の共通入口を守り、転送する認証と relay 署名ヘッダーを除去し、WebSocket と非 buffer の stream を扱う。",
+      "evidence": [
+        {
+          "resource": "repo://deploy/server/nginx.conf.template#L10-L65",
+          "version": "repo-lines-v1:sha256:a35ddd65b0445515ca287a59ff7cd6fc1a734ee91ffad67c0381116455eec715:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlMzgwNzU0ZTJmNjlmOWNjNzVmNjQzNTZhOGM0ZjQxZTI4MTcyYzg3ZGEzZDZjMTlhMTU5ODUzYzU4YjQ0N2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZGEzNGZjZjMzN2EzZGM3NDE4MDRjMmRmYThkYmFkMmZiYTFhMzY2NTBjOTAwYjJmZjhiNTgwMzJkYjE1ODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYxNzkzMDY5MWVlMTIwNzk1NjdiNTMxMzY3MTAyNzlmNWVkYWM2NTRlZGY1ODRhMTkyNTJiYjk0NjRjYTI2OGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3b73c427adef4551b83fb95eeb4c9813",
+      "statement": "公開 preview は別 HTTPS wildcard origin へ限定し、1024–65535 のうち3000/3001/8443を除外し、main origin の preview path は403にする。UI は公開 preview と relay を併用しない。",
+      "evidence": [
+        {
+          "resource": "repo://deploy/server/nginx.conf.template#L50-L65",
+          "version": "repo-lines-v1:sha256:1cea7fe078a3d7aca02a9072ae6c00aed7e44c67230fd3d7d08d98d18e0b8f8a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1NzY2MDdjNGUxYTdhZmNkYmVlYzgxMjk3YTdkZjhhNDk2MDEzNGI0Y2NjYjAzNWM5OGU5YzRmN2ExZTc1YWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZGEzNGZjZjMzN2EzZGM3NDE4MDRjMmRmYThkYmFkMmZiYTFhMzY2NTBjOTAwYjJmZjhiNTgwMzJkYjE1ODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1ZTUwYmQ5N2I1MjJlYzM1ODljYjkwNjZjZmRiNTFmNTk1ZmI1YTIwNDVlZGUwNWJlYTEyY2YzZmI3OTIyNDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+        },
+        {
+          "resource": "repo://deploy/server/nginx.test.mjs#L209-L235",
+          "version": "repo-lines-v1:sha256:6e44c01a44d3d750ead3b2e745b16328b45f0eef7d169141a0a8c30c95e3e030:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwMWE3MDg1NTJlMjNhZTllODZlOWMwODljNjIyM2VkOGU3ODc5Yjc3YjQzYTZlNTU1MjljNmRjNjcwNDY1OTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyNmFkYjY3NmEzOTc4OTNlN2I1YWZjZWNiY2FmNzNkNTNkMGRkZTUwZWZjNGQ1YTY2NzA0YzhkYjJjODMyYzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc3ZTUyNGZlMGZhYjRhYmUxZmRiNmQ1YjdjNjc5NDUyOTgwNDY4NWIwMTRmMmE4NDJjZDJjYWI2MDgwNTk3MmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJjNGE3MzkzMjQ3ZDJkNzQ4NGFmZDRiNzBiMjk4YTAzMGJjNGIzMjAzYmY4Mjc3OTc4YjYzNWIwNTI3MGM2NWYifQ"
+        },
+        {
+          "resource": "repo://deploy/server/server.mjs#L33-L46",
+          "version": "repo-lines-v1:sha256:9bcd83abbcc22f6127fe683902949d68ab8e83dd658591ec60807077d5cef4f7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwYzYxNWI4NWRiOWU3MGFjYzM2OGIyNDM2YmU5NWZjNzIxYmI0NTU2Y2ZmZDFiM2Q1YjYxMTUzYjA5Mzc1YjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjNTg3MjkyMzU0ZjUwYTA5Nzc1ZDFmZjY1ZmQ4NjlkN2RhZmVlOGRjNDA5ODRjOGU4ZDNjOWRhN2JhMzdmMjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM5MjIzNmQ5MGMzNGNkM2RiYWVjZDBjMGM3MDg3YzE1M2JjMzMzNjFiZWY0MWJiMWZkN2NkYTkyYjlkMzVjNGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MmRjZWJlMTFhODA3ODNjOTUyYTkxYTdlYWRmZTdkNWJhMjY0MzU1MjU5ODllZTlmOWJiZGRkMTMyNGFiZjUifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/shared/lib/previewProxyUrl.ts",
+          "version": "repo-file-v1:sha256:611bd0cce1e2888ccc2003460d09c388900aa424ea45836c4d243060f61d5ad2"
+        }
+      ]
+    },
+    {
+      "id": "claim_b95cc5b77a634aedadaaac9e35b2a209",
+      "statement": "named volume はデータを維持し実行中プロセスを復元しない。rollback は対応する全 volume と内部パスを保存した recovery deployment で検証するという運用契約を持つ。",
+      "evidence": [
+        {
+          "resource": "repo://docs/self-hosting/server-container.mdx#L128-L140",
+          "version": "repo-lines-v1:sha256:75b33d4d8fef5861fb8fa7d41354f5b5d91faf3e6781ea09b39cdca1ebf7a114:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxNmIwMTc4MDZkNWVmNTlhM2I1ZTBjYTdmNDMxNDU3MTg0N2NhZDFmZjExZWI2MWMxYzliMmRkNzFjMGI2OWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5ZDUwMGFjMjgwMWJiNThmZmFjYmUzNGJkNGM4NWFlZDlmNDMwZjQ5MTE1MWZjZWNjNjA2NzEyMjY5ODFhNjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjNWYzOWVhM2M4OTg3OGE5MDc0OGExMmFhNjZiNjIxYzZmZTRhZWFkODU4OGIzZTNlYzJiZTRmZjgzZDVkYzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhjYWUyYTkyNjJkMzExZDI0ZmQ4OGM4MDgyZjJlOTIxNzFmZWZlMmM4MGI4OTRjOTk1ODk4ZWY1MWM0Y2Q4MDUifQ"
+        },
+        {
+          "resource": "repo://docs/self-hosting/server-container.mdx#L153-L183",
+          "version": "repo-lines-v1:sha256:3f762b41735dd882f13b87e613cc2fc5a4e6e2496c85f3aeb800dfa23665c77c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2N2YxNDRlMzI5MzAxMmY5ZDNjYmYzY2EwY2Y5ZGZlYWE5MGE0NDU4NTIyMTI4MTZjOWNmNWIwMDAxMDYyMzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzZGViY2FhNTY3MTQ1NmNhODEzZDhlOTRkOGM5NWJjNTMwMzEyZDIwNGEzN2E1MGYxNjNhYmY4ZTVhZmQzY2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAwOWYxNmFiYzhiZGEzOGJiODc3ZjIwZTI3YzVlY2I2ZjVkODczZTkwODdmYzI1YWQwYmJmZmM3ZGJhNjUzYjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE2ZDIwY2QwZGI2OTVlYWE1ZDliMTUwYzYyZmE5ZDVmMTk3N2NlMmY0NjMxODNiYmFhZDE4ZTliOTEzODUwNDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_46e0311b48ac419d995058ff0467c561",
+      "statement": "supervisor は一方の service 終了/起動失敗で sibling process group を停止し、SIGTERM 後既定120秒で SIGKILL、Compose 猶予は150秒である。",
+      "evidence": [
+        {
+          "resource": "repo://deploy/server/compose.yaml#L21-L21",
+          "version": "repo-lines-v1:sha256:ffb9105a68b9adfc17b854640d835f80b618cd6e56e236934d2fffa958fcfd81:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmZiOTEwNWE2OGI5YWRmYzE3Yjg1NDY0MGQ4MzVmODBiNjE4Y2Q2ZTU2ZTIzNjkzNGQyZmZmYTk1OGZjZmQ4MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmZiOTEwNWE2OGI5YWRmYzE3Yjg1NDY0MGQ4MzVmODBiNjE4Y2Q2ZTU2ZTIzNjkzNGQyZmZmYTk1OGZjZmQ4MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYThjMzYyNTI4MmFhMzgwZjUzZDc1NTdiN2JlY2QxNThhZTQ5ZGNhYjE0ZDI4ODY2OGRkMjg0ZjI3OTA1ZGJiZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzE0ZjYyZGIzZTJhNjViNzVlM2E0Nzk4ZjhhNjJhZjJkZTdiZjk2MDZhM2FhMTdiNjY5N2RmYzYwNjBlN2Y4YiJ9"
+        },
+        {
+          "resource": "repo://deploy/server/server.mjs#L101-L179",
+          "version": "repo-lines-v1:sha256:2896f97db1c85f9c20874525625b09e8fe45ee75170ccc9a81dcbe4389912de2:eyJzZWxlY3RlZExpbmVDb3VudCI6NzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyNDkxZWNkYWU0ZDc4NjlkZDk5MzZhNTFiNjhhZjc0YjcxOGI0MWE2NjFjYzIzYmU2ZTM3YTYxZTNkOTBiMDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhM2U0NmY5NDI3NmI2ZjZmNGVkMWYwMmFmNzhiZWY2YTJlZTFjNDM5ZGQ1NTg0Yjk3Mzk0ODMxMzIxNGQyYjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkyMDQwZTA5NWE5NGUyYWRhNzRlNDIxZjM3MTg3NTFhOTFhODEwYmZkNjZmNDhmNGU5MzljN2I3NDgwZWI2NzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU4MzY3NjdhY2EzMGI4MmU5ZDYxYTA2NzQ3OTM2MDY5Y2EwZDI4NzUzZGRiMTQ0ZGFhODk2ZTg2NTYyNDRlNmIifQ"
+        },
+        {
+          "resource": "repo://deploy/server/server.test.mjs#L197-L224",
+          "version": "repo-lines-v1:sha256:40692ab9cdd5a71975e79917519b35494f1b6ad7eb7794b7b13ff5bf2f763994:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5NzViM2Q1N2YxZGVlYWVlZTA3MDQ2OGYwYjcyN2M0ZmI3ZWYwNGUzMDgwYmMxNzlkZjRmNjM4OGVmMTE0YzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2ZjViNDBiMTU4NDU3ZDE3ODY0ZjIxNzkwNzg2ZGQ1YTJlY2RiNjRiNjZhNjUxZjc4OGQ0ZTI1Y2QzMzAzZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY4MGQyZGQ0ZjI4OWQyNmRjNzU3YzJiNjVhMDZjMzkyMjdhNjcxN2M0YjQ4YjVhMzk3OTJjOWYxMWU0MWFlYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRiNDdjMzk4MmQ1OTlmMDRkZmNlYjc3ZTc4YjBhZDRiZTMxOTliNmQ3MjgxMjc5NWMxNDYwMGY3YzM3NDliMDgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_46e0c16ee2904a37a1e6f7df14107ef2",
+      "statement": "healthcheck は内部 backend200と無認証HTTPS401を要求し、TLS trust は検査しない。文書は unhealthy 単独の自動再起動と実行プロセス永続化を保証しない。",
+      "evidence": [
+        {
+          "resource": "repo://deploy/server/healthcheck.mjs#L19-L35",
+          "version": "repo-lines-v1:sha256:449d11caa3da1affdc50df9b0f8fe72b4e4f32b55d893602eead36e03e581633:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhNTNiYTM1MDk2Njc2YzUyNDBjYzA4NDQ4M2ZlMDM1NjE3Zjk0ZjA5MGMyYTA5YTI4NjdjMDQwYWEzNjE5ZTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmOWRiYzdmMmYyNGI1Mjg0MzU3Zjk4NjMwNmZlZjA0MTdjYzZmODFhODNhMDJiZjgxNTBmNzExMmY4ODNiMDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJkMGYyZDNhM2FhZGEyNzU4NjQ1NzhkMGE0MzkxNTYzOGQ1NDNmZWNhMmM5NDg1OGRiOTQxMjExZTg2Y2VmMmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMzYjNmYWFhMmUwNmY2NDg4ZDEwNTc4NmU0ZDE4MjY0ODI0YmEzNjljMzMwNWRjYWY3NDdmNGE0N2EwN2Q5ZTgifQ"
+        },
+        {
+          "resource": "repo://docs/self-hosting/server-container.mdx#L6-L8",
+          "version": "repo-lines-v1:sha256:1e9047e1554a8bd450c6912f0758ffb08f302a4376eae03f3a23802f27012dac:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDM1ODFhN2FjMGRhNTgwOWMyNWQ5Y2MzMzI0YjMyYWJjZTA1Y2IyNTM5MTJhZjk4OTU2ODIxMzk2Njk2ODFkMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzhmMGM5YmJlYzYxMDI1NDVhNmU2NWI3M2IzYTlkMjMzMzhjMWYwYTBjYWJmNGRhMTg3MDljYTUzZmNjNDNkYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjRiMmE5N2Y5OGQ5YjVmNTNjZjcxYzFkZmJjYjRiYTMyZjBiOTExODQyMWRjZDZjMWI2YWU2MzcyY2ZhODYzYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2Y5MWYxNDkyZTJhN2E4Y2M3NjlkYzAzZDVkOGM4ZWY2ZmJiZGEyMGZjZTRjZWYyYWFlYTRkMGZkZDBmMWQ4ZiJ9"
+        },
+        {
+          "resource": "repo://docs/self-hosting/server-container.mdx#L83-L92",
+          "version": "repo-lines-v1:sha256:0f29833064d15612a69f1558b1bd0e61e7b288243b8a096f81f718dbf62acc6d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2NzgzNzQzZTI3MGY2YTRjM2I4Mjk5YTM1ZmY4YzBkMjk5MzA5M2M3ZTA4MDA1YmY2MDNkMWRiMjBhMDRlNDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0NDg0MWQ1MGQxNjU2NDc1ZTZmMmU5YjJlNTQzMmRiMzhiNjFhMTU4NTRkYjNhMjg0YjAwNzczOTAxNDQwNzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3MzZlYzU2ZjdmOGY0NGI1M2I2MmNhZGI1ODcxOGUwNTZlODhlMmFjYmVlNTc2NWFiMWFiNWFiNGUxODQwMWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlNDVjM2ZlMmEyMGU2MDUwNzg4MzY0MDY4MmNjNTIxM2FhNTViMTYzMzNkZmIzNzMyMWIxN2I4ZjhiZWVlNzcifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-21T08:16:36.701Z"
+  }
+}

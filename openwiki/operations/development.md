@@ -3,9 +3,6 @@ type: guide
 title: 開発・検証・運用文書の使い分け
 description: 起動形態、検証の適用範囲、型と SQLx の更新、DB 回復の制約、リリース文書の位置づけを整理する。
 tags: [development, testing, database, releases]
-verified:
-  - by: openwiki/0.5.1
-    at: 2026-09-16T18:13:42.498Z
 sources:
   - id: openwiki-source-9c10153f85a40a7543c8914e
     resource: repo://.github/workflows/pre-release.yml
@@ -31,10 +28,14 @@ sources:
     resource: repo://crates/tauri-app/src/main.rs
   - id: openwiki-source-57eebdf400ca14f6e9abea48
     resource: repo://crates/tauri-app/tauri.conf.json
+  - id: openwiki-source-8b0f6773cd6f7a2a989ad880
+    resource: repo://deploy/server/nginx.test.mjs
   - id: openwiki-source-42e4658efb0c9810a0f8245c
     resource: repo://docs/design/openwiki-implementation-checkpoints.md
   - id: openwiki-source-16e2e0955d13393936bad36a
     resource: repo://docs/easy-npx-npm-publish.md
+  - id: openwiki-source-2e1d91f21691cd271afffb6f
+    resource: repo://docs/self-hosting/server-container.mdx
   - id: openwiki-source-e6cb0fba58fb726a75c5078f
     resource: repo://mobile-testing.md
   - id: openwiki-source-cbce6a0c74f278a7e8b4a543
@@ -61,7 +62,10 @@ sources:
     resource: repo://tests/workflow/playwright.config.ts
   - id: openwiki-source-1d08facbf90704cd4c4c54d8
     resource: repo://tests/workflow/specs/card-context.spec.ts
-generated: { by: "codex", at: "2026-09-16T18:13:42.498Z" }
+generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
+verified:
+  - by: openwiki/0.5.1
+    at: 2026-09-21T08:16:36.701Z
 ---
 
 # 開発・検証・運用文書の使い分け
@@ -70,7 +74,7 @@ generated: { by: "codex", at: "2026-09-16T18:13:42.498Z" }
 
 ## 開発環境と起動形態
 
-ルート package.json は Node >=20、pnpm >=8 を要求し、packageManager を pnpm@10.13.1 に固定する。Rust toolchain は nightly-2025-12-04。npm 配布用 npx-cli の Node >=18.18.0 という条件は、ソース開発全体の条件とは異なる。[root manifest](../../package.json#L72-L76)・[Rust toolchain](../../rust-toolchain.toml)・[配布 package](../../npx-cli/package.json#L19-L21)
+ルート package.json は Node >=20、pnpm >=8 を要求し、packageManager を pnpm@10.13.1 に固定する。Rust toolchain は nightly-2025-12-04。npm 配布用 npx-cli の Node >=18.18.0 という条件は、ソース開発全体の条件とは異なる。[root manifest](../../package.json#L74-L78)・[Rust toolchain](../../rust-toolchain.toml)・[配布 package](../../npx-cli/package.json#L19-L21)
 
 | 作業 | 入口 | 重要な境界 |
 | --- | --- | --- |
@@ -80,7 +84,7 @@ generated: { by: "codex", at: "2026-09-16T18:13:42.498Z" }
 | Cloud | pnpm run remote:dev | 別 Cargo workspace と Compose の PostgreSQL / Electric |
 | Cloud + relay + 添付 | pnpm run remote:dev:full | relay / attachments の追加 profile |
 
-[各 script](../../package.json#L17-L59)
+[各 script](../../package.json#L17-L60)
 
 Tauri の `beforeDevCommand` は frontend と backend watch を並行起動する。debug build の window はその外部 frontend に接続し、production build だけが `server::startup::start()` で backend を内蔵起動してから window を開く。したがって desktop の開発試験を、production の embedded startup・completion watcher 配線を検証した証拠にしない。[開発前処理](../../crates/tauri-app/tauri.conf.json#L6-L12)、[debug / production 分岐](../../crates/tauri-app/src/main.rs#L176-L239)
 
@@ -97,9 +101,10 @@ backend の watch 起動は DISABLE_WORKTREE_CLEANUP=1 を設定する。[Worksp
 | cargo test --workspace | root workspace の Rust tests |
 | pnpm run remote:check / remote:lint / remote:test | 独立した Remote Rust workspace |
 | pnpm run workflow:e2e | 専用 Vite fixture に対する Chromium UI tests |
-| web-core の test:llm-wiki | 指定された3ファイルの Vitest。全 frontend tests の包括実行ではない |
+| web-core の test:wiki | Pipeline model と Wiki feature の Vitest。全 frontend tests の包括実行ではない |
+| pnpm run server:check | server 配布 kit の Node tests。native nginx test の実行には nginx が必要 |
 
-[コマンド定義](../../package.json#L13-L45)・[LLM Wiki test script](../../packages/web-core/package.json#L100-L104)
+[コマンド定義](../../package.json#L13-L45)・[Wiki test script](../../packages/web-core/package.json#L100-L104)
 
 root Cargo workspace は remote と relay-tunnel を明示的に exclude する。README の「all Rust workspaces」という check の説明は実際の範囲より広い。relay-tunnel 自体を変更する場合も、その manifest に対する検証が必要になる。[Cargo 境界](../../Cargo.toml#L1-L36)・[README の記載](../../README.md)
 
@@ -135,6 +140,12 @@ NPX wrapper の platform 名を解決できることと、その配布物に bin
 廃止表示のない [Easy NPX 発行文書](../../docs/easy-npx-npm-publish.md) は Trusted Publishing と dry-run の手順を記録するが、build 対象の記述は Windows x64 のみで、現在の Linux x64 追加を反映していない。手順の意図を残し、対象 platform は実際の workflow と package contents を優先する。ここでは npm registry、公開済み archive、R2 の稼働状態を検査していないため、現在配信されている版の対応を断定しない。
 
 廃止表示のない [NPX README の Supported Platforms](../../npx-cli/README.md#supported-platforms) は Linux/Windows x64 と macOS x64/arm64 を列挙するが、配布経路を分けていない。この一覧を Easy 同梱 package の対応表として使うと macOS を過大に解釈する一方、pre-release の Linux/Windows arm64 は一覧に含まれない。導入判断では README の名前だけでなく、上表のどの経路で作られた成果物かを確認する。
+
+## サーバー配布 kit の検証
+
+`pnpm run server:check` は `node --test deploy/server/*.test.mjs` を実行する。設定・証明書・process supervision 等の検査と、nginx を実際に起動する TLS/Basic 認証・WebSocket・SSE・preview 境界の検査を含む。nginx がなければ後者は skip するため、全 subtest が実行されたかを結果で確認する。`EVK_TEST_NGINX` で実行ファイルを指定でき、`EVK_REQUIRE_NGINX_TEST=1` は欠落を失敗にする。[script](../../package.json#L22)、[native test の前提](../../deploy/server/nginx.test.mjs)
+
+この確認だけで Docker image の build・実配置・live agent 認証が成功したことにはならない。配布済み binary と作業 checkout の分離、永続 volume、停止・更新・復旧の契約は [サーバーコンテナー](server-container.md)に置く。[記録された検証限界](../../docs/self-hosting/server-container.mdx#validation-boundaries)
 
 ## 型・schema・SQLx を変更する場合
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:704722ba120e41459f50eb11bc03aa8b9bf720075939c31b1baec79914e284a5",
+  "pageVersion": "sha256:a5358f89bbd16563806dad6646313e65b796828d8fbb99df1b4e08345a105830",
   "claims": [
     {
       "id": "claim_6831267bb1984baabffe65be3d6b8400",
@@ -17,8 +17,12 @@
       "statement": "資源付きAttempt作成はWorkspaceと不足Agent Sessionを準備してReadyにし、明示Repoは対象branchを要求する。",
       "evidence": [
         {
-          "resource": "repo://crates/server/src/routes/workflows.rs#L674-L777",
-          "version": "repo-lines-v1:sha256:1a500244ddb959b97707b4c5155f30c31694591f8b97f096ce66a276dd2db59e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJhMzg1OTI5ZjQ2YTU3ZWZiOGMwMDBhYjliMThjNjQyMjk2NDEwOWQwNmM2ODJjZWE2NTA2MTJhOGZiM2Q0NDM5IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlZWM1OGI1YTUxMDdmNjVkZDc3NTg5Yjg5NDZmMmFjZTJiYTQ3YjlmMTRhYWY5ZTgzMGQ1YzAwMTY0YTJjZjViIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJjNTg5MDMyMjhmYTkxOTdhNTgzOWE5YWEzMWRkMWRhZjlkMDhjZWE1YWJjNzMxNTFmODVmZGNjZDMwNzY5NTZjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJiMmY0MWRmMGQ0OWM0MTM4YmNkYjg2MWZkYTBhNTUxNDE4ODgxNjFlNDVlYWNjMjA0NTdjZjMyNTM0ZjU4ODdkIn0"
+          "resource": "repo://crates/server/src/routes/workflows.rs#L674-L739",
+          "version": "repo-lines-v1:sha256:2f269eeccf9aa4daf1459311984b627f830709e48a5ab89e8f2e405dd4044ad0:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5YjE5ODJlOGRkNzQ4MTE4MTQ2YjM5YTJkMDA2MmY0MDgxZTM0Nzc5Yjg2NzVjMjM0YzRmYjEyNGRjMzkzOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1YzA0NTUwMzYzNjA3OTMzYjg0MDY3N2UwYTZjYzMyYmJhZmViYzU0N2QwYjM1ZTZkYTYzYzc0NDY1NWVlZWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ4ODU5MjEwZWJjYjEyY2Y2OGM2MTYyMjJmYzU2MGMxZjY4ZTJmYTMxZjYzMDQ5M2RmODA5NTg4ODdkNTdhZjkifQ"
+        },
+        {
+          "resource": "repo://crates/server/src/routes/workflows.rs#L743-L818",
+          "version": "repo-lines-v1:sha256:3a972a189508927bfc7f9e4fe5f8b90ddb9f6d49df4f63a6bfd3e8fe52804fbe:eyJzZWxlY3RlZExpbmVDb3VudCI6NzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlZTI2N2M5OThkNWU2MDdiZTVjM2FlZjIxZjRlNjA2YzA5NzllZjMxNzUxOGEzNjM1ZDE1ZTk4ZjAyODg0MzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4ODU5MjEwZWJjYjEyY2Y2OGM2MTYyMjJmYzU2MGMxZjY4ZTJmYTMxZjYzMDQ5M2RmODA5NTg4ODdkNTdhZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI2NTFlMzY5ZDlmYmM4Njg1YjljMDJjYWI4YTRjNmYxYjJlMWMzNTZhOWNmZWMyZTk2YWI4YjUwZDM3ZjNhYzgifQ"
         }
       ]
     },
@@ -177,10 +181,20 @@
           "version": "repo-lines-v1:sha256:dcb982401625742c79cd10938e65fef0b41866393cb5b29bfa62c6f12101aaad:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTljMDNjOWNiMzBhNWQ3ZDhmN2JhOWRkMjI1OTBiMWY5ODhkYTJkOWNlNmNlODhkOTdhYzg4MjdkYjBlMDk4YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzNiNmZkZDUyMDBiNWZmODhkYTcxNDc2YjY4MzVlYzczNzMzZGQ1ZWFjMjFlMjc3NmUwNGYwYWVjYmI5NmNkYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2NiMjE5NzAwNmNmNTk4Mjg2ZGZmMmUxZjY2NDFhZTdmODNjMmQ4YTMxMWRlOWVlYmY4NWI0NWMwYmE3NzhhZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWZmNThmNGU3MDFkNDk4NTYzYzdmYjU0MjViMWRiMDhmODJhOWFmODRkZWRlZjRhMzkzODIxM2RjYjEzMmQwMiJ9"
         }
       ]
+    },
+    {
+      "id": "claim_fcb8e6108b974575a4c61f47f0a26ba7",
+      "statement": "通常 Workflow の Agent Session 準備は interactive Workspace を要求し、Repository bootstrap の内部入口は保存済みの execution owner と Repo membership を検証する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/workflows.rs#L743-L786",
+          "version": "repo-lines-v1:sha256:197df0d7a44401fad1b0f57b4dce5116254c630b5e55b3eb4ee2c7d542373dce:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlZTI2N2M5OThkNWU2MDdiZTVjM2FlZjIxZjRlNjA2YzA5NzllZjMxNzUxOGEzNjM1ZDE1ZTk4ZjAyODg0MzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZTNhZWM5NjAzNTE4YTFkYzcxODFlNDEwMDY5MDk3ZTJhN2Q5ZjA3ZWFlZTEyN2VjNDQ1Njc3OTQwZDRkYjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4ODU5MjEwZWJjYjEyY2Y2OGM2MTYyMjJmYzU2MGMxZjY4ZTJmYTMxZjYzMDQ5M2RmODA5NTg4ODdkNTdhZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmYTMxZWI1YWRmZjAwMzU4YzJlNzg5ZTk3MzVkYzRlNDI0ZTdlNmYyNjA3MDljM2Q5NDQ0OGRhNzE5MzQ2Y2IifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.1",
-    "at": "2026-09-16T18:13:42.498Z"
+    "at": "2026-09-21T08:16:36.701Z"
   }
 }

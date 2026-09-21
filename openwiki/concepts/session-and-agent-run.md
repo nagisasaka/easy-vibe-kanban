@@ -3,9 +3,6 @@ type: concept
 title: Session・AgentRun・RunAttempt
 description: 会話・依頼・実行試行の識別、継続と retry、provider binding、Goal と停止の契約。
 tags: [session, agent-run, run-attempt, goal, lifecycle]
-verified:
-  - by: openwiki/0.5.1
-    at: 2026-09-16T18:13:42.498Z
 sources:
   - id: openwiki-source-d20a82e2192a07c687b838cb
     resource: repo://crates/db/src/models/agent_runtime.rs
@@ -61,7 +58,10 @@ sources:
     resource: repo://packages/web-core/src/shared/hooks/useLocalStorageScratch.ts
   - id: openwiki-source-43d7a2f6bd06c556e7d48e3c
     resource: repo://packages/web-core/src/shared/hooks/useScratch.ts
-generated: { by: "codex", at: "2026-09-16T18:13:42.498Z" }
+generated: { by: "codex", at: "2026-09-21T08:52:18.882Z" }
+verified:
+  - by: openwiki/0.5.1
+    at: 2026-09-21T08:52:18.882Z
 ---
 
 # Session・AgentRun・RunAttempt
@@ -99,15 +99,21 @@ Session の executor は最初の指定で設定できるが、以後の別 exec
 
 既存 native 会話を明示的に取り込む場合は正確な作業ディレクトリ scope が必要で、取り込み後は scope と profile fingerprint も維持する。同じ native 会話を別 EVK Session が所有していれば拒否する。履歴を表示できることと、任意のディレクトリ・profile で再開してよいことは別である。[scope 必須](../../crates/server/src/routes/sessions/mod.rs#L354-L381)、[継続検証](../../crates/server/src/routes/sessions/agent_run.rs#L365-L415)
 
-Codex の thread 開始・再開では、app-server が設定から解決した model と reasoning effort を client が採用し、その後の turn 構築に用いる。EVK の依頼で effort override が未指定であることと、実行時の effort が未解決であることは同じではない。設定の継承と OpenWiki writer の起動前確認は [Provider 統合](../integrations/agent-providers.md)を参照する。[解決結果の採用](../../crates/executors/src/executors/codex/client.rs#L183-L190)、[開始・再開・turn](../../crates/executors/src/executors/codex/client.rs#L257-L298)
+Codex の thread 開始・再開では、app-server が設定から解決した model と reasoning effort を client が採用し、その後の turn 構築に用いる。EVK の依頼で effort override が未指定であることと、実行時の effort が未解決であることは同じではない。設定の継承と OpenWiki writer の起動前確認は [Provider 統合](../integrations/agent-providers.md)を参照する。[解決結果の採用](../../crates/executors/src/executors/codex/client.rs#L183-L190)、[開始・再開・turn](../../crates/executors/src/executors/codex/client.rs#L257-L322)
+
+Codex の resume は同じ native thread ID を要求し、fork しない。再開設定の更新だけでは新しい developer instructions が会話履歴に現れない場合があるため、次の chat・Goal・review・compaction より先に `thread/inject_items` で現在の host context を注入する。空の context では注入せず、注入失敗なら継続を停止する。Goal objective の増量や擬似 user turn で代用しない。[再開処理](../../crates/executors/src/executors/codex/client.rs#L270-L306)、[順序と失敗のテスト](../../crates/executors/src/executors/codex/client.rs#L2237-L2327)。これにより、[Repository Memory の現在 run identity](repository-memory.md#change-manifest-は変更理由を運ぶイベント)と、[fresh 会話だけへ組み込む保存文脈](card-context-and-llm-wiki.md)を区別できる。
 
 ## 状態、停止、送信待ち
 
 正本の状態は Pending / Starting / Running / AwaitingInput / AwaitingApproval / Cancelling と、終端の Succeeded / Failed / Cancelled / Crashed / AuditFailed。入力・承認待ちは終了扱いではない。ProjectionStatus はこの実行状態とは別に、正本の表示状態を安全に再構成できているかを表す。[状態契約](../../crates/executors/src/runtime/contracts.rs#L634-L689)
 
-Cancel は終端 run には無操作で、活動中なら Cancelling を保存して実プロセス側を止める。InterruptTurn は provider の現在 turn への中断要求であり、終端 run には送れない。Steer は活動中の run に空でない追加指示を渡す。projection が degraded の間は Cancel 以外の制御を拒否する。[停止境界](../../crates/local-deployment/src/agent_run_port.rs#L2370-L2414)、[steer](../../crates/local-deployment/src/agent_run_port.rs#L2516-L2539)
+Cancel は終端 run には無操作で、活動中なら Cancelling を保存して実プロセス側を止める。InterruptTurn は provider の現在 turn への中断要求であり、終端 run には送れない。Steer は活動中の run に空でない追加指示を渡す。projection が degraded の間は Cancel 以外の制御を拒否する。[停止境界](../../crates/local-deployment/src/agent_run_port.rs#L2489-L2519)、[steer](../../crates/local-deployment/src/agent_run_port.rs#L2516-L2539)
 
-送信待ち queue は **Session ごとに一件、メモリ内**。再度 queue すると置換するため、永続の複数ジョブ列ではない。成功通知を受けると [Repository Memory](repository-memory.md) の source 完了処理を先に行い、それが成功してから follow-up を消費する。source 完了失敗なら queue を保持して起動せず、元 run の失敗・取消などでは queue を取り出して破棄する。[queue 保存](../../crates/services/src/services/queued_message.rs#L31-L69)、[終端処理](../../crates/local-deployment/src/container.rs#L349-L371)。サーバー再起動での queue 永続性を、[Workflow の outbox](../architecture/workflow-runtime.md) から類推しない。
+通常の interactive Workspace の送信待ち queue は **Session ごとに一件、メモリ内**。再度 queue すると置換するため、永続の複数ジョブ列ではない。成功通知を受けると [Repository Memory](repository-memory.md) の source 完了処理を先に行い、それが成功してから follow-up を消費する。source 完了失敗なら queue を保持して起動せず、元 run の失敗・取消などでは queue を取り出して破棄する。[queue 保存](../../crates/services/src/services/queued_message.rs#L31-L69)、[終端処理](../../crates/local-deployment/src/container.rs#L396-L418)。サーバー再起動での queue 永続性を、[Workflow の outbox](../architecture/workflow-runtime.md) から類推しない。
+
+実行専用 Workspace の終端通知では、上記の通常 source 完了・queue 消費を行わない。所有する統合・Wiki 保守が結果を確定し、一般の follow-up や retry を許可するかも [操作用途と実行所有者](workspace.md#操作用途と実行所有者)で検証する。[通常終端処理からの除外](../../crates/local-deployment/src/container.rs#L375-L395)
+
+Cancel の応答は実プロセスの停止確認と監査の永続化を伴う。子プロセスの猶予・停止失敗の扱いは [Agent Runtime の取消](../architecture/agent-runtime.md#取消と実プロセスの終了)を参照する。
 
 ## 承認・質問と現在の接続状態
 
@@ -137,7 +143,7 @@ PlanWithGoal の承認 UI は、編集した objective の保存に成功して�
 
 送信成功時の画面クリアと保存済みドラフトの削除も別である。UI は debounce を止めて本文を消し、新規 Session なら Scratch も削除する。既存 Session の follow-up はサーバー側で起動成功後に SQLite のドラフトを削除し、削除失敗はログに留める。この処理は remote の localStorage を消さず、既存 Session の送信 hook にもその削除はない。[送信後の UI](../../packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx#L653-L674)、[既存 Session 送信](../../packages/web-core/src/features/workspace-chat/model/hooks/useSessionSend.ts#L109-L129)、[サーバー側の削除](../../crates/server/src/routes/sessions/mod.rs#L435-L452)
 
-local の Scratch API は、その ID に follow-up が queue 済みならドラフトの作成・更新を拒否する。成功した run から queue を消費するときはドラフトを削除して次を起動し、失敗した run の queue 破棄時はその削除まで進まない。UI の queue 取消は待機していた本文・設定を編集欄へ戻す。これらは上記の一件だけのメモリ内 queue と協調する規則であり、Scratch が queue の再起動復旧を保証するわけではない。[更新 guard](../../crates/server/src/routes/scratch.rs#L44-L96)、[queue の消費](../../crates/local-deployment/src/container.rs#L349-L384)、[取消時の復元](../../packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx#L869-L882)。同じ保存基盤を使う [ボード表示設定](project-and-issue.md#ボード表示と共有状態) は別の Scratch データである。
+local の Scratch API は、その ID に follow-up が queue 済みならドラフトの作成・更新を拒否する。成功した run から queue を消費するときはドラフトを削除して次を起動し、失敗した run の queue 破棄時はその削除まで進まない。UI の queue 取消は待機していた本文・設定を編集欄へ戻す。これらは上記の一件だけのメモリ内 queue と協調する規則であり、Scratch が queue の再起動復旧を保証するわけではない。[更新 guard](../../crates/server/src/routes/scratch.rs#L44-L96)、[queue の消費](../../crates/local-deployment/src/container.rs#L396-L432)、[取消時の復元](../../packages/web-core/src/features/workspace-chat/ui/SessionChatBoxContainer.tsx#L834-L849)。同じ保存基盤を使う [ボード表示設定](project-and-issue.md#ボード表示と共有状態) は別の Scratch データである。
 
 ## Goal の寿命
 
@@ -151,4 +157,4 @@ Goal の subagent 上限は spawned agent の制約で、0 は無効化、未指
 
 Provider が内部で起動する子 agent の活動は AgentActivity として記録される。子の完了を親の terminal output、status、Goal に適用しない。EVK が所有する [Workflow ノード](workflow-attempt.md) の別 AgentRun と区別する。[reducer と回帰テスト](../../crates/executors/src/runtime/reducer.rs#L278-L298)。表示と互換性の文書は [delegated-agent-display](../../docs/future/agent-runtime/delegated-agent-display.md) を参照し、将来の Audit 再投影構想を現在の自動修復と読まない。
 
-旧 ExecutionProcess は script 実行などに残るが、coding-agent action は明示的に拒否される。現行 coding agent の活動判定・停止・履歴の正本は AgentRun を追う。[旧入口の拒否](../../crates/local-deployment/src/container.rs#L1451-L1463)、[活動判定のテスト](../../crates/server/src/routes/sessions/agent_run.rs#L986-L1022)
+旧 ExecutionProcess は script 実行などに残るが、coding-agent action は明示的に拒否される。現行 coding agent の活動判定・停止・履歴の正本は AgentRun を追う。[旧入口の拒否](../../crates/local-deployment/src/container.rs#L1541-L1547)、[活動判定のテスト](../../crates/server/src/routes/sessions/agent_run.rs#L833-L870)

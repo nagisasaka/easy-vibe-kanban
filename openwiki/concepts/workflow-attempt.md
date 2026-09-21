@@ -3,9 +3,6 @@ type: concept
 title: Workflow Attempt とグラフの契約
 description: Issue 専用の実施グラフ、安定 Session、run snapshot、辺の発火・分岐・再実行の意味。
 tags: [workflow, graph, attempt, condition, lifecycle]
-verified:
-  - by: openwiki/0.5.1
-    at: 2026-09-16T18:13:42.498Z
 sources:
   - id: openwiki-source-b40ff99339e2929bded4b58c
     resource: repo://crates/db/src/models/workflow.rs
@@ -27,7 +24,10 @@ sources:
     resource: repo://docs/future/ai-workflow/spec-product.md
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-generated: { by: "codex", at: "2026-09-16T18:13:42.498Z" }
+generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
+verified:
+  - by: openwiki/0.5.1
+    at: 2026-09-21T08:16:36.701Z
 ---
 
 # Workflow Attempt とグラフの契約
@@ -38,7 +38,9 @@ generated: { by: "codex", at: "2026-09-16T18:13:42.498Z" }
 
 Project 用定義と System 用定義があり、System テンプレートは通常 API から更新・削除できない。Issue 専用の backing Workflow はテンプレート一覧から隠して作成する。[作成](../../crates/server/src/routes/workflows.rs#L639-L658)、[System 保護](../../crates/server/src/routes/workflows.rs#L1109-L1123)、[削除拒否](../../crates/server/src/routes/workflows.rs#L1168-L1179)
 
-資源を伴う Attempt 作成は、まず draft、次に main Workspace を作成・関連付け、Agent ノードに不足している Session ID を補ってグラフへ保存し、Ready にする。既存 Session ID を毎回作り直す処理ではない。複数 Repo を明示指定する場合は、それぞれ target branch が必要である。[資源準備](../../crates/server/src/routes/workflows.rs#L674-L739)、[Session 固定](../../crates/server/src/routes/workflows.rs#L742-L777)
+資源を伴う Attempt 作成は、まず draft、次に main Workspace を作成・関連付け、Agent ノードに不足している Session ID を補ってグラフへ保存し、Ready にする。既存 Session ID を毎回作り直す処理ではない。複数 Repo を明示指定する場合は、それぞれ target branch が必要である。[資源準備](../../crates/server/src/routes/workflows.rs#L674-L739)、[Session 固定](../../crates/server/src/routes/workflows.rs#L743-L818)
+
+通常の Session 準備は interactive Workspace を要求する。Repository bootstrap だけは専用の内部入口を通り、execution_only、bootstrap 所有者の Repo/run ID、未完了結果、Repo membership が保存済みであることを確認してから子 Session を作る。クライアントの指定で所有検証を回避する入口ではない。[二つの準備経路](../../crates/server/src/routes/workflows.rs#L743-L786)。用途と所有の一次説明は [Workspace](workspace.md#操作用途と実行所有者)に置く。
 
 起動時はグラフ snapshot と実行状態を保存し、以後の runtime はその snapshot を使う。Attempt は最新 run ID と Workspace ID を保持し、draft/ready と running/awaiting/terminal の状態を区別する。編集されたテンプレートから進行中 run を再解釈する前提にはしない。[起動と snapshot](../../crates/server/src/workflow_runtime/runner.rs#L983-L1046)、[snapshot 読み込み](../../crates/server/src/workflow_runtime/runner.rs#L2054-L2105)、[状態と関連](../../crates/db/src/models/workflow.rs#L32-L47)
 

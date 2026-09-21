@@ -3,14 +3,15 @@ type: concept
 title: Project・Issue と実施の関係
 description: ボード上の仕事と実行環境を結ぶ Project・Issue の意味、ローカル保存、旧 Task との境界。
 tags: [project, issue, kanban, task]
-verified:
-  - by: openwiki/0.5.1
-    at: 2026-09-16T18:13:42.498Z
 sources:
   - id: openwiki-source-11356f66af906ebb06f3ef2e
     resource: repo://crates/api-types/src/issue.rs
   - id: openwiki-source-e4c80fe5a2af8a4abd8a8684
     resource: repo://crates/db/migrations/20260427000000_local_kanban.sql
+  - id: openwiki-source-cc96689b2a7b877e58513f38
+    resource: repo://crates/db/migrations/20260918000000_formal_integration.sql
+  - id: openwiki-source-c01fa644be961cb7ee12d2b5
+    resource: repo://crates/db/src/models/integration.rs
   - id: openwiki-source-ccd357b1781e6e90e56fd858
     resource: repo://crates/db/src/models/repo.rs
   - id: openwiki-source-1ffb01d1ba3953937e0771bf
@@ -31,7 +32,10 @@ sources:
     resource: repo://packages/web-core/src/shared/hooks/useUiPreferencesScratch.ts
   - id: openwiki-source-5ef837b2bc54d286b3dedd8f
     resource: repo://packages/web-core/src/shared/stores/useUiPreferencesStore.ts
-generated: { by: "codex", at: "2026-09-16T18:13:42.498Z" }
+generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
+verified:
+  - by: openwiki/0.5.1
+    at: 2026-09-21T08:16:36.701Z
 ---
 
 # Project・Issue と実施の関係
@@ -95,13 +99,21 @@ Cloud の Attachment は Issue / Comment と Blob の関連を持ち、Session �
 
 WorkflowAttempt は Project と Issue の所属を検証し、通常のテンプレート一覧から隠す専用 Workflow を作って draft として保存する。Issue のタイトル・本文から起動入力を作る処理は、グラフの定義とは分離されている。[作成契約](../../crates/server/src/routes/workflows.rs#L627-L669)、[入力構築とテスト](../../packages/web-core/src/features/workflow/model/issueWorkflow.test.ts#L8-L25)。実際の操作の順序は [依頼から統合まで](../workflows/task-to-integration.md) にまとめる。
 
+### 正式統合と Card の完了
+
+local Board の [正式 Integration](formal-integration.md)は複数 Card の採用 Workspace と commit を固定し、host 検証後の Git 公開に続いて条件付き Done を試みる。通常の status 編集とは異なり、対応する可視 Done 列と凍結した要件・関連・status・revision の一致を必要とし、完了日時と処理結果を一緒に保存する。Git が公開済みでも Card が変更済みならその状態を保持する。[条件付き Done](../../crates/db/src/models/integration.rs#L184-L235)
+
+このため、Done をコードの到達先や Wiki の新鮮さの証拠として使わない。Integration の予約中は Card 要件・関連 Workspace の変更も制限され、後で元に戻す編集でも requirements revision は進む。[revision と予約](../../crates/db/migrations/20260918000000_formal_integration.sql#L52-L102)。予約と回復の詳細は [正式 Integration の契約](formal-integration.md#gitdonewiki-は独立した結果)に集約する。
+
+実行専用 Workspace は通常の Issue 実施へ関連付け・付け替えできない。link と unlink は remote 呼出し前に用途を検査し、local Board の内部 link 作成にも同じ interactive 要件がある。[link/unlink](../../crates/server/src/routes/workspaces/links.rs#L62-L69)、[解除前の検査](../../crates/server/src/routes/workspaces/links.rs#L149-L158)、[local link](../../crates/server/src/routes/local_remote.rs#L2073-L2090)。その恒久的な用途と、一時的な Integration 予約の違いは [Workspace](workspace.md#操作用途と実行所有者)を参照する。
+
 ## ローカルとクラウドの意味の違い
 
 共通 API の Project は organization ID と表示メタデータを含む。一方、ローカル DB の `projects` は作業ディレクトリ既定値と remote project ID を持ち、`local_project_metadata` を join してボード向けの形にする。同じ名前の Rust 型だけから同じ保存モデルだと判断しない。[共通型](../../crates/api-types/src/project.rs#L8-L17)、[ローカル型](../../crates/db/src/models/project.rs#L7-L17)、[組み立て](../../crates/server/src/routes/local_remote.rs#L375-L401)
 
 ローカル互換 API は固定の Local organization と Local User/Admin を返す。この擬似メンバーシップを、[Cloud の組織所属と管理権限](organization-and-membership.md) と同等の利用者管理だと説明しない。[ローカル応答](../../crates/server/src/routes/local_remote.rs#L1205-L1233)。REST と Electric の取得経路は [Web と同期](../architecture/web-and-sync.md) が説明する。
 
-Workspace をクラウドへリンクする経路では、ローカルリンクを先に保存し、remote client があればリモート Workspace を作る。後段の通信失敗はエラーとして返り、ローカル保存との一括ロールバックはない。解除はリモート削除を先に行い、404 は既に解除済みとしてローカルを消す。この非対称性は再試行・表示不整合を調べる際に重要である。[リンク順序](../../crates/server/src/routes/workspaces/links.rs#L62-L86)、[解除順序](../../crates/server/src/routes/workspaces/links.rs#L148-L164)
+Workspace をクラウドへリンクする経路では、ローカルリンクを先に保存し、remote client があればリモート Workspace を作る。後段の通信失敗はエラーとして返り、ローカル保存との一括ロールバックはない。解除はリモート削除を先に行い、404 は既に解除済みとしてローカルを消す。この非対称性は再試行・表示不整合を調べる際に重要である。[リンク順序](../../crates/server/src/routes/workspaces/links.rs#L62-L87)、[解除順序](../../crates/server/src/routes/workspaces/links.rs#L149-L169)
 
 ## 旧 Task を読むとき
 

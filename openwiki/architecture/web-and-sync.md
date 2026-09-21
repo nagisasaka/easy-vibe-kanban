@@ -3,9 +3,6 @@ type: architecture
 title: Web の実行環境と同期
 description: Local・Remote shell が共有画面へ接続先を注入する仕組みと、Electric・fallback・AgentRun stream の異なる同期契約。
 tags: [frontend, synchronization, electric, transport]
-verified:
-  - by: openwiki/0.5.1
-    at: 2026-09-16T18:13:42.498Z
 sources:
   - id: openwiki-source-81dada2f014b934994b8ed97
     resource: repo://crates/remote/src/routes/electric_proxy.rs
@@ -23,6 +20,8 @@ sources:
     resource: repo://packages/web-core/src/pages/workspaces/PreservedChatPanel.tsx
   - id: openwiki-source-0894249b732085a9800940bd
     resource: repo://packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx
+  - id: openwiki-source-c03336fce241c80068d03edc
+    resource: repo://packages/web-core/src/pages/workspaces/WorkspacesMainContainer.tsx
   - id: openwiki-source-2bc4d71db2cf73c3210b9268
     resource: repo://packages/web-core/src/shared/hooks/useNotifications.ts
   - id: openwiki-source-43d7a2f6bd06c556e7d48e3c
@@ -31,13 +30,26 @@ sources:
     resource: repo://packages/web-core/src/shared/hooks/useUiPreferencesScratch.ts
   - id: openwiki-source-ffa337e3881da0103a10e223
     resource: repo://packages/web-core/src/shared/hooks/useVisualViewportHeightVar.ts
+  - id: openwiki-source-012d640135a03bd20065dc93
+    resource: repo://packages/web-core/src/shared/hooks/useWorkspaceOwner.ts
+  - id: openwiki-source-97cd8794805cef30e1c2f047
+    resource: repo://packages/web-core/src/shared/hooks/useWorkspaces.ts
+  - id: openwiki-source-8860c99d38e029d2bcc112c2
+    resource: repo://packages/web-core/src/shared/hooks/useWorkspaceSessions.ts
+  - id: openwiki-source-29a47cc7d1a22c6d0ddf4b6c
+    resource: repo://packages/web-core/src/shared/hooks/workspaceSessionSelection.test.ts
+  - id: openwiki-source-cf7deb2cd54542f4c2fd7515
+    resource: repo://packages/web-core/src/shared/hooks/workspaceSessionSelection.ts
   - id: openwiki-source-e665e0fe8e478ec542e0ace4
     resource: repo://packages/web-core/src/shared/lib/electric/collections.ts
   - id: openwiki-source-9ca1dca04d93c4fed8664d25
     resource: repo://packages/web-core/src/shared/lib/localApiTransport.ts
   - id: openwiki-source-d4726fdd33da0f7c2f1ae1ee
     resource: repo://packages/web-core/src/shared/lib/remoteApi.ts
-generated: { by: "codex", at: "2026-09-16T18:13:42.498Z" }
+generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
+verified:
+  - by: openwiki/0.5.1
+    at: 2026-09-21T08:16:36.701Z
 ---
 
 # Web の実行環境と同期
@@ -88,11 +100,19 @@ AgentRun stream は Electric ではない。サーバーは Live を先に購読
 
 ## Wiki のナビゲーションと本文を一つの状態で動かす
 
-Workspace の Wiki は本文をメイン領域、ナビゲーションを右側へ分けて表示するが、二つの独立した reader ではない。`WorkspaceWikiProvider` が Workspace ID ごとに一つの controller を所有し、repository、形式、選択ページ、検索、読取結果を両 surface で共有する。モバイルでは本文とナビゲーションを切り替える。[共有 controller](../../packages/web-core/src/features/wiki/ui/WorkspaceWikiProvider.tsx#L39-L91)、[画面への配置](../../packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx#L509-L628)
+Workspace の Wiki は本文をメイン領域、ナビゲーションを右側へ分けて表示するが、二つの独立した reader ではない。`WorkspaceWikiProvider` が Workspace ID ごとに一つの controller を所有し、repository、選択ページ、検索、読取結果を両 surface で共有する。モバイルでは本文とナビゲーションを切り替える。[共有 controller](../../packages/web-core/src/features/wiki/ui/WorkspaceWikiProvider.tsx#L39-L91)、[画面への配置](../../packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx#L509-L628)
 
-repository / Wiki 形式を切り替えると古い snapshot と選択を消し、再取得する。controller はリクエスト sequence と応答の Workspace / repository identity を検査し、遅れて返った別対象の結果で現在の画面を上書きしない。形式の選択は Workspace 別の sessionStorage であり、repository の Wiki 設定ではない。[scope と応答の扱い](../../packages/web-core/src/features/wiki/model/wikiViewerController.ts#L31-L131)
+表示対象は canonical OpenWiki 一種類であり、legacy 形式の切替状態は持たない。repository を切り替えると snapshot・選択・検索・scroll 状態をリセットし、再取得する。controller はリクエスト sequence と応答の Workspace / repository identity を検査し、遅れて返った別対象の結果で現在の画面を上書きしない。[scope と応答の扱い](../../packages/web-core/src/features/wiki/model/wikiViewerController.ts#L11-L119)。実際に読む checkout と reader の範囲は [Wiki inspection](../operations/workspace-inspection.md#wiki-の本文ツリーと表示元を確認する)を参照する。
 
 Wiki を開くことはチャットや AgentRun の終了ではない。`PreservedChatPanel` は composer と timeline を unmount せず、非表示時に `inert` / `aria-hidden` を付ける。最後の表示幅を保つのは、幅ゼロによる仮想化 timeline の再計算を避けるためである。Wiki の表示設定と実行 lifecycle を結び付けない。[chat の保持](../../packages/web-core/src/pages/workspaces/PreservedChatPanel.tsx#L4-L52)。操作と表示元の確認は [Workspace の検査](../operations/workspace-inspection.md)を参照する。
+
+## 作業一覧と実行履歴を分ける
+
+Workspace stream と summary は用途を持ち、通常 Work / Archive から `execution_only` を除き、archived の実行専用環境も Executions / History 側へ集める。通常作業の running 表示は最新一件だけで判定せず、summary の実行集計を優先する。[一覧の分割](../../packages/web-core/src/shared/hooks/useWorkspaces.ts#L61-L79)、[用途による分類](../../packages/web-core/src/shared/hooks/useWorkspaces.ts#L237-L255)。用途と製品所有者の契約は [Workspace](../concepts/workspace.md#操作用途と実行所有者)に集約する。
+
+実行専用画面は composer の代わりに inspection panel を表示し、製品の owner view を明示 host scope で取得する。query key に host と Workspace を含め、失敗を成功した空データに変換しない。[画面分岐](../../packages/web-core/src/pages/workspaces/WorkspacesMainContainer.tsx#L241-L263)、[owner の取得と Stop](../../packages/web-core/src/shared/hooks/useWorkspaceOwner.ts#L6-L59)。これらの表示制御に加え、backend も変更操作を検査する。
+
+Session 一覧の再取得では利用者が選んだ古いログや new-session draft を維持する。host / Workspace または明示 Session link の変更時だけ選択を再解決し、入口に使った URL がその後の手動選択を奪わない。[選択規則](../../packages/web-core/src/shared/hooks/workspaceSessionSelection.ts#L3-L25)、[scope の更新](../../packages/web-core/src/shared/hooks/useWorkspaceSessions.ts#L51-L87)、[回帰テスト](../../packages/web-core/src/shared/hooks/workspaceSessionSelection.test.ts#L4-L36)
 
 ## モバイルと文書の適用範囲
 

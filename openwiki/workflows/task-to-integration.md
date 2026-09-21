@@ -3,9 +3,6 @@ type: guide
 title: Issue から実行・レビュー・統合まで
 description: 通常作業をまたぐ作成、Setup gate、会話、レビュー、Git/PR、Issue 状態と repository memory の更新順序を説明する。
 tags: [workflow, setup, review, git, pull-requests, scheduling]
-verified:
-  - by: openwiki/0.5.1
-    at: 2026-09-16T18:13:42.498Z
 sources:
   - id: openwiki-source-29ff4fcd8f66b24767de429c
     resource: repo://crates/git-host/src/lib.rs
@@ -23,6 +20,10 @@ sources:
     resource: repo://crates/remote/src/routes/workspaces.rs
   - id: openwiki-source-a13fe4db1eee073d0a7e2c4d
     resource: repo://crates/server/src/main.rs
+  - id: openwiki-source-b393e75029374eaf9cba5f7d
+    resource: repo://crates/server/src/routes/integrations/runtime.rs
+  - id: openwiki-source-391f34050223d13f679b3793
+    resource: repo://crates/server/src/routes/parallel_context.rs
   - id: openwiki-source-e2a1cc763db4a100d48eac0a
     resource: repo://crates/server/src/routes/scheduled_tasks.rs
   - id: openwiki-source-2b4c7ad36a9b595e1991b189
@@ -47,15 +48,22 @@ sources:
     resource: repo://crates/services/src/services/pr_monitor.rs
   - id: openwiki-source-cbb62bf26f670475768fcc99
     resource: repo://crates/services/src/services/remote_sync.rs
+  - id: openwiki-source-08b3f4dcb1a91c97b6d127f8
+    resource: repo://crates/worktree-manager/src/worktree_manager.rs
   - id: openwiki-source-a83ea4cb3c0f336409ebd941
     resource: repo://docs/core-features/completing-a-task.mdx
   - id: openwiki-source-a3944588bb3b08c863d66298
     resource: repo://docs/workspaces/openwiki.mdx
+  - id: openwiki-source-db035046d01e3f24722812c8
+    resource: repo://packages/web-core/src/features/kanban/ui/IntegrationPanel.tsx
   - id: openwiki-source-1a337d16d294c4dc710f105d
     resource: repo://packages/web-core/src/pages/kanban/KanbanIssuePanelContainer.tsx
   - id: openwiki-source-ffc55e6e31e6ce477ca57329
     resource: repo://packages/web-core/src/shared/hooks/useWorkflowRun.ts
-generated: { by: "codex", at: "2026-09-16T18:13:42.498Z" }
+generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
+verified:
+  - by: openwiki/0.5.1
+    at: 2026-09-21T08:16:36.701Z
 ---
 
 # Issue から実行・レビュー・統合まで
@@ -94,13 +102,25 @@ completion event を取りこぼした watcher は DB の gate から追いつ�
 
 Agent の review API は Workspace 内に active AgentRun があれば拒否する。use_all_workspace_commits は Repo ごとの fork point を review context に使い、intent=Review、selected_skills なしで起動する。OpenWiki の independent Review と同じ隔離プロトコルではない。[review の起動](../../crates/server/src/routes/sessions/review.rs#L39-L115)
 
+## 並列変更を試してから正式統合する
+
+他 Card の文脈や branch を調べるときは、[Shared dirs と並列 context](../concepts/card-context-and-llm-wiki.md)で関係を発見し、採用する commit を固定する。発見された最新 HEAD や他 Workspace の未統合 Memory を、既に統合済みの仕様として扱わない。
+
+組合せ試験には `POST /api/workspaces/<id>/integration/preview` がある。自分の base commit と peer の commit を明示し、Repo membership、各 commit がその Workspace branch に帰属する祖先であること、自分の checkout が指定 base に一致して clean なことを確認する。古い固定 commit は許すが、自動的に新 HEAD へ追従しない。自分を含む source は最大100件である。[preview の受付](../../crates/server/src/routes/parallel_context.rs#L105-L166)
+
+API が作るのは base からの detached worktree と固定 peer 一覧であり、peer の merge や tests を自動実行する API ではない。返す指示に従ってその試行先で組み合わせを検証し、元 Workspace の reset/stash、peer の修正、target/Card 更新、Wiki 執筆を持ち込まない。試行は通常 Workspace cleanup の外側の sibling directory に残し、調査後に明示的な worktree cleanup を行う。正式統合成功の証拠にはならない。[試行の用途](../../crates/server/src/routes/parallel_context.rs#L162-L171)、[保持と source ref 不変の test](../../crates/worktree-manager/src/worktree_manager.rs#L55-L146)
+
+local Board の **Integrate / Auto Merge** では、Repo・local target と各 Card の採用 Workspace を選び、Code 実行として送信する。通信再試行は同じ request ID と入力を保持する。source は受付時、target base は queue 先頭で実行を始める時点に固定する。実行用 Workspace の履歴で進行・検証・失敗を確認する。[Board の選択と送信](../../packages/web-core/src/features/kanban/ui/IntegrationPanel.tsx#L74-L184)
+
+この [正式 Integration](../concepts/formal-integration.md)は、選択要件と source を保存・予約し、専用環境で host が検証した結果 commit を local target へ公開する。Git 公開、条件付き Card Done、後続 Wiki receipt は別の結果なので個別に確認する。取消できる phase と recovery_required の扱いも所有フローに従う。詳細な受付・検証・公開契約は同ページに集約し、以下では既存の手動 Git/PR 経路を説明する。
+
 ## 4. Rebase と direct merge
 
 Git 操作は Repo 単位で target_branch を持つ。Rebase API は新 branch の存在確認後に WorkspaceRepo の target を更新し、それから Git rebase を行う。conflict は file と operation を持つ構造化エラーになり、continue / abort の経路がある。エラー時には、Git 状態だけでなく更新済み target 設定も確認する。[Rebase の順序](../../crates/server/src/routes/workspaces/git.rs#L771-L854)・[操作 router](../../crates/server/src/routes/workspaces/git.rs#L137-L148)
 
 Git safety tests は通常の untracked file の保存、tracked dirty change の拒否、base に上書きされる untracked file の保存を検証する。conflict を「とりあえず reset」で消すことを前提にしない。[Rebase tests](../../crates/git/tests/git_ops_safety.rs#L442-L505)
 
-Direct merge はその Repo に open PR がある場合と、target が remote branch の場合に拒否する。実際の統合は squash であり、base が先行していれば拒否する。base が別 checkout にあればその場所で CLI merge、checkout がなければ libgit2 の ref 操作を使う。統合後は task branch ref も新 squash commit へ更新し、続きの作業をそこから行えるようにする。[API の制約](../../crates/server/src/routes/workspaces/git.rs#L179-L213)・[Git の統合](../../crates/git/src/lib.rs#L678-L775)
+手動 Direct merge は正式 Integration とは別の入口で、その Repo に open PR がある場合と、target が remote branch の場合に拒否する。実際の統合は squash であり、base が先行していれば拒否する。base が別 checkout にあればその場所で CLI merge、checkout がなければ libgit2 の ref 操作を使う。統合後は task branch ref も新 squash commit へ更新し、続きの作業をそこから行えるようにする。[API の制約](../../crates/server/src/routes/workspaces/git.rs#L179-L214)・[Git の統合](../../crates/git/src/lib.rs#L678-L776)
 
 checkout 済み base の staged changes は拒否する。専用 test は staged file を残したまま merge が失敗することを検証する。[test](../../crates/git/tests/git_ops_safety.rs#L587-L605)
 
@@ -118,6 +138,8 @@ PR の外部作成成功後、local PR record の保存エラーはログに残�
 
 ## 6. Issue の完了と Workspace archive
 
+正式 Integration では、公開後も受付時の Card 内容・revision・リンクが一致する場合にだけ local Card を Done にする。以下の手動 merge/PR の remote 同期とは別の契約である。[条件付き Done と独立した Wiki 結果](../concepts/formal-integration.md#gitdonewiki-は独立した結果)
+
 Direct merge 後は pinned でなければ Workspace archive を試みる。この条件はその Repo の merge 後に評価される。一方 PR monitor は merged を観測した際、Workspace の open PR が0で、かつ pinned でない場合に archive する。複数 Repo の作業では両者の条件が異なる。[Direct merge 後](../../crates/server/src/routes/workspaces/git.rs#L288-L308)・[PR 観測](../../crates/services/src/services/pr_monitor.rs#L128-L207)
 
 [Completing a Task](../../docs/core-features/completing-a-task.mdx) は merge 後に Done へ移る操作意図を説明するが、現行実装は条件付きの複数処理である。direct merge の remote Issue 状態同期は非同期で、未認証や remote Workspace 不在なら skip する。local Issue を常に Done へ直接更新する処理として読まない。[remote 同期の失敗](../../crates/services/src/services/remote_sync.rs#L85-L114)
@@ -128,9 +150,9 @@ Remote の Issue 状態同期は、WorkMerged で関連 PR がすべて Merged �
 
 [Repository memory](../concepts/repository-memory.md) が有効な場合、成功した coding run の semantic draft と Git 証拠から Change Manifest を作り、統合された event を maintenance の入力にする。source merge の成功と Wiki 更新の成功は別であり、Wiki 失敗は source を巻き戻さない。
 
-EVK 自身の direct squash は event ID を記録できる。外部 PR の squash/rebase は元 commit の ancestry を証明できない場合があり、Workspace ID や時刻だけで event を消費しない。統合先 local branch を準備し、必要なら [Sync Wiki](../operations/openwiki-maintenance.md) で実 source を再確認する。[記録された運用契約](../../docs/workspaces/openwiki.mdx)・[外部 PR の制約](../../docs/workspaces/openwiki.mdx)
+EVK 自身の手動 direct squash と正式 Integration はそれぞれ明示的な event ID を記録できる。外部 PR の squash/rebase は元 commit の ancestry を証明できない場合があり、Workspace ID や時刻だけで event を消費しない。統合先 local branch を準備し、必要なら [Sync Wiki](../operations/openwiki-maintenance.md) で実 source を再確認する。[記録された運用契約](../../docs/workspaces/openwiki.mdx)・[外部 PR の制約](../../docs/workspaces/openwiki.mdx)
 
-生成物は [Wiki Viewer](../operations/workspace-inspection.md#wiki-の本文ツリーと表示元を確認する)で確認できる。ただし Viewer は選択 Workspace の現在のファイルを読むため、maintenance の未公開成果物も見える。Wiki 本文を開けたこと、Agent が完了を宣言したこと、Workflow と target branch への publication が成功したことを分けて確認する。[表示元の実装](../../crates/server/src/routes/workspaces/wiki.rs#L158-L184)、[publication の検証](../../crates/server/src/workflow_runtime/bootstrap.rs#L603-L651)
+生成物は [Wiki Viewer](../operations/workspace-inspection.md#wiki-の本文ツリーと表示元を確認する)で確認できる。ただし Viewer は選択 Workspace の現在のファイルを読むため、maintenance の未公開成果物も見える。Wiki 本文を開けたこと、Agent が完了を宣言したこと、Workflow と target branch への publication が成功したことを分けて確認する。[表示元の実装](../../crates/server/src/routes/workspaces/wiki.rs#L148-L169)、[publication の検証](../../crates/server/src/workflow_runtime/bootstrap.rs#L603-L651)
 
 ## 定時に Workflow を起動する
 
