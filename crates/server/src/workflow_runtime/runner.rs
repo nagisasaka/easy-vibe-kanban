@@ -60,7 +60,7 @@ use crate::{
     routes::workflows::{
         TriggerWorkflowRequest, WORKFLOW_NODE_ACTIVE_SLOW_THRESHOLD_MS,
         WorkflowNodeExecutionResponse, WorkflowRunResponse, build_workflow_run_runtime_view,
-        ensure_agent_node_sessions, get_workflow_template, persist_workflow_graph,
+        get_workflow_template, persist_workflow_graph,
     },
     workflow_runtime::{
         arena::{
@@ -1010,9 +1010,7 @@ where
         })
         .await?;
 
-    if ensure_agent_node_sessions(pool, workspace_id, &mut graph).await? {
-        persist_workflow_graph(pool, workflow_id, &graph).await?;
-    }
+    persist_workflow_graph(pool, &workflow, workspace_id, &mut graph).await?;
 
     insert_workflow_run(
         pool,

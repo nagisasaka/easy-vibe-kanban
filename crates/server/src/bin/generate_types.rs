@@ -203,6 +203,10 @@ fn generate_types_content() -> String {
         server::routes::config::McpServerQuery::decl(),
         server::routes::config::UpdateMcpServersBody::decl(),
         server::routes::config::GetMcpServerResponse::decl(),
+        server::routes::config::ProfilesContent::decl(),
+        server::routes::config::SensitiveProfileQuery::decl(),
+        server::routes::config::ReplaceProfilesRequest::decl(),
+        server::routes::config::RecentModelsPatch::decl(),
         server::routes::config::CheckEditorAvailabilityQuery::decl(),
         server::routes::config::CheckEditorAvailabilityResponse::decl(),
         server::routes::config::CheckAgentAvailabilityQuery::decl(),
@@ -346,6 +350,17 @@ fn generate_types_content() -> String {
         executors::agent_settings::SettingsSnapshot::decl(),
         executors::agent_settings::AgentSettingsProviderError::decl(),
         executors::agent_settings::AgentSettingsInventory::decl(),
+        executors::agent_settings::public_api::SettingsSnapshotView::decl(),
+        executors::agent_settings::public_api::AgentSettingsInventoryView::decl(),
+        executors::agent_settings::public_api::ReadNativeSettingsRequest::decl(),
+        executors::agent_settings::public_api::NativeSettingsEditRequest::decl(),
+        executors::agent_settings::public_api::ConfigProfileView::decl(),
+        executors::agent_settings::public_api::ProfileReference::decl(),
+        executors::agent_settings::public_api::CopyProfileWriteRequest::decl(),
+        executors::agent_settings::public_api::ProfileCopyPreviewView::decl(),
+        executors::agent_settings::public_api::WriteConfigProfileRequest::decl(),
+        executors::agent_settings::public_api::ProfileApplyRequest::decl(),
+        executors::agent_settings::public_api::ConfirmProfileApplyRequest::decl(),
         executors::agent_settings::SettingOperation::decl(),
         executors::agent_settings::SettingsPatch::decl(),
         executors::agent_settings::NativeFileDiff::decl(),
@@ -386,6 +401,18 @@ fn generate_types_content() -> String {
         executors::agent_tools::ToggleAgentToolRequest::decl(),
         executors::agent_tools::CopyAgentToolRequest::decl(),
         executors::agent_tools::CopyAgentToolResponse::decl(),
+        executors::config_write::SensitiveWrite::<String>::decl(),
+        executors::agent_tools::public_api::McpServerWriteDefinition::decl(),
+        executors::agent_tools::public_api::SkillWriteDefinition::decl(),
+        executors::agent_tools::public_api::AgentToolWriteDefinition::decl(),
+        executors::agent_tools::public_api::AgentToolSummary::decl(),
+        executors::agent_tools::public_api::AgentToolView::decl(),
+        executors::agent_tools::public_api::AgentToolProviderInventoryView::decl(),
+        executors::agent_tools::public_api::AgentToolInventoryView::decl(),
+        executors::agent_tools::public_api::CreateAgentToolWriteRequest::decl(),
+        executors::agent_tools::public_api::UpdateAgentToolWriteRequest::decl(),
+        executors::agent_tools::public_api::ReadAgentToolDefinitionRequest::decl(),
+        executors::agent_tools::public_api::CopyAgentToolView::decl(),
         executors::agent_tools::AgentToolErrorCode::decl(),
         executors::agent_tools::AgentToolOperationError::decl(),
         server::routes::agent_tools::AgentToolDiscoveryQuery::decl(),
@@ -531,6 +558,9 @@ fn generate_types_content() -> String {
     let body = decls
         .into_iter()
         .map(|d| {
+            // Flattened ts-rs declarations can contain trailing spaces. Keep
+            // generation and check mode deterministic without editing output.
+            let d = d.lines().map(str::trim_end).collect::<Vec<_>>().join("\n");
             let trimmed = d.trim_start();
             if trimmed.starts_with("export") {
                 d

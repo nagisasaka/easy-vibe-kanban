@@ -89,32 +89,67 @@ pub async fn write_agent_config(
     config_path: &std::path::Path,
     mcp_config: &McpConfig,
     config: &Value,
+    expected_revision: &str,
 ) -> Result<(), ExecutorError> {
-    if mcp_config.is_toml_config {
-        let toml_value: toml::Value = serde_json::from_str(&serde_json::to_string(config)?)?;
-        let toml_content = toml::to_string_pretty(&toml_value)?;
-        fs::write(config_path, toml_content).await?;
-    } else if is_jsonc_file(config_path) {
-        write_jsonc_preserving_comments(config_path, config).await?;
-    } else {
-        let json_content = serde_json::to_string_pretty(config)?;
-        fs::write(config_path, json_content).await?;
-    }
-    Ok(())
-}
+    let path = config_path.to_path_buf();
+    let mcp_config = mcp_config.clone();
+    let config = config.clone();
+    let expected_revision = expected_revision.to_owned();
+    tokio::task::spawn_blocking(move || {
+        use std::io::Write;
 
-async fn write_jsonc_preserving_comments(
-    config_path: &std::path::Path,
-    new_config: &Value,
-) -> Result<(), ExecutorError> {
-    let current_content = fs::read_to_string(config_path)
-        .await
-        .unwrap_or_else(|_| "{}".to_string());
-
-    let output = update_jsonc_content(&current_content, new_config);
-
-    fs::write(config_path, output).await?;
-    Ok(())
+        use sha2::{Digest, Sha256};
+        let _guard = crate::config_write::NATIVE_SETTINGS_WRITE_LOCK
+            .lock()
+            .map_err(|_| std::io::Error::other("Native configuration lock unavailable"))?;
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(ExecutorError::Io(error)),
+        };
+        let revision = bytes
+            .as_deref()
+            .map(|bytes| format!("{:x}", Sha256::digest(bytes)))
+            .unwrap_or_else(|| "missing".into());
+        if revision != expected_revision {
+            return Err(ExecutorError::Io(std::io::Error::other(
+                "Native configuration changed; refresh before replacing it",
+            )));
+        }
+        let output = if mcp_config.is_toml_config {
+            let value: toml::Value = serde_json::from_value(config)?;
+            toml::to_string_pretty(&value)?
+        } else if is_jsonc_file(&path) {
+            let current = std::str::from_utf8(bytes.as_deref().unwrap_or(b"{}"))
+                .map_err(|_| std::io::Error::other("Native configuration is not UTF-8"))?;
+            update_jsonc_content(current, &config)
+        } else {
+            serde_json::to_string_pretty(&config)?
+        };
+        let parent = path
+            .parent()
+            .ok_or_else(|| std::io::Error::other("Native configuration has no parent"))?;
+        std::fs::create_dir_all(parent)?;
+        let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+        temporary.write_all(output.as_bytes())?;
+        temporary.as_file().sync_all()?;
+        // Last check catches external edits during rendering; arbitrary writers
+        // are not OS-isolated, so this does not claim cross-process CAS.
+        let observed = match std::fs::read(&path) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(ExecutorError::Io(error)),
+        };
+        if observed != bytes {
+            return Err(ExecutorError::Io(std::io::Error::other(
+                "Native configuration changed during edit",
+            )));
+        }
+        temporary.persist(path).map_err(|error| error.error)?;
+        Ok(())
+    })
+    .await
+    .map_err(|_| ExecutorError::Io(std::io::Error::other("Native configuration writer failed")))?
 }
 
 pub(crate) fn update_jsonc_content(current_content: &str, new_config: &Value) -> String {
@@ -376,6 +411,39 @@ mod tests {
 
     use super::{Adapter, apply_adapter};
     use crate::executors::{CodingAgent, oh_my_pi::OhMyPi};
+
+    #[tokio::test]
+    async fn advanced_mcp_write_is_revision_checked_atomic_and_preserves_unknown_fields() {
+        use sha2::{Digest, Sha256};
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("config.jsonc");
+        let before = "{ // keep comment\n \"private\": \"secret\", \"mcpServers\": {} }";
+        std::fs::write(&path, before).unwrap();
+        let config = super::McpConfig::new(vec!["mcpServers".into()], json!({}), json!({}), false);
+        let next = json!({"private":"secret", "mcpServers":{"test":{"command":"test","env":{"TOKEN":"secret"}}}});
+        assert!(
+            super::write_agent_config(&path, &config, &next, "stale")
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+        let revision = format!("{:x}", Sha256::digest(before.as_bytes()));
+        super::write_agent_config(&path, &config, &next, &revision)
+            .await
+            .unwrap();
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(after.contains("// keep comment"));
+        assert_eq!(
+            super::read_agent_config(&path, &config).await.unwrap(),
+            next
+        );
+        assert!(
+            super::write_agent_config(&path, &config, &json!({}), &revision)
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), after);
+    }
 
     #[test]
     fn codex_preserves_stdio_and_remote_servers_and_filters_metadata() {

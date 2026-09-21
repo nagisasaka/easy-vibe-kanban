@@ -38,6 +38,9 @@
       }
     },
     "hostPicker": {
+      "unavailableHint": "Host {{host}} is unavailable. Its identity is retained; no other machine will be edited.",
+      "discoveryFailed": "Could not verify Host {{host}}. Remote changes are disabled until discovery succeeds.",
+      "readOnlyHint": "Cached settings may be viewed. Changes are blocked while this Host is unavailable.",
       "thisMachine": "This machine",
       "localHost": "Local host",
       "remoteHost": "Remote host",
@@ -304,6 +307,11 @@
       }
     },
     "agents": {
+      "sensitiveProfiles": {
+        "description": "Launch profile values that may contain secrets are not loaded automatically. Native settings below remain available without reading full launch profiles.",
+        "confirm": "Read full launch profiles? This can display environment credentials, command arguments and private instructions for advanced editing.",
+        "read": "Read launch profiles for editing"
+      },
       "title": "Coding Agent Configurations",
       "description": "Customize the behavior of coding agents with different configurations.",
       "loading": "Loading agent configurations...",
@@ -372,6 +380,12 @@
       }
     },
     "mcp": {
+      "sensitive": {
+        "description": "This is the advanced full MCP configuration editor. Definitions can contain credentials. Use Agent Tools for individual edits that preserve undisclosed values.",
+        "confirm": "Read full MCP definitions? Credentials and private configuration will be displayed for advanced editing.",
+        "read": "Read MCP definitions for editing",
+        "discard": "Discard unsaved MCP edits and switch provider?"
+      },
       "title": "MCP Server Configuration",
       "description": "Configure Model Context Protocol servers to extend coding agent capabilities with custom tools and resources.",
       "loading": "Loading MCP configuration...",

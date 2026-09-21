@@ -285,6 +285,39 @@ pub struct ExecutorConfigs {
 }
 
 impl ExecutorConfigs {
+    /// Selector metadata only. Full launch configuration is available through
+    /// the explicit, revision-checked profile editor, not /api/info discovery.
+    pub fn public_summary(mut self) -> Self {
+        for profile in self.executors.values_mut() {
+            for agent in profile.configurations.values_mut() {
+                match agent {
+                    CodingAgent::Codex(config) => {
+                        config.cmd = Default::default();
+                        config.append_prompt = Default::default();
+                        config.base_instructions = None;
+                        config.compact_prompt = None;
+                        config.developer_instructions = None;
+                    }
+                    CodingAgent::ClaudeCode(config) => {
+                        config.cmd = Default::default();
+                        config.append_prompt = Default::default();
+                    }
+                    CodingAgent::Gemini(config) => {
+                        config.cmd = Default::default();
+                        config.append_prompt = Default::default();
+                    }
+                    CodingAgent::OhMyPi(config) => {
+                        config.cmd = Default::default();
+                        config.append_prompt = Default::default();
+                    }
+                    #[cfg(feature = "qa-mode")]
+                    CodingAgent::QaMock(_) => {}
+                }
+            }
+        }
+        self
+    }
+
     /// Normalise all variant keys in-place
     fn canonicalise(&mut self) {
         for profile in self.executors.values_mut() {
@@ -366,9 +399,19 @@ impl ExecutorConfigs {
         let merged = Self::merge_with_defaults(defaults, overrides.clone());
         Self::validate_merged(&merged)?;
 
-        // Write overrides directly to file
+        // Atomic replacement: interrupted saves must not leave truncated JSON.
         let content = serde_json::to_string_pretty(&overrides)?;
-        fs::write(&profiles_path, content)?;
+        use std::io::Write;
+        let parent = profiles_path
+            .parent()
+            .ok_or_else(|| ProfileError::Validation("profile path has no parent".into()))?;
+        fs::create_dir_all(parent)?;
+        let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+        temporary.write_all(content.as_bytes())?;
+        temporary.as_file().sync_all()?;
+        temporary
+            .persist(&profiles_path)
+            .map_err(|error| error.error)?;
 
         tracing::info!("Saved profile overrides to {:?}", profiles_path);
         Ok(())

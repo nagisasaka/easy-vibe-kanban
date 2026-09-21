@@ -29,6 +29,7 @@ use services::services::{
     container::ContainerService,
     remote_client::RemoteClientError,
 };
+use sha2::{Digest, Sha256};
 use tokio::fs;
 use ts_rs::TS;
 use utils::{assets::config_path, log_msg::LogMsg, response::ApiResponse};
@@ -41,6 +42,10 @@ use crate::{
     runtime::relay_registration,
 };
 
+// Serialize legacy editor read/check/write, including the recent-model patch.
+static PROFILE_EDIT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+static MCP_EDIT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 pub fn router() -> Router<DeploymentImpl> {
     Router::new()
         .route("/info", get(get_user_system_info))
@@ -48,6 +53,7 @@ pub fn router() -> Router<DeploymentImpl> {
         .route("/sounds/{sound}", get(get_sound))
         .route("/mcp-config", get(get_mcp_servers).post(update_mcp_servers))
         .route("/profiles", get(get_profiles).put(update_profiles))
+        .route("/profiles/recent-models", put(update_recent_models))
         .route(
             "/editors/check-availability",
             get(check_editor_availability),
@@ -163,7 +169,7 @@ async fn get_user_system_info(
         machine_id: deployment.user_id().to_string(),
         login_status,
         remote_auth_degraded: deployment.auth_context().remote_auth_degraded_slug().await,
-        profiles: ExecutorConfigs::get_cached(),
+        profiles: ExecutorConfigs::get_cached().public_summary(),
         environment: Environment::new(),
         capabilities: {
             let mut caps: HashMap<String, Vec<BaseAgentCapability>> = HashMap::new();
@@ -289,6 +295,8 @@ async fn get_sound(Path(sound): Path<SoundFile>) -> Result<Response, ApiError> {
 #[derive(TS, Debug, Deserialize)]
 pub struct McpServerQuery {
     executor: BaseCodingAgent,
+    #[serde(default)]
+    confirmed_sensitive_read: bool,
 }
 
 #[derive(TS, Debug, Serialize, Deserialize)]
@@ -296,17 +304,22 @@ pub struct GetMcpServerResponse {
     // servers: HashMap<String, Value>,
     mcp_config: McpConfig,
     config_path: String,
+    revision: String,
 }
 
 #[derive(TS, Debug, Serialize, Deserialize)]
 pub struct UpdateMcpServersBody {
     servers: HashMap<String, Value>,
+    expected_revision: String,
 }
 
 async fn get_mcp_servers(
     State(_deployment): State<DeploymentImpl>,
     Query(query): Query<McpServerQuery>,
 ) -> Result<ResponseJson<ApiResponse<GetMcpServerResponse>>, ApiError> {
+    if !query.confirmed_sensitive_read {
+        return Err(ApiError::BadRequest("Explicit confirmation is required to read MCP definitions, which may contain credentials.".into()));
+    }
     let coding_agent = ExecutorConfigs::get_cached()
         .get_coding_agent(&ExecutorProfileId::new(query.executor))
         .ok_or(ConfigError::ValidationError(
@@ -329,13 +342,21 @@ async fn get_mcp_servers(
         }
     };
 
+    let _guard = MCP_EDIT_LOCK.lock().await;
+    let revision = native_revision(&config_path).await?;
     let mut mcpc = coding_agent.get_mcp_config();
     let raw_config = read_agent_config(&config_path, &mcpc).await?;
+    if native_revision(&config_path).await? != revision {
+        return Err(ApiError::Conflict(
+            "Native configuration changed during read. Retry.".into(),
+        ));
+    }
     let servers = get_mcp_servers_from_config_path(&raw_config, &mcpc.servers_path);
     mcpc.set_servers(servers);
     Ok(ResponseJson(ApiResponse::success(GetMcpServerResponse {
         mcp_config: mcpc,
         config_path: config_path.to_string_lossy().to_string(),
+        revision,
     })))
 }
 
@@ -344,6 +365,11 @@ async fn update_mcp_servers(
     Query(query): Query<McpServerQuery>,
     Json(payload): Json<UpdateMcpServersBody>,
 ) -> Result<ResponseJson<ApiResponse<String>>, ApiError> {
+    if !query.confirmed_sensitive_read {
+        return Err(ApiError::BadRequest(
+            "Explicit advanced-edit confirmation is required.".into(),
+        ));
+    }
     let profiles = ExecutorConfigs::get_cached();
     let agent = profiles
         .get_coding_agent(&ExecutorProfileId::new(query.executor))
@@ -368,7 +394,20 @@ async fn update_mcp_servers(
     };
 
     let mcpc = agent.get_mcp_config();
-    match update_mcp_servers_in_config(&config_path, &mcpc, payload.servers).await {
+    let _guard = MCP_EDIT_LOCK.lock().await;
+    if native_revision(&config_path).await? != payload.expected_revision {
+        return Err(ApiError::Conflict(
+            "MCP configuration changed. Read it again before replacing it.".into(),
+        ));
+    }
+    match update_mcp_servers_in_config(
+        &config_path,
+        &mcpc,
+        payload.servers,
+        &payload.expected_revision,
+    )
+    .await
+    {
         Ok(message) => Ok(ResponseJson(ApiResponse::success(message))),
         Err(e) => Ok(ResponseJson(ApiResponse::error(&format!(
             "Failed to update MCP servers: {}",
@@ -381,6 +420,7 @@ async fn update_mcp_servers_in_config(
     config_path: &std::path::Path,
     mcpc: &McpConfig,
     new_servers: HashMap<String, Value>,
+    expected_revision: &str,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     // Ensure parent directory exists
     if let Some(parent) = config_path.parent() {
@@ -396,7 +436,7 @@ async fn update_mcp_servers_in_config(
     set_mcp_servers_in_config_path(&mut config, &mcpc.servers_path, &new_servers)?;
 
     // Write the updated config back to file (JSON or TOML depending on agent)
-    write_agent_config(config_path, mcpc, &config).await?;
+    write_agent_config(config_path, mcpc, &config, expected_revision).await?;
 
     let new_count = new_servers.len();
     let message = match (old_servers, new_count) {
@@ -467,62 +507,222 @@ fn set_mcp_servers_in_config_path(
     Ok(())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, TS)]
 pub struct ProfilesContent {
     pub content: String,
     pub path: String,
+    pub revision: String,
+    pub sensitive_values_included: bool,
+}
+
+#[derive(Debug, Default, Deserialize, TS)]
+pub struct SensitiveProfileQuery {
+    #[serde(default)]
+    pub confirmed_sensitive_read: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, TS)]
+pub struct ReplaceProfilesRequest {
+    pub content: String,
+    pub expected_revision: String,
+    pub confirmed_sensitive_read: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, TS)]
+pub struct RecentModelsPatch {
+    pub executor: BaseCodingAgent,
+    pub recently_used_models: Option<executors::profile::ExecutorRecentModels>,
+}
+
+async fn native_revision(path: &std::path::Path) -> Result<String, ApiError> {
+    match fs::read(path).await {
+        Ok(bytes) => Ok(format!("{:x}", Sha256::digest(bytes))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok("missing".into()),
+        Err(_) => Err(ApiError::BadRequest(
+            "Cannot read native configuration.".into(),
+        )),
+    }
+}
+
+fn profiles_for_edit() -> Result<ExecutorConfigs, ApiError> {
+    // Do not turn malformed external edits into defaults and subsequently save
+    // over them. Runtime fallback behavior is unchanged.
+    match std::fs::read(utils::assets::profiles_path()) {
+        Ok(bytes) => {
+            serde_json::from_slice::<ExecutorConfigs>(&bytes).map_err(|_| {
+                ApiError::BadRequest(
+                    "Invalid launch profile file. Repair it before editing.".into(),
+                )
+            })?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return Err(ApiError::BadRequest("Cannot read launch profiles.".into())),
+    }
+    Ok(ExecutorConfigs::load())
+}
+
+async fn profile_content(include_sensitive: bool) -> Result<ProfilesContent, ApiError> {
+    let path = utils::assets::profiles_path();
+    let revision = native_revision(&path).await?;
+    let profiles = profiles_for_edit()?;
+    let profiles = if include_sensitive {
+        profiles
+    } else {
+        profiles.public_summary()
+    };
+    let content = serde_json::to_string_pretty(&profiles)
+        .map_err(|_| ApiError::BadRequest("Launch profiles could not be encoded.".into()))?;
+    if native_revision(&path).await? != revision {
+        return Err(ApiError::Conflict(
+            "Launch profiles changed during read. Retry.".into(),
+        ));
+    }
+    Ok(ProfilesContent {
+        content,
+        path: path.display().to_string(),
+        revision,
+        sensitive_values_included: include_sensitive,
+    })
 }
 
 async fn get_profiles(
-    State(_deployment): State<DeploymentImpl>,
-) -> ResponseJson<ApiResponse<ProfilesContent>> {
-    let profiles_path = utils::assets::profiles_path();
-
-    // Use cached data to ensure consistency with runtime and PUT updates
-    let profiles = ExecutorConfigs::get_cached();
-
-    let content = serde_json::to_string_pretty(&profiles).unwrap_or_else(|e| {
-        tracing::error!("Failed to serialize profiles to JSON: {}", e);
-        serde_json::to_string_pretty(&ExecutorConfigs::from_defaults())
-            .unwrap_or_else(|_| "{}".to_string())
-    });
-
-    ResponseJson(ApiResponse::success(ProfilesContent {
-        content,
-        path: profiles_path.display().to_string(),
-    }))
+    Query(query): Query<SensitiveProfileQuery>,
+) -> Result<ResponseJson<ApiResponse<ProfilesContent>>, ApiError> {
+    let _guard = PROFILE_EDIT_LOCK.lock().await;
+    Ok(ResponseJson(ApiResponse::success(
+        profile_content(query.confirmed_sensitive_read).await?,
+    )))
 }
 
 async fn update_profiles(
-    State(_deployment): State<DeploymentImpl>,
-    body: String,
-) -> ResponseJson<ApiResponse<String>> {
-    // Try to parse as ExecutorProfileConfigs format
-    match serde_json::from_str::<ExecutorConfigs>(&body) {
-        Ok(executor_profiles) => {
-            // Save the profiles to file
-            match executor_profiles.save_overrides() {
-                Ok(_) => {
-                    tracing::info!("Executor profiles saved successfully");
-                    // Reload the cached profiles
-                    ExecutorConfigs::reload();
-                    ResponseJson(ApiResponse::success(
-                        "Executor profiles updated successfully".to_string(),
-                    ))
-                }
-                Err(e) => {
-                    tracing::error!("Failed to save executor profiles: {}", e);
-                    ResponseJson(ApiResponse::error(&format!(
-                        "Failed to save executor profiles: {}",
-                        e
-                    )))
-                }
-            }
-        }
-        Err(e) => ResponseJson(ApiResponse::error(&format!(
-            "Invalid executor profiles format: {}",
-            e
-        ))),
+    Json(request): Json<ReplaceProfilesRequest>,
+) -> Result<ResponseJson<ApiResponse<ProfilesContent>>, ApiError> {
+    if !request.confirmed_sensitive_read {
+        return Err(ApiError::BadRequest(
+            "Explicit advanced-edit confirmation is required.".into(),
+        ));
+    }
+    let _guard = PROFILE_EDIT_LOCK.lock().await;
+    if native_revision(&utils::assets::profiles_path()).await? != request.expected_revision {
+        return Err(ApiError::Conflict(
+            "Launch profiles changed. Refresh before replacing them.".into(),
+        ));
+    }
+    let profiles: ExecutorConfigs = serde_json::from_str(&request.content)
+        .map_err(|_| ApiError::BadRequest("Invalid launch profile values.".into()))?;
+    profiles.save_overrides().map_err(|_| {
+        ApiError::BadRequest(
+            "Launch profiles could not be saved. Check the values and file permissions.".into(),
+        )
+    })?;
+    ExecutorConfigs::reload();
+    Ok(ResponseJson(ApiResponse::success(
+        profile_content(true).await?,
+    )))
+}
+
+fn apply_recent_models(
+    profiles: &mut ExecutorConfigs,
+    patch: RecentModelsPatch,
+) -> Result<(), ApiError> {
+    let profile = profiles
+        .executors
+        .get_mut(&patch.executor)
+        .ok_or_else(|| ApiError::BadRequest("Executor not found.".into()))?;
+    if patch
+        .recently_used_models
+        .as_ref()
+        .is_some_and(|recent| recent.models.len() > 20 || recent.reasoning_by_model.len() > 1000)
+    {
+        return Err(ApiError::BadRequest(
+            "Recent-model history exceeds its bounded size.".into(),
+        ));
+    }
+    profile.recently_used_models = patch.recently_used_models;
+    Ok(())
+}
+
+async fn update_recent_models(
+    Json(patch): Json<RecentModelsPatch>,
+) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+    let _guard = PROFILE_EDIT_LOCK.lock().await;
+    let revision = native_revision(&utils::assets::profiles_path()).await?;
+    let mut profiles = profiles_for_edit()?;
+    apply_recent_models(&mut profiles, patch)?;
+    if native_revision(&utils::assets::profiles_path()).await? != revision {
+        return Err(ApiError::Conflict(
+            "Launch profiles changed. Retry the recent-model update.".into(),
+        ));
+    }
+    profiles
+        .save_overrides()
+        .map_err(|_| ApiError::BadRequest("Recent-model history could not be saved.".into()))?;
+    ExecutorConfigs::reload();
+    Ok(ResponseJson(ApiResponse::success(())))
+}
+
+#[cfg(test)]
+mod settings_safety_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn discovery_hides_launch_secrets_without_changing_goal_or_reasoning_settings() {
+        let profiles: ExecutorConfigs = serde_json::from_value(json!({"executors":{"CODEX":{"DEFAULT":{"CODEX":{
+            "model":"test-model","model_reasoning_effort":"ultra","execution_mode":"goal","goal_max_concurrent_agents":0,
+            "env":{"TOKEN":"env-secret"},"additional_params":["--secret=arg-secret"],"base_command_override":"secret-command",
+            "base_instructions":"private-instructions","developer_instructions":"private-developer","append_prompt":"private-append"
+        }}}}})).unwrap();
+        let summary = serde_json::to_value(profiles.clone().public_summary()).unwrap();
+        let text = summary.to_string();
+        assert!(!text.contains("secret"));
+        assert!(!text.contains("private-"));
+        assert_eq!(
+            summary["executors"]["CODEX"]["DEFAULT"]["CODEX"]["model_reasoning_effort"],
+            "ultra"
+        );
+        assert_eq!(
+            summary["executors"]["CODEX"]["DEFAULT"]["CODEX"]["execution_mode"],
+            "goal"
+        );
+        assert_eq!(
+            summary["executors"]["CODEX"]["DEFAULT"]["CODEX"]["goal_max_concurrent_agents"],
+            0
+        );
+        let mut next = profiles.clone();
+        apply_recent_models(
+            &mut next,
+            RecentModelsPatch {
+                executor: BaseCodingAgent::Codex,
+                recently_used_models: Some(executors::profile::ExecutorRecentModels {
+                    models: vec!["test-model".into()],
+                    reasoning_by_model: HashMap::from([("test-model".into(), "max".into())]),
+                }),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            next.executors[&BaseCodingAgent::Codex].configurations,
+            profiles.executors[&BaseCodingAgent::Codex].configurations
+        );
+        assert!(serde_json::to_string(&next).unwrap().contains("env-secret"));
+    }
+
+    #[test]
+    fn legacy_raw_profile_write_without_revision_and_consent_is_rejected() {
+        assert!(serde_json::from_value::<ReplaceProfilesRequest>(json!({"executors":{}})).is_err());
+        assert!(serde_json::from_value::<UpdateMcpServersBody>(json!({"servers":{}})).is_err());
+        assert!(
+            !serde_json::from_value::<SensitiveProfileQuery>(json!({}))
+                .unwrap()
+                .confirmed_sensitive_read
+        );
+        assert!(
+            !serde_json::from_value::<McpServerQuery>(json!({"executor":"CODEX"}))
+                .unwrap()
+                .confirmed_sensitive_read
+        );
     }
 }
 

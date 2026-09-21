@@ -89,7 +89,36 @@ MCP実機受入はまだ未実施。接続確認を受入成功へ読み替え�
 
 ## ブランチとコミット
 
-第1弾は開始branchを使用する。後続branchは前段commitから作る。まだ実装commitはない。
+- 第1弾: `fix/merge-upstream-test` / `d4e305c3`。BP01〜BP05、関連unit/fixtureとformat/check/lint成功。MCPは五段階の最終コードで実施予定。
+- 第2弾: 第1弾commitから `fix/upstream-settings-safety` を作成。main/origin/mainは動かしていない。
+
+### 第2弾 — 設定・編集の安全性
+
+- BP08: 現行updateはgraph writeより前にSessionをINSERTする。production関数を通すSQLite trigger故障注入で、保存失敗後にSessionが0→1件となることを修正前に再現した。上流のrevision CASを移植し、LVKのSession working directory解決と利用契約guardを再利用して同一transactionへ収める。Task model変更は採用しない。
+- BP06: 現行settings discovery/diff、tool inventory、profile list/copy-previewがraw値を返す。safeな公開表示と明示的な高度編集を分離する必要がある。上流の高度編集廃止はそのまま採用しない。session-specific MCP overrideの適用経路は設定管理と別に維持する。
+- BP07: 現行SettingsHostContextは未知の明示Hostをlocalへfallbackし得る。選択identityを保持し、Host/provider/projectをまたぐ遅延応答を隔離する。任意remote discovery失敗でlocalを停止させない。
+
+実装:
+
+- Settings／Tools／profileの通常公開DTOを安全なsummaryへ分離。native全文・MCP定義・Skill本文は同意付きの明示取得とrevision照合を経由する。解析エラーに原文を含めない。高度編集は残し、日本語でも機密値取得の意味を説明する。
+- 非表示値をplaceholderとして保存しない。MCPは`preserve`／`replace`／`clear`、Skill契約編集は未読assetを保持する。設定profileはserver側capture・reference付きcopy/apply/rename/deleteへ変更し、秘密のenvや未知設定をブラウザ経由で再構成しない。
+- 既存`/api/info`のlaunch profile、`/profiles`、高度MCP編集も調査して保護。最近利用したmodelの更新は専用の狭いpatchとし、sanitized profile全体を保存してnative設定を消さない。
+- 同一service内のnative書込は共通lock、参照hashと書込直前の比較、atomic file replacementを使用。外部編集を観測した場合は拒否し、rollbackも外部変更を上書きしない。任意の外部editorに対するOSレベルの完全CAS／秘密管理サービスではない。
+- Host identityは未知でも維持。offline／discovery失敗は書込不可、localは任意remote discoveryの失敗と分離。scope変更で古いload結果を捨て、machine clientもdispatch直前に書込可否を照合する。Cancel policyは変更しない。
+- Workflowに非破壊の`revision` migration。graph更新CAS、必要Session INSERT、draft→readyを一つのtransactionで処理。失敗／409時は孤立Sessionを残さない。system owner専用Sessionの生成経路は変更しない。
+- 関連する既存不具合として、Codex設定descriptorのmax／ultra欠落、TOMLの通常table形式のenv mapを適用できない問題を修正。copy時はtarget providerで非対応の値を移植しない。
+
+検証:
+
+- `cargo test -p server --test workflow_routes`: 40 passed（CAS、保存失敗／Session INSERT失敗の原子性、system templateを含む）。migrationの旧schema fixture: 1 passed。
+- `cargo test -p executors --lib`: 280 passed、6既存ignored。safe serialization、明示読取、preserve/clear、revision競合、profile capture/copy/apply、未知値保持、rollback外部変更保護、MCP atomic writeを含む。
+- `cargo test -p server --lib settings_safety_tests`: 2 passed。launch profileのsafe summaryと既存Goal/ultra/parallel設定保持、recent-model patchを確認。
+- Vitest: 72 files / 402 passed。production hooks／panelsを使うPlaywright全体: 25 passed。追加3件はunknown Host非fallback、optional discovery failure下のlocal利用、遅延provider応答隔離、明示全文取得とrevision付き保存の競合。
+- 初回fixtureのprovider指定prop誤りと、変更前API名を呼ぶ追加unit testを修正して再実行した。fixture成功はMCP実機受入とは区別する。
+- 型はRustから生成。ts-rsのflatten出力で生じる行末空白はgeneratorで正規化し、生成物を手編集しない。
+- `pnpm run format`、`pnpm run check`、`pnpm run lint`、`pnpm run generate-types:check`成功。追加fixtureはweb-coreのPrettier設定でも整形。最終差分レビューでMCPのdiscovery値とhashの別読取を同一snapshotへまとめ、writerにもexpected revisionとcreate collision拒否を追加して回帰テスト済み。
+
+互換性: 設定公開APIはsafe DTOと明示write intentへ更新。旧clientの全文再送は黙って受理せず、更新版UIを使用する。DB内容と実際のユーザー設定はmigrationで書き換えない。Workflow editorの保存ACK／draft／Undo改善は第5弾でこのCASへ接続する。
 
 ## 最終受入の計画
 

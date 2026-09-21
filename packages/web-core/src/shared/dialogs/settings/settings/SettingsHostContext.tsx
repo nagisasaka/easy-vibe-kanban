@@ -3,13 +3,18 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { listRelayHosts } from '@/shared/lib/remoteApi';
-import { useAppRuntime, type AppRuntime } from '@/shared/hooks/useAppRuntime';
+import { useAppRuntime } from '@/shared/hooks/useAppRuntime';
+import {
+  initialSettingsHost,
+  canEditSettingsHost,
+} from '@/shared/lib/settingsHostPolicy';
 import { useAuth } from '@/shared/hooks/auth/useAuth';
 import { useHostId } from '@/shared/providers/HostIdProvider';
 import {
@@ -35,6 +40,8 @@ interface SettingsHostContextValue {
   hostsResolved: boolean;
   selectedHostId: SettingsHostTargetId | null;
   selectedHost: SettingsHostTarget | null;
+  canEdit: boolean;
+  discoveryFailed: boolean;
   setSelectedHostId: (hostId: SettingsHostTargetId) => void;
 }
 
@@ -66,31 +73,6 @@ function toLocalRuntimeTargets(
   ];
 }
 
-function getInitialHostId(
-  hosts: SettingsHostTarget[],
-  runtime: AppRuntime,
-  routeHostId: string | null,
-  initialHostId?: SettingsHostTargetId
-): SettingsHostTargetId | null {
-  if (initialHostId && hosts.some((host) => host.id === initialHostId)) {
-    return initialHostId;
-  }
-
-  if (routeHostId && hosts.some((host) => host.id === routeHostId)) {
-    return routeHostId;
-  }
-
-  if (runtime === 'local') {
-    return (
-      hosts.find((host) => host.id === 'local')?.id ?? hosts[0]?.id ?? null
-    );
-  }
-
-  return (
-    hosts.find((host) => host.status === 'online')?.id ?? hosts[0]?.id ?? null
-  );
-}
-
 export function SettingsHostProvider({
   initialHostId,
   children,
@@ -102,26 +84,28 @@ export function SettingsHostProvider({
   const runtime = useAppRuntime();
   const routeHostId = useHostId();
   const { isSignedIn } = useAuth();
-  const { data: localRemoteHosts } = useRemoteCloudHostsState();
-  const { data: relayHosts = [], isLoading: relayHostsLoading } = useQuery({
+  const { data: localRemoteHosts, isError: localRemoteHostsError } =
+    useRemoteCloudHostsState();
+  const {
+    data: relayHosts = [],
+    isLoading: relayHostsLoading,
+    isError: relayHostsError,
+  } = useQuery({
     queryKey: ['settings-dialog', 'relay-hosts'],
     queryFn: listRelayHosts,
     enabled: runtime === 'remote' && isSignedIn,
     staleTime: 30_000,
   });
-  const { data: pairedRelayHosts = [], isLoading: pairedRelayHostsLoading } =
-    useQuery({
-      queryKey: ['settings-dialog', 'paired-relay-hosts'],
-      queryFn: async () => {
-        try {
-          return await listPairedRelayHosts();
-        } catch {
-          return [];
-        }
-      },
-      enabled: runtime === 'remote' && isSignedIn,
-      staleTime: 5_000,
-    });
+  const {
+    data: pairedRelayHosts = [],
+    isLoading: pairedRelayHostsLoading,
+    isError: pairedRelayHostsError,
+  } = useQuery({
+    queryKey: ['settings-dialog', 'paired-relay-hosts'],
+    queryFn: listPairedRelayHosts,
+    enabled: runtime === 'remote' && isSignedIn,
+    staleTime: 5_000,
+  });
   const hostsResolved = useMemo(() => {
     if (runtime === 'local') {
       return true;
@@ -154,27 +138,33 @@ export function SettingsHostProvider({
   }, [localRemoteHosts?.hosts, pairedRelayHosts, relayHosts, runtime, t]);
 
   const [selectedHostId, setSelectedHostId] =
-    useState<SettingsHostTargetId | null>(null);
+    useState<SettingsHostTargetId | null>(() =>
+      initialSettingsHost([], runtime, routeHostId, initialHostId)
+    );
 
   useEffect(() => {
-    const nextHostId = getInitialHostId(
+    const nextHostId = initialSettingsHost(
       availableHosts,
       runtime,
       routeHostId,
       initialHostId
     );
 
-    setSelectedHostId((current) => {
-      if (current && availableHosts.some((host) => host.id === current)) {
-        return current;
-      }
-      return nextHostId;
-    });
+    setSelectedHostId((current) => current ?? nextHostId);
   }, [availableHosts, initialHostId, routeHostId, runtime]);
 
   const selectedHost = useMemo(
     () => availableHosts.find((host) => host.id === selectedHostId) ?? null,
     [availableHosts, selectedHostId]
+  );
+  const discoveryFailed =
+    runtime === 'local'
+      ? localRemoteHostsError || !!localRemoteHosts?.discoveryFailed
+      : relayHostsError || pairedRelayHostsError || !isSignedIn;
+  const canEdit = canEditSettingsHost(
+    selectedHost,
+    hostsResolved,
+    discoveryFailed
   );
 
   const value = useMemo<SettingsHostContextValue>(
@@ -183,9 +173,18 @@ export function SettingsHostProvider({
       hostsResolved,
       selectedHostId,
       selectedHost,
+      canEdit,
+      discoveryFailed,
       setSelectedHostId,
     }),
-    [availableHosts, hostsResolved, selectedHost, selectedHostId]
+    [
+      availableHosts,
+      hostsResolved,
+      selectedHost,
+      selectedHostId,
+      canEdit,
+      discoveryFailed,
+    ]
   );
 
   return (
@@ -207,13 +206,33 @@ export function useSettingsHost() {
 
 export function useSettingsMachineClient(): MachineClient | null {
   const runtime = useAppRuntime();
-  const { selectedHost } = useSettingsHost();
+  const { selectedHost, canEdit } = useSettingsHost();
+  const current = useRef({ selectedHost, canEdit });
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  current.current = { selectedHost, canEdit };
+  const targetId = selectedHost?.id;
 
   return useMemo(() => {
-    if (!selectedHost) {
+    const host = current.current.selectedHost;
+    if (!host) {
       return null;
     }
 
-    return createMachineClient(runtime, selectedHost);
-  }, [runtime, selectedHost]);
+    return createMachineClient(
+      runtime,
+      host,
+      () =>
+        mounted.current &&
+        current.current.canEdit &&
+        current.current.selectedHost?.id === targetId
+    );
+    // Machine identity is stable across status refreshes. The live guard above
+    // still rejects writes from stale callbacks after a switch or disconnect.
+  }, [runtime, targetId]);
 }

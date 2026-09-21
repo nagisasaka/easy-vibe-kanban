@@ -1,6 +1,9 @@
 // Import all necessary types from shared types
 
 import {
+  type ProfilesContent,
+  type ReplaceProfilesRequest,
+  type RecentModelsPatch,
   ApprovalStatus,
   ApiResponse,
   Config,
@@ -1232,7 +1235,10 @@ export const mcpServersApi = {
     query: McpServerQuery,
     hostId?: string | null
   ): Promise<GetMcpServerResponse> => {
-    const params = new URLSearchParams(query);
+    const params = new URLSearchParams({
+      executor: query.executor,
+      confirmed_sensitive_read: String(query.confirmed_sensitive_read),
+    });
     const response = await makeHostAwareRequest(
       `/api/mcp-config?${params.toString()}`,
       hostId
@@ -1244,7 +1250,10 @@ export const mcpServersApi = {
     data: UpdateMcpServersBody,
     hostId?: string | null
   ): Promise<void> => {
-    const params = new URLSearchParams(query);
+    const params = new URLSearchParams({
+      executor: query.executor,
+      confirmed_sensitive_read: String(query.confirmed_sensitive_read),
+    });
     // params.set('profile', profile);
     const response = await makeHostAwareRequest(
       `/api/mcp-config?${params.toString()}`,
@@ -1274,20 +1283,38 @@ export const mcpServersApi = {
 // Profiles API
 export const profilesApi = {
   load: async (
-    hostId?: string | null
-  ): Promise<{ content: string; path: string }> => {
-    const response = await makeHostAwareRequest('/api/profiles', hostId);
-    return handleApiResponse<{ content: string; path: string }>(response);
+    hostId?: string | null,
+    confirmedSensitiveRead = false
+  ): Promise<ProfilesContent> => {
+    const response = await makeHostAwareRequest(
+      `/api/profiles?confirmed_sensitive_read=${confirmedSensitiveRead}`,
+      hostId
+    );
+    return handleApiResponse<ProfilesContent>(response);
   },
-  save: async (content: string, hostId?: string | null): Promise<string> => {
+  save: async (
+    request: ReplaceProfilesRequest,
+    hostId?: string | null
+  ): Promise<ProfilesContent> => {
     const response = await makeHostAwareRequest('/api/profiles', hostId, {
       method: 'PUT',
-      body: content,
+      body: JSON.stringify(request),
       headers: {
         'Content-Type': 'application/json',
       },
     });
-    return handleApiResponse<string>(response);
+    return handleApiResponse<ProfilesContent>(response);
+  },
+  updateRecent: async (
+    data: RecentModelsPatch,
+    hostId?: string | null
+  ): Promise<void> => {
+    await handleApiResponse<void>(
+      await makeHostAwareRequest('/api/profiles/recent-models', hostId, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      })
+    );
   },
 };
 
@@ -1752,13 +1779,15 @@ export const agentsApi = {
   },
 
   getPresetOptions: async (
-    query: AgentPresetOptionsQuery
+    query: AgentPresetOptionsQuery,
+    hostId?: string | null
   ): Promise<ExecutorConfig> => {
     const params = new URLSearchParams();
     params.set('executor', query.executor);
     if (query.variant) params.set('variant', query.variant);
-    const response = await makeRequest(
-      `/api/agents/preset-options?${params.toString()}`
+    const response = await makeHostAwareRequest(
+      `/api/agents/preset-options?${params.toString()}`,
+      hostId
     );
     return handleApiResponse<ExecutorConfig>(response);
   },

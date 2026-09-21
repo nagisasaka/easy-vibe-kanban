@@ -5,6 +5,7 @@ import '../../../../packages/web-core/src/i18n/config';
 import './style.css';
 import { CardContextHarness } from './CardContextHarness';
 import { RuntimeInputHarness } from './RuntimeInputHarness';
+import { SettingsSafetyHarness } from './SettingsSafetyHarness';
 import {
   WORKFLOW_GRAPH_VERSION,
   createDefaultWorkflowGraph,
@@ -538,7 +539,11 @@ function TaskAttemptsHarness() {
 const mode = new URLSearchParams(window.location.search).get('mode');
 
 createRoot(document.getElementById('root')!).render(
-  mode === 'runtime-input' ? <RuntimeInputHarness /> : mode === 'card-context' ? (
+  mode === 'settings-safety' ? (
+    <SettingsSafetyHarness />
+  ) : mode === 'runtime-input' ? (
+    <RuntimeInputHarness />
+  ) : mode === 'card-context' ? (
     <CardContextHarness />
   ) : mode === 'entry' ? (
     <WorkflowEntryHarness />

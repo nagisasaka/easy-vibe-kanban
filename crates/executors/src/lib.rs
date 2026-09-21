@@ -3,6 +3,7 @@ pub mod agent_settings;
 pub mod agent_tools;
 pub mod approvals;
 pub mod command;
+pub mod config_write;
 pub mod env;
 pub mod executor_discovery;
 pub mod executors;

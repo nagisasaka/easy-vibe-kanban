@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { profilesApi } from '@/shared/lib/api';
 import { getHostRequestScopeQueryKey } from '@/shared/lib/hostRequestScope';
@@ -17,6 +17,8 @@ export type UseProfilesReturn = {
   isError: boolean;
   error: unknown;
   isSaving: boolean;
+  hasSensitiveValues: boolean;
+  reveal: () => void;
 
   // actions
   refetch: () => void;
@@ -26,22 +28,32 @@ export type UseProfilesReturn = {
 
 export function useProfiles(hostId?: string | null): UseProfilesReturn {
   const queryClient = useQueryClient();
-  const queryKey = ['profiles', getHostRequestScopeQueryKey(hostId)] as const;
+  const [readScope, setReadScope] = useState<string | null>(null);
+  const scope = getHostRequestScopeQueryKey(hostId);
+  const revealed = readScope === scope;
+  const queryKey = ['profiles', scope, revealed] as const;
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey,
-    queryFn: () => profilesApi.load(hostId),
+    queryFn: () => profilesApi.load(hostId, revealed),
     staleTime: 1000 * 60, // 1 minute cache
   });
 
   const { mutateAsync: saveMutation, isPending: isSaving } = useMutation({
-    mutationFn: (content: string) => profilesApi.save(content, hostId),
-    onSuccess: (_, content) => {
-      // Optimistically update cache with new content
-      queryClient.setQueryData<{ content: string; path: string }>(
-        queryKey,
-        (old) => (old ? { ...old, content } : old)
+    mutationFn: (content: string) => {
+      if (!data?.sensitive_values_included || !revealed)
+        throw new Error('Read launch profiles explicitly before editing.');
+      return profilesApi.save(
+        {
+          content,
+          expected_revision: data.revision,
+          confirmed_sensitive_read: true,
+        },
+        hostId
       );
+    },
+    onSuccess: (saved) => {
+      queryClient.setQueryData(queryKey, saved);
       void queryClient.invalidateQueries({
         queryKey: presetOptionsKeys.all,
       });
@@ -73,6 +85,8 @@ export function useProfiles(hostId?: string | null): UseProfilesReturn {
     isError,
     error,
     isSaving,
+    hasSensitiveValues: revealed && !!data?.sensitive_values_included,
+    reveal: () => setReadScope(scope),
     refetch,
     save,
     saveParsed,
@@ -83,9 +97,13 @@ export function useMachineProfiles(
   machineClient: MachineClient | null
 ): UseProfilesReturn {
   const queryClient = useQueryClient();
+  const [readScope, setReadScope] = useState<string | null>(null);
+  const scope = machineClient?.target.id ?? 'unselected';
+  const revealed = readScope === scope;
   const queryKey = [
     'profiles',
     ...(machineClient?.queryScopeKey ?? ['machine', 'unselected']),
+    revealed,
   ] as const;
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -95,7 +113,7 @@ export function useMachineProfiles(
         throw new Error('Machine client is required');
       }
 
-      return machineClient.loadProfiles();
+      return machineClient.loadProfiles(revealed);
     },
     enabled: machineClient != null,
     staleTime: 1000 * 60,
@@ -107,13 +125,16 @@ export function useMachineProfiles(
         throw new Error('Machine client is required');
       }
 
-      return machineClient.saveProfiles(content);
+      if (!data?.sensitive_values_included || !revealed)
+        throw new Error('Read launch profiles explicitly before editing.');
+      return machineClient.saveProfiles({
+        content,
+        expected_revision: data.revision,
+        confirmed_sensitive_read: true,
+      });
     },
-    onSuccess: (_, content) => {
-      queryClient.setQueryData<{ content: string; path: string }>(
-        queryKey,
-        (old) => (old ? { ...old, content } : old)
-      );
+    onSuccess: (saved) => {
+      queryClient.setQueryData(queryKey, saved);
       void queryClient.invalidateQueries({
         queryKey: presetOptionsKeys.all,
       });
@@ -145,6 +166,8 @@ export function useMachineProfiles(
     isError,
     error,
     isSaving,
+    hasSensitiveValues: revealed && !!data?.sensitive_values_included,
+    reveal: () => setReadScope(scope),
     refetch,
     save,
     saveParsed,

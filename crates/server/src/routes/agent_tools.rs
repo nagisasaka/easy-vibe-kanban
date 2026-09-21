@@ -7,9 +7,12 @@ use axum::{
     routing::{get, post},
 };
 use executors::agent_tools::{
-    AgentTool, AgentToolInventory, AgentToolLocator, AgentToolOperationError, AgentToolService,
-    CopyAgentToolRequest, CopyAgentToolResponse, CreateAgentToolRequest, RemoveAgentToolRequest,
-    ToggleAgentToolRequest, UpdateAgentToolRequest,
+    AgentToolDefinition, AgentToolLocator, AgentToolOperationError, AgentToolService,
+    CopyAgentToolRequest, RemoveAgentToolRequest, ToggleAgentToolRequest,
+    public_api::{
+        AgentToolInventoryView, AgentToolView, CopyAgentToolView, CreateAgentToolWriteRequest,
+        ReadAgentToolDefinitionRequest, UpdateAgentToolWriteRequest, public_tool_error,
+    },
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -24,6 +27,7 @@ pub fn router() -> Router<DeploymentImpl> {
         .route("/agent-tools/toggle", post(toggle))
         .route("/agent-tools/copy", post(copy))
         .route("/agent-tools/reveal", post(reveal))
+        .route("/agent-tools/read-definition", post(read_definition))
 }
 
 #[derive(Debug, Clone, Deserialize, TS)]
@@ -38,7 +42,7 @@ pub struct AgentToolRevealResponse {
 }
 
 fn service() -> Result<AgentToolService, AgentToolOperationError> {
-    AgentToolService::from_system().map_err(|error| error.operation_error(None, None))
+    AgentToolService::from_system().map_err(|error| public_tool_error(error, None, None))
 }
 
 fn project_path(value: Option<&str>) -> Option<&Path> {
@@ -49,16 +53,18 @@ fn operation_error(
     error: executors::agent_tools::AgentToolError,
     locator: &AgentToolLocator,
 ) -> AgentToolOperationError {
-    error.operation_error(Some(locator.provider), Some(locator.name.clone()))
+    public_tool_error(error, Some(locator.provider), Some(locator.name.clone()))
 }
 
 async fn discover(
     State(_deployment): State<DeploymentImpl>,
     Query(query): Query<AgentToolDiscoveryQuery>,
-) -> ResponseJson<ApiResponse<AgentToolInventory, AgentToolOperationError>> {
+) -> ResponseJson<ApiResponse<AgentToolInventoryView, AgentToolOperationError>> {
     match service() {
         Ok(service) => ResponseJson(ApiResponse::success(
-            service.discover(project_path(query.project_path.as_deref())),
+            service
+                .discover(project_path(query.project_path.as_deref()))
+                .into(),
         )),
         Err(error) => ResponseJson(ApiResponse::error_with_data(error)),
     }
@@ -66,12 +72,12 @@ async fn discover(
 
 async fn create(
     State(_deployment): State<DeploymentImpl>,
-    Json(request): Json<CreateAgentToolRequest>,
-) -> ResponseJson<ApiResponse<AgentTool, AgentToolOperationError>> {
+    Json(request): Json<CreateAgentToolWriteRequest>,
+) -> ResponseJson<ApiResponse<AgentToolView, AgentToolOperationError>> {
     let locator = request.target.clone();
     match service().and_then(|service| {
         service
-            .create(request)
+            .create_from_write(request)
             .map_err(|error| operation_error(error, &locator))
     }) {
         Ok(item) => ResponseJson(ApiResponse::success(item)),
@@ -81,12 +87,12 @@ async fn create(
 
 async fn update(
     State(_deployment): State<DeploymentImpl>,
-    Json(request): Json<UpdateAgentToolRequest>,
-) -> ResponseJson<ApiResponse<AgentTool, AgentToolOperationError>> {
+    Json(request): Json<UpdateAgentToolWriteRequest>,
+) -> ResponseJson<ApiResponse<AgentToolView, AgentToolOperationError>> {
     let locator = request.target.clone();
     match service().and_then(|service| {
         service
-            .update(request)
+            .update_from_write(request)
             .map_err(|error| operation_error(error, &locator))
     }) {
         Ok(item) => ResponseJson(ApiResponse::success(item)),
@@ -112,11 +118,12 @@ async fn remove(
 async fn toggle(
     State(_deployment): State<DeploymentImpl>,
     Json(request): Json<ToggleAgentToolRequest>,
-) -> ResponseJson<ApiResponse<AgentTool, AgentToolOperationError>> {
+) -> ResponseJson<ApiResponse<AgentToolView, AgentToolOperationError>> {
     let locator = request.target.clone();
     match service().and_then(|service| {
         service
             .set_enabled(request)
+            .map(Into::into)
             .map_err(|error| operation_error(error, &locator))
     }) {
         Ok(item) => ResponseJson(ApiResponse::success(item)),
@@ -127,11 +134,12 @@ async fn toggle(
 async fn copy(
     State(_deployment): State<DeploymentImpl>,
     Json(request): Json<CopyAgentToolRequest>,
-) -> ResponseJson<ApiResponse<CopyAgentToolResponse, AgentToolOperationError>> {
+) -> ResponseJson<ApiResponse<CopyAgentToolView, AgentToolOperationError>> {
     let locator = request.source.clone();
     match service().and_then(|service| {
         service
             .copy(request)
+            .map(Into::into)
             .map_err(|error| operation_error(error, &locator))
     }) {
         Ok(item) => ResponseJson(ApiResponse::success(item)),
@@ -151,6 +159,21 @@ async fn reveal(
         Ok(item) => ResponseJson(ApiResponse::success(AgentToolRevealResponse {
             native_path: item.native_path,
         })),
+        Err(error) => ResponseJson(ApiResponse::error_with_data(error)),
+    }
+}
+
+async fn read_definition(
+    State(_deployment): State<DeploymentImpl>,
+    Json(request): Json<ReadAgentToolDefinitionRequest>,
+) -> ResponseJson<ApiResponse<AgentToolDefinition, AgentToolOperationError>> {
+    let locator = request.target.clone();
+    match service().and_then(|service| {
+        service
+            .read_definition(request)
+            .map_err(|error| operation_error(error, &locator))
+    }) {
+        Ok(definition) => ResponseJson(ApiResponse::success(definition)),
         Err(error) => ResponseJson(ApiResponse::error_with_data(error)),
     }
 }

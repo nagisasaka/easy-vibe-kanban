@@ -71,6 +71,8 @@ pub struct Workflow {
     pub name: String,
     pub description: Option<String>,
     pub graph_json: String,
+    #[ts(type = "number")]
+    pub revision: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -209,6 +211,37 @@ pub struct UpdateNodeExecution {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn revision_migration_retains_existing_graphs() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let full = sqlx::migrate!("./migrations");
+        let mut previous = sqlx::migrate!("./migrations");
+        previous.migrations = std::borrow::Cow::Owned(
+            previous
+                .iter()
+                .filter(|m| m.version < 20260922000000)
+                .cloned()
+                .collect(),
+        );
+        previous.run(&pool).await.unwrap();
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO workflows(id,source,name,graph_json) VALUES(?,'system','Preserved','{\"version\":1}')")
+            .bind(id).execute(&pool).await.unwrap();
+        full.run(&pool).await.unwrap();
+        full.run(&pool).await.unwrap();
+        let row: (String, String, i64) =
+            sqlx::query_as("SELECT name, graph_json, revision FROM workflows WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(row, ("Preserved".into(), "{\"version\":1}".into(), 0));
+    }
 
     #[test]
     fn workflow_run_status_serializes_with_snake_case_names() {

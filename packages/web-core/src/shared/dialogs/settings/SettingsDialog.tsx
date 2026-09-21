@@ -53,6 +53,8 @@ function SettingsDialogNavigation({
     selectedHost,
     selectedHostId,
     setSelectedHostId,
+    canEdit,
+    discoveryFailed,
   } = useSettingsHost();
   const hostSections = SETTINGS_SECTION_DEFINITIONS.filter(
     (section) => section.group === 'host' && section.showInNavigation !== false
@@ -65,6 +67,9 @@ function SettingsDialogNavigation({
     value: host.id,
     label: host.status != null ? `${host.label} (${host.status})` : host.label,
   }));
+  if (selectedHostId && !selectedHost) {
+    hostOptions.unshift({ value: selectedHostId, label: selectedHostId });
+  }
   const hostSettingsDisabled = !hostsResolved || !selectedHost;
   const hostHint = !hostsResolved
     ? t('settings.general.loading')
@@ -134,6 +139,16 @@ function SettingsDialogNavigation({
           {hostSettingsDisabled && (
             <p className="mt-2 px-1 text-xs text-low">{hostHint}</p>
           )}
+          {selectedHostId && !canEdit && hostsResolved && (
+            <p role="status" className="mt-2 px-1 text-xs text-warning">
+              {t(
+                discoveryFailed
+                  ? 'settings.hostPicker.discoveryFailed'
+                  : 'settings.hostPicker.unavailableHint',
+                { host: selectedHostId }
+              )}
+            </p>
+          )}
         </div>
         <div className="flex flex-col gap-1">
           {hostSections.map((section) => renderSectionButton(section.id))}
@@ -160,7 +175,13 @@ function SettingsDialogContent({
 }: SettingsDialogContentProps) {
   const { t } = useTranslation('settings');
   const { isDirty } = useSettingsDirty();
-  const { availableHosts, hostsResolved, selectedHost } = useSettingsHost();
+  const {
+    availableHosts,
+    hostsResolved,
+    selectedHost,
+    selectedHostId,
+    canEdit,
+  } = useSettingsHost();
 
   const resolvedInitialSection = useMemo<SettingsSectionType>(() => {
     if (
@@ -172,12 +193,12 @@ function SettingsDialogContent({
       return initialSection;
     }
 
-    if (hostsResolved && availableHosts.length === 0) {
+    if (hostsResolved && availableHosts.length === 0 && !selectedHostId) {
       return 'organizations';
     }
 
     return 'general';
-  }, [availableHosts.length, hostsResolved, initialSection]);
+  }, [availableHosts.length, hostsResolved, initialSection, selectedHostId]);
 
   const [activeSection, setActiveSection] = useState<SettingsSectionType>(
     resolvedInitialSection
@@ -221,11 +242,12 @@ function SettingsDialogContent({
     if (
       hostsResolved &&
       isHostSpecificSettingsSection(activeSection) &&
-      availableHosts.length === 0
+      availableHosts.length === 0 &&
+      !selectedHostId
     ) {
       setActiveSection('organizations');
     }
-  }, [activeSection, availableHosts.length, hostsResolved]);
+  }, [activeSection, availableHosts.length, hostsResolved, selectedHostId]);
 
   const handleMobileBack = () => {
     setMobileShowContent(false);
@@ -333,7 +355,12 @@ function SettingsDialogContent({
             <div className="flex-1 overflow-y-auto">
               {isHostSpecificSettingsSection(activeSection) ? (
                 selectedHost ? (
-                  <SettingsMachineUserSystemProvider>
+                  <SettingsMachineUserSystemProvider key={selectedHostId}>
+                    {!canEdit && (
+                      <p role="status" className="p-4 text-warning text-sm">
+                        {t('settings.hostPicker.readOnlyHint')}
+                      </p>
+                    )}
                     <SettingsSection
                       type={activeSection}
                       onClose={handleCloseWithConfirmation}
@@ -343,6 +370,12 @@ function SettingsDialogContent({
                 ) : !hostsResolved ? (
                   <div className="px-6 py-8 text-sm text-low">
                     {t('settings.general.loading')}
+                  </div>
+                ) : selectedHostId ? (
+                  <div role="alert" className="px-6 py-8 text-sm text-warning">
+                    {t('settings.hostPicker.unavailableHint', {
+                      host: selectedHostId,
+                    })}
                   </div>
                 ) : availableHosts.length > 0 ? (
                   <div className="px-6 py-8 text-sm text-low">

@@ -63,6 +63,8 @@ pub struct WorkflowTemplateResponse {
     pub name: String,
     pub description: Option<String>,
     pub graph_json: String,
+    #[ts(type = "number")]
+    pub revision: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -81,6 +83,8 @@ pub struct CreateWorkflowRequest {
 
 #[derive(Debug, Clone, Deserialize, TS)]
 pub struct UpdateWorkflowRequest {
+    #[ts(type = "number")]
+    pub expected_revision: i64,
     pub name: Option<String>,
     pub description: Option<String>,
     pub graph_json: Option<String>,
@@ -558,7 +562,7 @@ pub async fn list_project_workflows(
 
     let mut query = QueryBuilder::<Sqlite>::new(
         r#"
-        SELECT id, source, project_id, name, description, graph_json, created_at, updated_at
+        SELECT id, source, project_id, name, description, graph_json, revision, created_at, updated_at
         FROM workflows
         WHERE (
             (source = 'system' AND id IN (
@@ -699,9 +703,7 @@ where
     let workflow = get_workflow_template(pool, attempt.workflow_id).await?;
     let mut graph: WorkflowGraph = serde_json::from_str(&workflow.graph_json)
         .map_err(|err| ApiError::BadRequest(format!("Invalid workflow graph JSON: {err}")))?;
-    if ensure_agent_node_sessions(pool, workspace_id, &mut graph).await? {
-        persist_workflow_graph(pool, attempt.workflow_id, &graph).await?;
-    }
+    persist_workflow_graph(pool, &workflow, workspace_id, &mut graph).await?;
 
     update_workflow_attempt_runtime(
         pool,
@@ -844,28 +846,112 @@ pub async fn list_workflow_attempts_for_project(
 
 pub async fn persist_workflow_graph(
     pool: &SqlitePool,
-    workflow_id: Uuid,
-    graph: &WorkflowGraph,
+    workflow: &WorkflowTemplateResponse,
+    workspace_id: Uuid,
+    graph: &mut WorkflowGraph,
 ) -> Result<(), ApiError> {
     validate_graph(graph)
         .map_err(|err| ApiError::BadRequest(format!("Invalid workflow graph: {err}")))?;
+    let mut prepared = graph.clone();
+    let pending = prepare_agent_node_sessions(pool, workspace_id, &mut prepared).await?;
+    // A concurrent edit must not disappear even if no new Session was needed.
+    // The saved graph and the run snapshot retain the same source revision.
+    commit_workflow_edit(pool, workflow, workflow.revision, &prepared, pending).await?;
+    *graph = prepared;
+    Ok(())
+}
+
+struct PendingWorkflowSession {
+    id: Uuid,
+    workspace_id: Uuid,
+    name: String,
+    working_dir: Option<String>,
+}
+
+async fn prepare_agent_node_sessions(
+    pool: &SqlitePool,
+    workspace_id: Uuid,
+    graph: &mut WorkflowGraph,
+) -> Result<Vec<PendingWorkflowSession>, ApiError> {
+    db::models::workspace_usage::require_interactive(pool, workspace_id).await?;
+    let working_dir = Session::resolve_agent_working_dir(pool, workspace_id).await?;
+    let mut pending = Vec::new();
+    for node in graph
+        .nodes
+        .iter_mut()
+        .filter(|node| node.kind == WorkflowNodeKind::Agent)
+    {
+        if node.data.session_id.is_some() {
+            continue;
+        }
+        let id = Uuid::new_v4();
+        let label = node
+            .data
+            .display_name
+            .as_deref()
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or(&node.id);
+        pending.push(PendingWorkflowSession {
+            id,
+            workspace_id,
+            name: format!("Workflow {label}"),
+            working_dir: working_dir.clone(),
+        });
+        node.data.session_id = Some(id.to_string());
+    }
+    Ok(pending)
+}
+
+async fn commit_workflow_edit(
+    pool: &SqlitePool,
+    desired: &WorkflowTemplateResponse,
+    expected_revision: i64,
+    graph: &WorkflowGraph,
+    pending: Vec<PendingWorkflowSession>,
+) -> Result<WorkflowTemplateResponse, ApiError> {
     let graph_json = serde_json::to_string(graph)
         .map_err(|err| ApiError::BadRequest(format!("Invalid workflow graph JSON: {err}")))?;
-
-    sqlx::query(
-        r#"
-        UPDATE workflows
-        SET graph_json = ?,
-            updated_at = datetime('now', 'subsec')
-        WHERE id = ?
-        "#,
-    )
-    .bind(graph_json)
-    .bind(workflow_id)
-    .execute(pool)
-    .await?;
-
-    Ok(())
+    let mut tx = pool.begin().await?;
+    // Compare-and-swap is the first write: no Session can be orphaned by a
+    // competing editor. Any later Session failure rolls this update back too.
+    let row = sqlx::query(
+        "UPDATE workflows SET name = ?, description = ?, graph_json = ?, \
+         revision = revision + 1, updated_at = datetime('now', 'subsec') \
+         WHERE id = ? AND revision = ? \
+         RETURNING id, source, project_id, name, description, graph_json, revision, created_at, updated_at",
+    ).bind(&desired.name).bind(&desired.description).bind(graph_json)
+        .bind(desired.id).bind(expected_revision).fetch_optional(&mut *tx).await?;
+    let row = row.ok_or_else(|| ApiError::Conflict(format!(
+        "Workflow {} changed since revision {}. Your draft was not saved; reload or reconcile before retrying.",
+        desired.id, expected_revision,
+    )))?;
+    let updated = workflow_template_from_row(&row)?;
+    for session in pending {
+        let usage: Option<String> = sqlx::query_scalar("SELECT usage FROM workspaces WHERE id = ?")
+            .bind(session.workspace_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+        if usage.as_deref() != Some("interactive") {
+            return Err(ApiError::Conflict(
+                "Workflow Workspace is not available for interactive editing".into(),
+            ));
+        }
+        Session::create_with_working_dir(
+            &mut tx,
+            &CreateSession {
+                executor: None,
+                name: Some(session.name),
+            },
+            session.id,
+            session.workspace_id,
+            session.working_dir,
+        )
+        .await?;
+    }
+    sqlx::query("UPDATE workflow_attempts SET status = 'ready', updated_at = datetime('now', 'subsec') WHERE workflow_id = ? AND status = 'draft'")
+        .bind(desired.id).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(updated)
 }
 
 pub async fn list_workflow_attempts_for_issue(
@@ -1162,46 +1248,27 @@ pub async fn update_workflow_template(
         ));
     }
 
-    let graph_json = if let Some(graph_json) = request.graph_json {
-        let graph = parse_graph_json(&graph_json)?;
-        if let Some(workflow_attempt) = workflow_attempt_by_workflow_id(pool, workflow_id).await? {
-            if let Some(workspace_id) = workflow_attempt.workspace_id {
-                let mut graph = graph;
-                ensure_agent_node_sessions(pool, workspace_id, &mut graph).await?;
-                serde_json::to_string(&graph).map_err(|err| {
-                    ApiError::BadRequest(format!("Invalid workflow graph JSON: {err}"))
-                })?
-            } else {
-                graph_json
-            }
+    let mut graph = parse_graph_json(
+        request
+            .graph_json
+            .as_deref()
+            .unwrap_or(&existing.graph_json),
+    )?;
+    let pending = if let Some(attempt) = workflow_attempt_by_workflow_id(pool, workflow_id).await? {
+        if let Some(workspace_id) = attempt.workspace_id {
+            prepare_agent_node_sessions(pool, workspace_id, &mut graph).await?
         } else {
-            graph_json
+            Vec::new()
         }
     } else {
-        existing.graph_json
+        Vec::new()
     };
-
-    sqlx::query(
-        r#"
-        UPDATE workflows
-        SET name = ?, description = ?, graph_json = ?, updated_at = datetime('now', 'subsec')
-        WHERE id = ?
-        "#,
-    )
-    .bind(request.name.unwrap_or(existing.name))
-    .bind(request.description.or(existing.description))
-    .bind(graph_json)
-    .bind(workflow_id)
-    .execute(pool)
-    .await?;
-
-    if let Some(workflow_attempt) = workflow_attempt_by_workflow_id(pool, workflow_id).await? {
-        mark_workflow_attempt_ready(pool, workflow_attempt.id).await?;
-    }
-
-    workflow_by_id(pool, workflow_id)
-        .await?
-        .ok_or_else(|| ApiError::BadRequest("Workflow not found after update".to_string()))
+    let desired = WorkflowTemplateResponse {
+        name: request.name.unwrap_or_else(|| existing.name.clone()),
+        description: request.description.or_else(|| existing.description.clone()),
+        ..existing
+    };
+    commit_workflow_edit(pool, &desired, request.expected_revision, &graph, pending).await
 }
 
 pub async fn delete_workflow_template(
@@ -1262,7 +1329,7 @@ async fn list_all_workflows(pool: &SqlitePool) -> Result<Vec<WorkflowTemplateRes
 
     let mut query = QueryBuilder::<Sqlite>::new(
         r#"
-        SELECT id, source, project_id, name, description, graph_json, created_at, updated_at
+        SELECT id, source, project_id, name, description, graph_json, revision, created_at, updated_at
         FROM workflows
         WHERE (
             (source = 'system' AND id IN (
@@ -1299,7 +1366,7 @@ async fn workflow_by_id(
 ) -> Result<Option<WorkflowTemplateResponse>, ApiError> {
     let row = sqlx::query(
         r#"
-        SELECT id, source, project_id, name, description, graph_json, created_at, updated_at
+        SELECT id, source, project_id, name, description, graph_json, revision, created_at, updated_at
         FROM workflows
         WHERE id = ?
         "#,
@@ -1335,6 +1402,7 @@ async fn ensure_system_workflows(pool: &SqlitePool) -> Result<(), ApiError> {
                 name = excluded.name,
                 description = excluded.description,
                 graph_json = excluded.graph_json,
+                revision = workflows.revision + 1,
                 updated_at = datetime('now', 'subsec')
             WHERE
                 workflows.source != excluded.source
@@ -1467,6 +1535,7 @@ fn workflow_template_from_row(
         name: row.try_get("name")?,
         description: row.try_get("description")?,
         graph_json: row.try_get("graph_json")?,
+        revision: row.try_get("revision")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })

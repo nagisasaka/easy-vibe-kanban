@@ -347,6 +347,7 @@ export function WorkflowTemplateEditorPage({
             name: localDraft.name,
             description: localDraft.issueDescription ?? null,
             graph_json: localDraft.graphJson,
+            revision: 0,
             created_at: localDraft.createdAt,
             updated_at: localDraft.createdAt,
           }
@@ -458,6 +459,7 @@ export function WorkflowTemplateEditorPage({
     const updatedTemplate = await updateTemplate({
       workflowId,
       payload: {
+        expected_revision: template!.revision,
         name,
         description,
         graph_json: JSON.stringify(nextGraph),
