@@ -81,6 +81,13 @@ export function useWorkflowTemplateMutations() {
       workflowId: string;
       payload: UpdateWorkflowRequest;
     }) => workflowApi.update(workflowId, payload),
+    onError: (_error, variables) => {
+      // Refresh the conflicting baseline, without replacing the editor's dirty
+      // draft or its original expected revision.
+      void queryClient.invalidateQueries({
+        queryKey: workflowTemplateQueryKeys.detail(variables.workflowId),
+      });
+    },
     onSuccess: (data) => {
       void queryClient.invalidateQueries({
         queryKey: workflowTemplateQueryKeys.all,

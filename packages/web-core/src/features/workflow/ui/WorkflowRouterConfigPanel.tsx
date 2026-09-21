@@ -36,6 +36,7 @@ export interface WorkflowRouterConfigPanelProps {
   error?: string | null;
   onClose: () => void;
   onSave: (executorConfig: ExecutorConfig) => void;
+  onDraftChange: (executorConfig: ExecutorConfig) => void;
 }
 
 export function WorkflowRouterConfigPanel({
@@ -45,6 +46,7 @@ export function WorkflowRouterConfigPanel({
   error,
   onClose,
   onSave,
+  onDraftChange,
 }: WorkflowRouterConfigPanelProps) {
   const { t } = useTranslation('common');
   const { profiles, config } = useUserSystem();
@@ -75,6 +77,8 @@ export function WorkflowRouterConfigPanel({
     scratchConfig: storedExecutorConfig,
     configExecutorProfile: config?.executor_profile,
     hiddenAgents: config?.hidden_agents,
+    onPersist: onDraftChange,
+    controlled: true,
   });
 
   const policyExecutorSource = useMemo(() => {

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "npm version to publish, for example 0.1.44-easy.1"
+        description: "npm version: stable (0.1.44), beta (0.1.44-beta.1), or easy (0.1.44-easy.1)"
         required: true
         type: string
       npm_tag:
@@ -60,12 +60,7 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          node -e "
-            const version = process.env.VERSION;
-            if (!/^[0-9]+\.[0-9]+\.[0-9]+-easy\.[0-9]+$/.test(version)) {
-              throw new Error('Version must look like 0.1.44-easy.1');
-            }
-          "
+          node scripts/validate-npm-version.cjs
           if npm view "easy-vibe-kanban@$VERSION" version --registry https://registry.npmjs.org/ >/dev/null 2>&1; then
             echo "easy-vibe-kanban@$VERSION already exists on npm."
             exit 1

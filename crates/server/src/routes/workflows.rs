@@ -101,6 +101,9 @@ pub struct TriggerWorkflowRequest {
 #[derive(Debug, Clone, Deserialize, TS)]
 pub struct CreateWorkflowAttemptRequest {
     pub name: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub description: Option<String>,
     pub graph_json: String,
     #[serde(default)]
     #[ts(optional)]
@@ -646,10 +649,12 @@ pub async fn create_issue_workflow_attempt(
         project_id,
         CreateWorkflowRequest {
             name: name.clone(),
-            description: Some(
-                "Issue-bound workflow attempt backing graph. Hidden from template lists."
-                    .to_string(),
-            ),
+            description: request.description.or_else(|| {
+                Some(
+                    "Issue-bound workflow attempt backing graph. Hidden from template lists."
+                        .to_string(),
+                )
+            }),
             graph_json: request.graph_json,
         },
     )

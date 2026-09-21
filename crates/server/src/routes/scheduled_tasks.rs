@@ -455,6 +455,7 @@ async fn dispatch_workflow_scheduled_task(
         task.project_id,
         task.context_issue_id,
         CreateWorkflowAttemptRequest {
+            description: workflow.description.clone(),
             name: Some(task.name.clone().unwrap_or_else(|| workflow.name.clone())),
             graph_json: instantiate_workflow_template_graph(&workflow.graph_json)?,
             repos: None,
@@ -1603,6 +1604,13 @@ mod tests {
                 .await
                 .expect("create scheduled task test schema");
         }
+
+        sqlx::raw_sql(include_str!(
+            "../../../db/migrations/20260922000000_workflow_revision.sql"
+        ))
+        .execute(&pool)
+        .await
+        .expect("apply production workflow revision migration");
 
         pool
     }

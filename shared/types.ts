@@ -352,7 +352,7 @@ export type UpdateWorkflowRequest = { expected_revision: number, name: string | 
 
 export type TriggerWorkflowRequest = { issue_id: string, workspace_id: string | null, trigger_source: string, input_text: string, };
 
-export type CreateWorkflowAttemptRequest = { name: string | null, graph_json: string, repos?: Array<DraftWorkspaceRepo>, };
+export type CreateWorkflowAttemptRequest = { name: string | null, description?: string, graph_json: string, repos?: Array<DraftWorkspaceRepo>, };
 
 export type RunWorkflowAttemptRequest = { workspace_id: string | null, trigger_source: string, input_text: string, repos?: Array<DraftWorkspaceRepo>, };
 

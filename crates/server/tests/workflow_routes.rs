@@ -1372,6 +1372,7 @@ async fn create_workflow_attempt_creates_issue_bound_draft() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: Some("Keep the editor description".to_string()),
             name: Some("Workflow attempt".to_string()),
             graph_json: valid_graph_json(),
             repos: None,
@@ -1385,6 +1386,13 @@ async fn create_workflow_attempt_creates_issue_bound_draft() {
     assert_eq!(attempt.status, WorkflowAttemptStatus::Draft);
     assert!(attempt.latest_run_id.is_none());
     assert!(attempt.workspace_id.is_none());
+    let template = server::routes::workflows::get_workflow_template(&pool, attempt.workflow_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        template.description.as_deref(),
+        Some("Keep the editor description")
+    );
 }
 
 #[tokio::test]
@@ -1403,6 +1411,7 @@ async fn create_workflow_attempt_with_resources_binds_ready_workspace() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: Some("Workflow attempt".to_string()),
             graph_json: valid_graph_json(),
             repos: Some(vec![DraftWorkspaceRepo {
@@ -1443,6 +1452,7 @@ async fn list_project_workflows_excludes_attempt_owned_backing_workflows() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: Some("Hidden attempt graph".to_string()),
             graph_json: valid_graph_json(),
             repos: None,
@@ -1476,6 +1486,7 @@ async fn workflow_attempt_can_be_resolved_from_backing_workflow() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: Some("Canvas-owned attempt".to_string()),
             graph_json: valid_graph_json(),
             repos: None,
@@ -1507,6 +1518,7 @@ async fn delete_workflow_attempt_removes_backing_graph_runs_and_nodes() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: Some("Delete me".to_string()),
             graph_json: valid_graph_json(),
             repos: None,
@@ -1597,6 +1609,7 @@ async fn workflow_attempt_create_rejects_issue_from_another_project() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: Some("Invalid".to_string()),
             graph_json: valid_graph_json(),
             repos: None,
@@ -1733,6 +1746,7 @@ async fn workflow_save_failure_does_not_leave_orphan_sessions() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: None,
             graph_json: valid_graph_json(),
             repos: None,
@@ -1785,6 +1799,7 @@ async fn workflow_revision_conflict_preserves_graph_and_sessions() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: None,
             graph_json: valid_graph_json(),
             repos: None,
@@ -2016,6 +2031,7 @@ async fn running_workflow_attempt_updates_latest_run_workspace_and_status() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: Some("Attempt run".to_string()),
             graph_json: valid_graph_json(),
             repos: None,
@@ -2078,6 +2094,7 @@ async fn canceling_workflow_attempt_syncs_attempt_status() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: Some("Cancel attempt".to_string()),
             graph_json: agent_graph_json(),
             repos: None,

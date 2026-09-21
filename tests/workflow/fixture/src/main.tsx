@@ -7,6 +7,7 @@ import { CardContextHarness } from './CardContextHarness';
 import { RuntimeInputHarness } from './RuntimeInputHarness';
 import { SettingsSafetyHarness } from './SettingsSafetyHarness';
 import { RouteLoadingHarness } from './RouteLoadingHarness';
+import { WorkflowDraftHarness } from './WorkflowDraftHarness';
 import {
   WORKFLOW_GRAPH_VERSION,
   createDefaultWorkflowGraph,
@@ -540,7 +541,9 @@ function TaskAttemptsHarness() {
 const mode = new URLSearchParams(window.location.search).get('mode');
 
 createRoot(document.getElementById('root')!).render(
-  mode === 'route-loading' ? (
+  mode === 'workflow-draft' ? (
+    <WorkflowDraftHarness />
+  ) : mode === 'route-loading' ? (
     <RouteLoadingHarness />
   ) : mode === 'settings-safety' ? (
     <SettingsSafetyHarness />

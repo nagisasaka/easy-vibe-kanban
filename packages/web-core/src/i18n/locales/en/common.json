@@ -374,7 +374,25 @@
     },
     "draft": {
       "name": "Workflow attempt for {{title}}",
-      "untitledTask": "Untitled task"
+      "untitledTask": "Untitled task",
+      "undo": "Undo workflow edit (Ctrl/Cmd+Z)",
+      "redo": "Redo workflow edit (Ctrl/Cmd+Shift+Z)",
+      "leaveTitle": "Leave with unsaved workflow changes?",
+      "leaveDescription": "Save the current draft, discard it, or continue editing. A failed save will not discard your changes.",
+      "keepEditing": "Continue editing",
+      "discardLeave": "Discard and leave",
+      "saveLeave": "Save and leave",
+      "saveUnavailable": "The workflow cannot be saved while another save is pending or the editor is read-only.",
+      "saveFailed": "Saving failed or newer changes remain unsaved. Your draft is retained.",
+      "retry": "Retry loading",
+      "newerChanges": "The submitted version was saved. Newer edits are still unsaved; save them before running or leaving.",
+      "conflict": "Another editor saved a newer version. Your draft is retained. Copy any needed changes before discarding this draft to load the latest version.",
+      "unsaved": "Unsaved workflow changes",
+      "storageFailed": "This tab could not store the draft. Keep this page open and save or copy your changes.",
+      "cachedReadOnly": "Could not refresh this workflow. The cached draft is visible, but editing and execution are disabled.",
+      "discardTitle": "Discard the local draft?",
+      "discardDescription": "This replaces your draft and undo history with the latest loaded server version. Copy anything you want to keep first.",
+      "discard": "Discard draft"
     },
     "defaultGraph": {
       "familiarizeLabel": "Understand project",

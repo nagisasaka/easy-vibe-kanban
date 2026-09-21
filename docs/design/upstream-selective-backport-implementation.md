@@ -183,3 +183,28 @@ MCPのUI操作記録、run／session／workflow／integration ID、source OID、
 第4弾最終再実行: executor 288 passed / 6既存ignored、resolver 5 passed、frontend HTTP 1 passed。`pnpm run check`と`pnpm run lint`成功。local／remote development buildも成功し、error表示を含むentryはそれぞれ1,518,982 / 474,355 bytes、3,136,498 / 968,469 bytes（JS / gzip）。fixtureはprovider資格情報・有料呼出しを使わない。最終MCP受入はまだ未実施。
 
 `pnpm run generate-types:check`も成功し、生成型／schemaに追加差分なし。stage差分レビューで旧mapperのdecoder互換性とtool展開後のreplay cursorを確認・修正し、再実行済み。
+
+第4弾commit: `2ce8cf132f9886fb29e2d84e466e255dd4123992`、branch `fix/upstream-compatibility`。
+
+### 第5弾 — 実装方針（進行中）
+
+作業branch `fix/upstream-workflow-editing` は第4弾commitから作成。BP16〜18は上流のauthoring framework／Canvasを移植せず、既存Workflow editorへimmutable save snapshot、元revisionを保持するtab-local draft、離脱確認、bounded Undo/Redoを追加する。workflow APIは既存のlocal hostScope:noneであり、relay HostのAPIを仮定しない。履歴はgraph全fieldを保持し、保存時にserverが割り当てたSession IDだけを新しい編集と履歴へ反映する。右panelの入力もdraftに含め、system template／取得エラー時cached表示を編集可能にしない。
+
+BP19は既存publish workflowにeasy限定validatorがあるため適用。stable／beta／easyの入力validationと説明のみ変更し、実validatorのローカルテストを追加する。Actions／発行／package version変更は行わない。
+
+関連する既存不具合: 新規Attemptの説明入力がcreate requestに存在せず固定説明へ置換された。optional descriptionを既存requestへ追加し、未指定の互換動作を維持する。型はRustから生成する。まだ本段階の検証完了とは扱わない。
+
+第5弾の段階実装・検証:
+
+- BP16: 元revisionと編集version付きimmutable snapshotを保存し、遅いACKは送信後の編集を消さない。dirty時のrefetchは元revisionを保持し、409は自動上書きせず最新baselineを再取得する。Sessionのserver割当IDのみ新しい編集と履歴へ合成する。tab-local sessionStorageへのACKを同期記録し、保存直後の離脱でも古いdraftを復活させない。storage失敗を表示し、保存／破棄／継続を選べる。target変更時はeditorをremountして遅い応答を隔離する。
+- BP17: graph全fieldのsnapshotによるUndo/Redoを既存Canvasへ接続。最大64状態、各stackはUTF-16 2Mi code units以内で古い履歴だけを落とし、編集中graphにはこの上限を課さない。Agent／Router panelの入力もgraph draftへ移し、設定選択は親draftを正とする。input／textarea／contenteditableのnative Undoを奪わない。実行やGitを巻き戻さない。
+- BP18: dirty／conflict／cached read-only／保存失敗をEN/JAで表示。離脱dialog内でも保存失敗を読めるようにし、編集継続で元focusへ戻す。system templateと取得失敗時のcached graphは変更・実行できない。旧来のAgent panelの「取消」は入力を捨てない「閉じる」と区別した。
+- BP19: `scripts/validate-npm-version.cjs`を実発行workflowの入力validatorにし、同じcodeをunit／CLI testsで検証（3 passed）。stable／beta／easyを受け付け、余白／leading zero／任意suffix／shell文字列を拒否。発行は実行していない。
+- 新規純粋reducer tests 5 passed。最終Vitest 73 files / 407 passed。Playwright全34 passed（production draft hook＋実workflow HTTP client／query更新＋Canvas＋router blockerを使う7件を追加）。遅延ACK、409、失敗後離脱、reload、Session割当と全field、executor Undo、native文字Undo、Canvas移動、scope切替、system／cached read-onlyを含む。実backendのCASとSession原子性はRust tests、全editor／実Agentは後続MCPで確認する。
+- `pnpm run check`、`pnpm run lint`、`pnpm run generate-types:check`成功。`pnpm run format`実施。新規production helper／共有hookの追加ESLintも成功（testは既存local-web tsconfigに含まれず、この追加lintの対象外。Vitestで実行）。
+- Workflow route 40 passed。root全Rust gate初回で予定実行fixtureの4件が`workflows.revision`欠落により失敗し、実migrationをfixtureへ適用して修正。修正後のserver lib全152 passed。
+- 同じ初回gateでOpenWiki全attempt proofの1件も失敗したが、当初assertionが具体的errorを表示していなかった。assertionを弱めずdiagnosticを追加し、単独1件／server全152件で成功を確認。原因は未確定であり「修正済み」または環境原因とは断定しない。最終root gateで再確認する。
+- 新規browserテスト作成時のnative Undo grouping／node toolbar上のdrag座標の誤った前提を修正。1回はformatとVite HMRが重なったため、その実行を採用せず変更を止めて全34件を再実行した。製品テストの省略・assertion弱体化はしていない。
+- `pnpm run server:check`: 12 passed / 1既存skip（nginx未導入）。静的設定・実entrypoint故障fixtureは実行したが、HTTPS ingress実機は未検証。server/hostの配布構造は変更していない。
+
+小規模実機資産: `/workspace/lvk-backport-acceptance.tGwIkS`、target `test/upstream-backport-acceptance`、開始source `147ceb2d45e2f61d9dbdebd2c6a69688d7282aa3`。Node built-insのみのLabel Kit、初期4 tests成功、既存Wiki／ignoreなし。test repo内だけfixture Git identityを設定し、global identity／資格情報は変更していない。UIからの開始・publicationはまだ未実施。
