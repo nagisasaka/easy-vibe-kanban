@@ -32,10 +32,10 @@ sources:
     resource: repo://docs/design/openwiki-bootstrap-implementation.md
   - id: openwiki-source-a3944588bb3b08c863d66298
     resource: repo://docs/workspaces/openwiki.mdx
-generated: { by: "codex", at: "2026-09-16T18:13:42.498Z" }
+generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
 verified:
   - by: openwiki/0.5.1
-    at: 2026-09-16T18:13:42.498Z
+    at: 2026-09-21T08:16:36.701Z
 ---
 
 # OpenWiki の初期生成・同期・回復
@@ -46,15 +46,19 @@ OpenWiki maintenance は、統合済みソースから canonical Wiki を更新�
 
 Repository settings で有効化し、統合先の **local branch** と出力言語を選ぶ。開始処理は未解決の source integration を拒否し、未処理 event の統合 commit が選択 branch に入っていることを確認する。remote branch 自体を公開先にはできない。必要な source が未取得なら model を開始せずエラーにする。[開始前の検証](../../crates/server/src/routes/openwiki.rs#L172-L217)
 
-準備された root に openwiki/index.md がなければ Bootstrap、あれば通常 Sync を選ぶ。通常 Sync は一つの Codex Session / AgentRun による reconciliation であり、Bootstrap の独立 Review を毎回実行するものではない。[分岐](../../crates/server/src/routes/openwiki.rs#L283-L313)
+初期生成かどうかは、固定した統合済み source commit の Git tree に `openwiki/index.md` があるかで判定する。任意の dirty checkout にファイルがあるかでは決めない。index 不在なら Bootstrap、存在すれば通常 Sync を選ぶ。通常 Sync は一つの Codex Session / AgentRun による reconciliation であり、Bootstrap の独立 Review を毎回実行するものではない。[分岐](../../crates/server/src/routes/openwiki.rs#L226-L239)
 
 利用手順と依存条件は [OpenWiki repository memory](../../docs/workspaces/openwiki.mdx) を参照する。文書は pinned OpenWiki と Node.js 22 以上、既存 Codex 認証を用いる構成を定める。EVK の version 検査は CLI の help banner を読み、固定版との完全一致を要求する。--version が exit 0 になるだけでは互換性の確認にならない。[利用条件](../../docs/workspaces/openwiki.mdx)・[version 検査](../../crates/services/src/services/openwiki.rs#L104-L136)
 
 EVK の準備処理は public Codex integration を --force なしで準備する。変更された user 設定を上書きせず conflict とする方針が code comment に記録されている。maintenance thread は public MCP の `openwiki mcp --host codex` を必須として設定し、turn / Goal 開始前に実際の lifecycle tool catalog を確認する。[準備境界](../../crates/services/src/services/openwiki.rs#L139-L155)・[thread 設定](../../crates/executors/src/executors/codex.rs#L929-L956)・[起動前確認](../integrations/agent-providers.md#coding-agent--外部-mcp-server)
 
+開始時は同じ Git storage の正式統合が publishing / post_processing / recovery_required にあれば拒否する。source が見えていても、その公開結果や semantic outbox が未確定の間に Wiki を先へ進めない。[正式統合との境界](../../crates/server/src/routes/openwiki.rs#L138-L151)
+
+両経路とも [実行専用 Workspace](../concepts/workspace.md#操作用途と実行所有者)を作り、起動前に owner を保存する。通常 Sync は選択 event と Memory の凍結入力を作り、その digest/source/event 集合を host state に保存してから AgentRun を予約・所有者へ bind する。[準備と起動の順序](../../crates/server/src/routes/openwiki.rs#L226-L239)、[Sync の入力と予約](../../crates/server/src/routes/openwiki.rs#L301-L367)。全 manifest/chunk の読取、未統合 Memory の権威、空入力の意味は [凍結入力の契約](../concepts/repository-memory.md#sync-の入力は統合済み-source-に結び付く凍結-snapshot)を参照する。
+
 ## Bootstrap の phase と所有権
 
-Bootstrap は repository scope の system Workflow で、Issue / WorkflowAttempt を作る通常実行と区別される。専用 Workspace と開始 source を共有し、phase ごとに新しい Session と AgentRun を使う。global template を書き換えず run の graph を予約する。[設計上の区別](../../docs/design/openwiki-bootstrap-implementation.md#compatibility-decisions)・[予約](../../crates/server/src/workflow_runtime/bootstrap.rs#L96-L162)・[fresh Session の検証](../../crates/server/src/workflow_runtime/bootstrap.rs#L278-L304)
+Bootstrap は repository scope の system Workflow で、Issue / WorkflowAttempt を作る通常実行と区別される。専用 Workspace と開始 source を共有し、phase ごとに新しい Session と AgentRun を使う。global template を書き換えず run の graph を予約する。[設計上の区別](../../docs/design/openwiki-bootstrap-implementation.md#compatibility-decisions)・[予約](../../crates/server/src/workflow_runtime/bootstrap.rs#L96-L176)・[fresh Session の検証](../../crates/server/src/workflow_runtime/bootstrap.rs#L291-L312)
 
 ```mermaid
 flowchart LR
@@ -93,7 +97,7 @@ Markdown と静的 MDX は `markdown-rs` の MDAST を使う。原文 snapshot �
 
 writer は同じ root host で begin → plan → next_page → ページ執筆 → submit_page を順に進め、全 page 完了後に finish する。EVK は公開 MCP の呼び出し開始・完了を Native Audit から照合する。同時 call、開始記録のない完了、別 root thread の writer、食い違う重複結果は拒否する。[認められる tool と直列性](../../crates/services/src/services/openwiki/completion.rs#L143-L215)
 
-登録済み MCP が利用不能なとき、自作の shell / stdio / SDK bridge で別プロセスを起動して代用しない。正しく Markdown を生成できても、その経路では EVK が必要とする native MCP call event を証明できないためである。host prompt は迂回せず連携エラーを報告するよう要求し、起動前の tool discovery で早期に確認する。[host の契約](../../crates/services/src/services/openwiki.rs#L180-L190)、[事前確認の実装](../../crates/executors/src/executors/codex/client/openwiki.rs#L25-L89)
+登録済み MCP が利用不能なとき、自作の shell / stdio / SDK bridge で別プロセスを起動して代用しない。正しく Markdown を生成できても、その経路では EVK が必要とする native MCP call event を証明できないためである。host prompt は迂回せず連携エラーを報告するよう要求し、起動前の tool discovery で早期に確認する。[host の契約](../../crates/services/src/services/openwiki.rs#L183-L192)、[事前確認の実装](../../crates/executors/src/executors/codex/client/openwiki.rs#L25-L89)
 
 Bootstrap での重要な規則は次の通り。
 
@@ -102,13 +106,15 @@ Bootstrap での重要な規則は次の通り。
 - page / finish の recoverable validation error は同じ active run 内で訂正できる。開始した run が未完了なら、後の成功で隠せない。
 - finish は status=complete を必要とし、sourceChanged=true を拒否する。成功した強制 update に Git diff は必須ではない。
 
-[完了必須](../../crates/services/src/services/openwiki/completion.rs#L116-L140)・[finish と再 begin](../../crates/services/src/services/openwiki/completion.rs#L219-L315)・[diff 不要の記録](../../docs/design/openwiki-bootstrap-implementation.md#phase-completion-contract)
+[完了必須](../../crates/services/src/services/openwiki/completion.rs#L119-L145)・[finish と再 begin](../../crates/services/src/services/openwiki/completion.rs#L217-L348)・[diff 不要の記録](../../docs/design/openwiki-bootstrap-implementation.md#phase-completion-contract)
 
-EVK は最新 attempt だけでなく、AgentRun の全 RunAttempt を順番に読み、identity、終了、audit integrity、時間的な重複を確認する。各 attempt の root thread は、その attempt 自身の thread start/resume 応答で束縛する。missing audit は「何もしなかった」の証明にはならない。[DB と audit の照合](../../crates/server/src/routes/openwiki/completion.rs#L19-L125)・[root の束縛](../../crates/services/src/services/openwiki/completion.rs#L68-L113)
+Bootstrap writer と通常 Sync は共通の `PhaseCompletionProof` を使う。EVK は最新 attempt だけでなく、AgentRun の全 RunAttempt を順番に読み、identity、終了、audit integrity、時間的な重複を確認する。各 attempt の root thread は、その attempt 自身の thread start/resume 応答で束縛する。missing audit は「何もしなかった」の証明にはならない。[DB と audit の照合](../../crates/server/src/routes/openwiki/completion.rs#L87-L193)・[root の束縛](../../crates/services/src/services/openwiki/completion.rs#L71-L116)
 
-最新 attempt の terminal 投影と process-exit 登録が競合する場合だけ、spawned/running の登録を最大10秒未満の pending として再観測する。古い未終了 attempt や unreachable host にはこの猶予を与えない。[終了待ち](../../crates/server/src/routes/openwiki/completion.rs#L57-L83)・[focused test](../../crates/server/src/routes/openwiki/completion.rs#L373-L394)
+最新 attempt の terminal 投影と process-exit 登録が競合する場合だけ、spawned/running の登録を最大10秒未満の pending として再観測する。古い未終了 attempt や unreachable host にはこの猶予を与えない。[終了待ち](../../crates/server/src/routes/openwiki/completion.rs#L25-L85)・[focused test](../../crates/server/src/routes/openwiki/completion.rs#L441-L462)
 
-通常 Sync の証明は別の HostReconciliationProof で、verified begin-noop または finish-complete を受け入れる。Bootstrap の全 attempt 契約を、そのまま通常 Sync の実装済み保証と解釈しない。[Sync の証拠](../../crates/server/src/routes/openwiki.rs#L357-L387)
+通常 Sync は init を許さず、完了した update、または未完了操作のない通常の非 force update に対する監査済み begin-noop を必要とする。force は必須ではなく、完了した update を複数回行うこともできる。noop で先行の未完了 run を隠すことや、別 attempt に未閉鎖操作を持ち越すことはできない。sourceChanged は absent/false のみ受け入れる。[phase ごとの条件](../../crates/services/src/services/openwiki/completion.rs#L133-L145)、[begin と noop](../../crates/services/src/services/openwiki/completion.rs#L272-L348)、[Sync の回帰テスト](../../crates/services/src/services/openwiki/completion.rs#L632-L703)
+
+成功した Sync は共通の操作証明に続いて凍結入力の identity/digest を検証し、instructions を復元してから Wiki 公開へ進む。AgentRun の終端投影や Markdown が存在することだけでは成功しない。[終了処理の順序](../../crates/server/src/routes/openwiki.rs#L580-L663)
 
 ## 独立 Review と finding の解決
 
@@ -122,7 +128,7 @@ RefinementReport の findingIndex は frozen Review の0始まり index。全 ma
 
 Refine が update を行わず全 material finding を refuted / already_satisfied とすることもできる。その場合は setup 復元後の fingerprint が Review baseline と同じでなければならない。[update と変更の関係](../../crates/server/src/workflow_runtime/bootstrap.rs#L570-L595)
 
-生成・レビュー・更新の品質基準は「重要概念・契約・通常操作の説明先が安定し、初見の読者が断片を再構成せず理解できること」。概念ページ、横断 workflow、実装 architecture は異なる問いを扱い、詳細契約の正本を一か所へ置いて本文中の意味あるリンクで結ぶ。固定ディレクトリ・最低ページ数・一名詞一ページは要求しない。Generate だけに架空製品の構成例を渡し、Review はその形への準拠ではなく開発判断に影響する不足を評価する。通常 Sync も既存の説明先と関連リンクを維持する。[共通原則](../../crates/services/src/services/openwiki.rs#L20-L24)、[計画例と Review](../../crates/services/src/services/openwiki/bootstrap.rs#L397-L418)、[Sync](../../crates/services/src/services/openwiki.rs#L170-L175)
+生成・レビュー・更新の品質基準は「重要概念・契約・通常操作の説明先が安定し、初見の読者が断片を再構成せず理解できること」。概念ページ、横断 workflow、実装 architecture は異なる問いを扱い、詳細契約の正本を一か所へ置いて本文中の意味あるリンクで結ぶ。固定ディレクトリ・最低ページ数・一名詞一ページは要求しない。Generate だけに架空製品の構成例を渡し、Review はその形への準拠ではなく開発判断に影響する不足を評価する。通常 Sync も既存の説明先と関連リンクを維持する。[共通原則](../../crates/services/src/services/openwiki.rs#L20-L24)、[計画例と Review](../../crates/services/src/services/openwiki/bootstrap.rs#L397-L418)、[Sync](../../crates/services/src/services/openwiki.rs#L170-L178)
 
 schema、path、operation の検査が証明するのは構造と監査上の閉包であり、推論の正しさや repository 全体の意味的網羅ではない。実装記録もこの限界を明記する。[検証の限界](../../docs/design/openwiki-bootstrap-implementation.md)
 
@@ -132,7 +138,11 @@ agent phase は source HEAD を動かさない。EVK は phase 境界で setup j
 
 公開候補は user-authored openwiki/INSTRUCTIONS.md の一致を検証し、upstream setup byproduct を除外、canonical Wiki 以外の変更を拒否する。AGENTS.md / CLAUDE.md の生成 setup を writer が途中で手動復元する運用ではなく、host 終了後の EVK の責務である。[公開候補の検査](../../crates/services/src/services/openwiki.rs#L200-L246) 公開 checkpoint と source drift の詳細は [Repository memory の統合・公開](../concepts/repository-memory.md) を参照する。
 
-失敗・取消・server 再起動のとき、Bootstrap は CleaningUp に入り、新しい有料 phase を自動再開しない。通常の監査付き Cancel を送信し、残存 active run がなくなってから instructions を復元し、Workflow を Failed にして owner を解放する。Stop 要求を送っただけで所有権を消してはいけない。[cleanup](../../crates/server/src/workflow_runtime/bootstrap.rs#L818-L909)・[再起動時の fence](../../crates/server/src/workflow_runtime/bootstrap.rs#L943-L959)・[未終了 child を保持する test](../../crates/server/src/workflow_runtime/bootstrap_tests.rs#L450-L520)
+失敗・取消・server 再起動のとき、Bootstrap は CleaningUp に入り、新しい有料 phase を自動再開しない。通常の監査付き Cancel を送信し、残存 active run がなく、全 child の全 attempt の実終了を確認してから instructions を復元する。利用者の取消なら Workflow を Canceled、それ以外の失敗なら Failed にして owner を解放する。Stop 要求を送っただけで所有権を消してはいけない。[cleanup](../../crates/server/src/workflow_runtime/bootstrap.rs#L829-L969)・[再起動時の fence](../../crates/server/src/workflow_runtime/bootstrap.rs#L1012-L1029)・[未終了 child を保持する test](../../crates/server/src/workflow_runtime/bootstrap_tests.rs#L553-L671)
+
+Sync の cleanup も所有 identity と全 attempt の実終了を先に確認する。失敗した terminal attempt が reserved のままで endpoint/token/host PID/provider PID を一切持たない場合は、未 spawn または開始失敗後の cleanup として復元だけを許すが、成功証明には使わない。missing registry、unreachable、古い未終了 attempt、復元失敗は `MaintenanceFenced` とし、Error 診断と active owner を残す。最新終了記録の短い待機だけは `CompletionPending` として再観測する。[終了と fence](../../crates/server/src/routes/openwiki/completion.rs#L23-L85)、[所有を保った回復](../../crates/server/src/routes/openwiki.rs#L438-L455)
+
+Sync の確定結果は Workspace owner に保存してから repository の最新 pointer と receipt を更新する。後続保守で repository state が変わっても、その実行の成功・取消・失敗、no-op、Wiki commit を履歴として確認できる。[結果保存の順序](../../crates/server/src/routes/openwiki.rs#L466-L489)
 
 既に durable publication checkpoint がある場合は、その Git 公開と receipt だけを回復する。途中の model phase を再実行して別成果物を重ねる回復ではない。ユーザー向けの状況確認は Repository settings と View Workflow の Canvas / Dashboard、失敗修正後は新しい Bootstrap が入口となる。[運用手順](../../docs/workspaces/openwiki.mdx)・[checkpoint 回復](../../docs/workspaces/openwiki.mdx)
 
@@ -140,4 +150,4 @@ agent phase は source HEAD を動かさない。EVK は phase 境界で setup j
 
 [Bootstrap v2](../../docs/design/openwiki-bootstrap-workflow-v2.md) が基本の設計、[implementation record](../../docs/design/openwiki-bootstrap-implementation.md) が phase completion の一部を明示的に更新した記録である。後者は「最後の mode だけで判断」「Refine は必ず操作する」という旧前提を置き換える。source の PhaseCompletionProof と対応して読む。
 
-回帰検証の入口は、[全 attempt の audit を検査する test](../../crates/server/src/routes/openwiki/completion.rs#L398-L438) と、[Generate self-correction / 操作なし Refine の test](../../crates/server/src/routes/openwiki/completion.rs#L352-L369)。これらは model 呼び出しなしの protocol fixture であり、意味的 coverage の保証と混同しない。
+回帰検証の入口は、[全 attempt の audit を検査する test](../../crates/server/src/routes/openwiki/completion.rs#L466-L554) と、[Generate self-correction / 操作なし Refine の test](../../crates/server/src/routes/openwiki/completion.rs#L420-L438)。これらは model 呼び出しなしの protocol fixture であり、意味的 coverage の保証と混同しない。

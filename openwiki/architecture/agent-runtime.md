@@ -5,7 +5,7 @@ description: AgentRun を独立プロセスで実行し、Native Audit から永
 tags: [agent-runtime, audit, persistence, recovery]
 verified:
   - by: openwiki/0.5.1
-    at: 2026-09-15T18:24:07.449Z
+    at: 2026-09-21T08:16:36.701Z
 sources:
   - id: openwiki-source-d20a82e2192a07c687b838cb
     resource: repo://crates/db/src/models/agent_runtime.rs
@@ -23,6 +23,8 @@ sources:
     resource: repo://crates/utils/src/assets.rs
   - id: openwiki-source-9b65aee0d6accda7142f90a7
     resource: repo://crates/utils/src/native_audit.rs
+  - id: openwiki-source-991414672d835fda0eead290
+    resource: repo://crates/utils/src/process.rs
   - id: openwiki-source-965b490de6f8364cb7695944
     resource: repo://crates/workspace-manager/src/workspace_manager.rs
   - id: openwiki-source-11be03870aae85a259cab5c1
@@ -31,7 +33,7 @@ sources:
     resource: repo://docs/future/agent-runtime/data-planes-and-recovery.md
   - id: openwiki-source-37db6fa2c961da1810d195e7
     resource: repo://docs/future/agent-runtime/README.md
-generated: { by: "codex", at: "2026-09-15T18:24:07.449Z" }
+generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
 ---
 
 # Agent Runtime の監査・投影・回復
@@ -61,7 +63,7 @@ Codex のメッセージ差分と完成メッセージは別の経路を通る�
 
 ## 制御入力の送信と監査の順序
 
-初回 launch は canonical input と launch payload を Audit に保存してから provider を起動する。一方、活動中の制御は `control_peer.send`、または `stdin.write_all` / `flush` が先で、返された非空 bytes を後から `append_native_input` へ保存する。後段の保存に失敗すると要求へエラーを返し、`AuditFailure` による終了・cleanup へ進む。**AuditFailed や該当フレームの不在は「未送信」「副作用なし」の証明にならない。** [初回起動](../../crates/local-deployment/src/process_host.rs#L302-L329)・[制御と失敗](../../crates/local-deployment/src/process_host.rs#L797-L887)
+初回 launch は canonical input と launch payload を Audit に保存してから provider を起動する。一方、活動中の制御は `control_peer.send`、または `stdin.write_all` / `flush` が先で、返された非空 bytes を後から `append_native_input` へ保存する。後段の保存に失敗すると要求へエラーを返し、`AuditFailure` による終了・cleanup へ進む。**AuditFailed や該当フレームの不在は「未送信」「副作用なし」の証明にならない。** [初回起動](../../crates/local-deployment/src/process_host.rs#L302-L329)・[制御と失敗](../../crates/local-deployment/src/process_host.rs#L799-L869)
 
 耐久 command service は command を DB に enqueue してから配送するが、その記録と provider へ送った生 bytes の監査は別である。再試行時は command の状態に加えて実行状態・作業木も確認する。[command の事前保存](../../crates/services/src/services/agent_runtime.rs#L106-L145)
 
@@ -93,7 +95,13 @@ usage は RunAttempt ごとに native sequence が新しい場合だけ置き換
 
 隔離時は理由、`projection_degraded`、当該観測の cursor 前進を原子的に保存し、後続観測の取り込みを継続できる。[分離処理](../../crates/local-deployment/src/agent_run_port.rs#L1540-L1622)、[失敗台帳](../../crates/db/src/models/agent_runtime.rs#L218-L294)
 
-投影が Current でない場合、backend は Cancel 以外の制御を拒否する。Cancel は終端実行には成功する無操作であり、それ以外では Cancelling へ遷移して停止を依頼する。表示が不完全でも停止経路を残す契約である。[制御ガード](../../crates/local-deployment/src/agent_run_port.rs#L2370-L2395)
+投影が Current でない場合、backend は Cancel 以外の制御を拒否する。Cancel は終端実行には成功する無操作であり、それ以外では Cancelling へ遷移して停止を依頼する。表示が不完全でも停止経路を残す契約である。[制御ガード](../../crates/local-deployment/src/agent_run_port.rs#L2489-L2512)。この前段にある [実行専用 Workspace の所有者検証](../concepts/workspace.md#操作用途と実行所有者)は別の操作制約である。
+
+## 取消と実プロセスの終了
+
+host は native interrupt の前に子プロセスを捕捉し、送信できた場合は最大2秒、provider 自身による tool cleanup を待ってから transport を閉じる。native interrupt が利用不能でも取消を中断せず、process group と捕捉した子の終了を並行して試みる。両方の cleanup が成功して初めて Cancelled とし、待機失敗は Crashed になる。取消応答も監査の終了と terminal 記録の後で返す。[取消経路](../../crates/local-deployment/src/process_host.rs#L799-L900)、[完了応答](../../crates/local-deployment/src/process_host.rs#L955-L1019)、[失敗状態](../../crates/local-deployment/src/process_host.rs#L1066-L1080)
+
+Linux では別 session に移る tool も扱うため `/proc` から子孫を列挙し、親と開始時刻を再照合した pidfd を保持する。PID 再利用で無関係なプロセスを停止しないための仕組みであり、捕捉後の daemon 化まで閉じ込める sandbox ではない。Linux 以外ではこの子孫捕捉は空の処理となり、既存 process group cleanup に依存する。[捕捉の範囲](../../crates/utils/src/process.rs#L8-L83)、[終了確認](../../crates/utils/src/process.rs#L85-L136)。独立 session の子だけを停止する [focused test](../../crates/utils/src/process.rs#L220-L259)と、応答しない native interrupt でも取消が有限時間で進む [test](../../crates/local-deployment/src/process_host.rs#L1158-L1194)がある。
 
 ## 変更時の検証と未解決点
 

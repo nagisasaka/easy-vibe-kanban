@@ -3,9 +3,6 @@ type: architecture
 title: Workflow の実行と耐久オーケストレーション
 description: 凍結グラフから AgentRun を起動する経路、outbox・inbox・lease の役割、分岐検証と取消・再起動時の所有境界。
 tags: [workflow, orchestration, recovery, lifecycle]
-verified:
-  - by: openwiki/0.5.1
-    at: 2026-09-16T18:13:42.498Z
 sources:
   - id: openwiki-source-a13fe4db1eee073d0a7e2c4d
     resource: repo://crates/server/src/main.rs
@@ -27,7 +24,10 @@ sources:
     resource: repo://docs/future/ai-workflow/spec-product.md
   - id: openwiki-source-ffc55e6e31e6ce477ca57329
     resource: repo://packages/web-core/src/shared/hooks/useWorkflowRun.ts
-generated: { by: "codex", at: "2026-09-16T18:13:42.498Z" }
+generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
+verified:
+  - by: openwiki/0.5.1
+    at: 2026-09-21T08:16:36.701Z
 ---
 
 # Workflow の実行と耐久オーケストレーション
@@ -68,7 +68,7 @@ driver は node iteration と snapshot を読み、Ready node を順に起動す
 | Run 取得 GET / Run events の SSE 接続 | handler 自身が reconciliation を実行する |
 | 活動中の Run を表示する UI | `useWorkflowRun` は既定4秒ごとに GET する。設定で停止・変更可能 |
 
-[startup の結線](../../crates/server/src/startup.rs#L214-L225)・[standalone の回復と定時 loop](../../crates/server/src/main.rs#L87-L133)・[GET](../../crates/server/src/routes/workflows.rs#L1954-L1971)・[SSE 接続時](../../crates/server/src/routes/workflows.rs#L1992-L2011)・[UI polling](../../packages/web-core/src/shared/hooks/useWorkflowRun.ts#L26-L56)
+[startup の結線](../../crates/server/src/startup.rs#L214-L225)・[standalone の回復と定時 loop](../../crates/server/src/main.rs#L87-L137)・[GET](../../crates/server/src/routes/workflows.rs#L1954-L1971)・[SSE 接続時](../../crates/server/src/routes/workflows.rs#L1992-L2011)・[UI polling](../../packages/web-core/src/shared/hooks/useWorkflowRun.ts#L26-L56)
 
 したがって Run の取得は純粋な表示読み取りではない。画面経由では前進しても、standalone を画面なしで動かす場合に同じ継続駆動を保証する根拠にはならない。ScheduledTask loop は定時の起動を担い、完了後の全ノード連鎖を監視する watcher の代わりではない。[定時実行の skip 条件](../workflows/task-to-integration.md#定時に-workflow-を起動する)と併せて、起動に成功した run が進行し続けるかを別に確認する。
 
@@ -87,6 +87,10 @@ Human Gate と Arena の選択も製品の待機境界である。Arena は別�
 取消は Workflow を Cancelling にして node と子実行へ伝え、照合を続ける。終端 run への取消は現在の結果を返す。outbox は enqueue 時だけでなく delivery 時にも親状態を確認し、取消後に古い Create/Retry が残っていても新しい AgentRun を起動しない。Cancel の配送は残す。[取消経路](../../crates/server/src/workflow_runtime/runner.rs#L1681-L1729)、[配送ガード](../../crates/services/src/services/orchestration.rs#L136-L207)
 
 Repository scope の Workflow は maintenance owner だけが駆動できる。一般開始 API は server-managed decision source を拒否する。bootstrap の node には `requires_product_validation` を設定し、provider の成功と製品上の成功を分ける。[所有ガード](../../crates/server/src/workflow_runtime/runner.rs#L983-L996)、[駆動ガード](../../crates/server/src/workflow_runtime/runner.rs#L2262-L2265)、[製品検証 flag](../../crates/server/src/workflow_runtime/runner.rs#L1142-L1164)。具体的な検証・再試行は [OpenWiki maintenance](../operations/openwiki-maintenance.md)が正本である。
+
+Bootstrap は専用 Workspace の `execution_owner` を Workflow run に結び付けてから graph と子を予約する。通常の node Session 作成は interactive を要求し、system 用は一致する repository owner 専用の経路を使う。phase dispatch ごとに maintenance Session と child AgentRun を記録するため、単に同じ Workspace にいることは起動権限ではない。[親の束縛](../../crates/server/src/workflow_runtime/bootstrap.rs#L96-L124)、[Session 境界](../../crates/server/src/routes/workflows.rs#L743-L787)、[子の委任](../../crates/server/src/workflow_runtime/bootstrap.rs#L360-L380)。用途は [Workspace の操作契約](../concepts/workspace.md#操作用途と実行所有者)を参照する。
+
+[正式 Integration](../concepts/formal-integration.md)にも製品固有の検証と monitor があり、通常 Workflow の completion watcher や Bootstrap の phase と同一視しない。起動形態による monitor の差は [システムの起動順](system.md#起動時は内側の所有者から回復する)に記す。
 
 ### Bootstrap の成果物参照は通常の上流本文と分ける
 

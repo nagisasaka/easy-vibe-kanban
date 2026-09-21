@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:9f9c94903650d012e4001a641f22054f098d2ce5fa12a1e50f42215b6baa58f4",
+  "pageVersion": "sha256:926eb6b398e26369ee938bcda9a8dd7b03a7eba879f2b303069c9a92adc35c21",
   "claims": [
     {
       "id": "claim_cd547b65737e432fb2cf718c4992aa97",
@@ -130,11 +130,11 @@
     },
     {
       "id": "claim_86bce2b57d004c89b2d4f6d4a928eadb",
-      "statement": "Wiki のナビゲーションと本文は Workspace ごとの単一 controller を共有し、repository / 形式の切替では状態をリセットし、sequence と応答 identity で古い読取結果の混入を防ぐ。",
+      "statement": "Wiki の本文とナビゲーションは Workspace ごとの単一 controller で OpenWiki を読み、repository 変更時のリセットと sequence / 応答 identity 検査で古い結果の混入を防ぐ。",
       "evidence": [
         {
-          "resource": "repo://packages/web-core/src/features/wiki/model/wikiViewerController.ts#L42-L131",
-          "version": "repo-lines-v1:sha256:34f45950a0ee2b77ce3d91358ddc11f37da4899f0b7fbc4af099ef70cc08c42b:eyJzZWxlY3RlZExpbmVDb3VudCI6OTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2OWY0YjZhYjc4ODc4YmJkNjk4OTcwZWFjMjZhOWVjZTg1NjFkZmQ1OTQ5NzViNTNmZTQwNTdlZDY4ZjVmYjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyYTJjYjI1YTEyMmI0NDIyMWE2MjM0ZWM2NjBhN2I1ZmI3ZjliZGU3YjNiOWUyYjNjNTU5YTBkOTZmYWM3MzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNTgwZTk2NGY4M2E0NzNmNDNkNDQzODQ2Mjk0OWQ2OGI1NjAwZmRhNzg3ZjE2Mzc0NWQwMGRlODljYmYzNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxMDRjNjUyYWI0ZjEyNjk3MjRkNTEyN2U2ZDJlZTQ4MjYwYjNiZTBiY2NhNzdkMDZjZGJjZjdkOTBlMmVlZGYifQ"
+          "resource": "repo://packages/web-core/src/features/wiki/model/wikiViewerController.ts#L11-L119",
+          "version": "repo-lines-v1:sha256:add4cb48f0cc3863ac5d477cb1998b0f559da0a8bd5a539ea9bd31b6bef927ed:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0MTZhYTcxMWNmMDYzYmI1MGU1Y2RlMDc5MDA2NmM4MTFjNDlkYzg2ZmEzMGEyZTFmYzYwMDZlOTFmYjA0YWNhIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0YWQ4YjFlMzI3NzJhZTIyMjI2NWUwYjRmNjA4OThhMWZjZTE5ZTc1NmUzMDNjOGZlZjY2YTBhNjdiNmE5MDViIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJiMmMwNDIxNjVkYmM3NDRjNDIyZDk1ZmRiYmFhYmZkZmFjMTVlM2QyMTMyZmEzMzcwNjBiMmI2ZDI2Nzk4OTM4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5ZGMwMDdkY2Q1ZDhmOTI4ODk0Y2I5ODI5MzliNTZhODVkMDVhN2Q0MWFjMWRiYjZiZThmODQzNjdhNGU1OWIyIn0"
         },
         {
           "resource": "repo://packages/web-core/src/features/wiki/ui/WorkspaceWikiProvider.tsx#L39-L91",
@@ -155,10 +155,56 @@
           "version": "repo-lines-v1:sha256:ee4dc1930c0bff6d479798ebe21a79b6483e37eb2c8d4dde8c5e267f105dabc2:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiNDY2NjdjNTgyZmJkZDJiOTIxMThmMTRhNDM1ZmQ3YzNiNmUzM2RlMWNhZTQ3ODgwYjdkOTEyNzE3MGUzMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjMGE3OTAyZTRhZGU5ZDk3NDNjZTk5NTQ4YWU3Nzg0YWQ0MDBlOTU2MmU2MzU3ZDA4OThmZGM4MzAyNzNjZTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk4YjE2NjBkZTlhMjE3Mjg5NzhkZTEyMGY4OWZmODFjMDBiNTU2ZTFhNmE2OTNiNmJhOGQ4ODhlMjM3YTk4YWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI0ZDJiZWMxZjFhNjQwYjNhMWFmYWNlNzRmMzRiMzYzMjljMTg0MzJhMWRhMWQwNjJiNmYyNWVlODAzZjBhZGQifQ"
         }
       ]
+    },
+    {
+      "id": "claim_a0d681a44917468b9c8a584afd11a2cb",
+      "statement": "Workspace UI は execution_only を Work/Archive から実行履歴へ分離し、通常 running 表示に全実行の summary 集計を優先する。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/shared/hooks/useWorkspaces.ts#L237-L255",
+          "version": "repo-lines-v1:sha256:f167f14d540b615b9f8d1aad9fad55e8b8df4ca0caab90c65d419ad2b62eb712:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNDdiNDdkODM5NjEzYTY0ODkzZDgzNzAxODM4Y2U5Y2Y4ZWIxOGE5YjU0YjRhMTAzNmI0MTFlZmRlMjFlNWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlYjBjZTM1MzcyMjRlZjY5OTEyNjI4OTFhNTZiOTVjZGQxMWVjODlhYWI5OTc5NThhZDljN2EyMGEwZDA2NzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/shared/hooks/useWorkspaces.ts#L61-L79",
+          "version": "repo-lines-v1:sha256:16fcfacac640115cd4156edd935c82cb1d357ca28b2b7d944883efb0a70da558:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyOGU2ZTJmMjc2NmM1NjkzYzhlZGYzMzI3YjYxMDM4ZGU4Yzg0YWU4Nzk3NjNmMGI3YTg5ZjVjNzY2ZDYyYWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2OWRiYTZhMDQ4YjY0ZmZjYzAyNDEzMGU1YzIzNTkwYjc2MjNhZmM2ZjA0M2ZlYzY5YmYwM2E1NjcwMjAyOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5MThmY2ZmYzEyYzZiZWM4MWE1ODAxYTQ3ZmI5MTVmNzdlYzc3MDc5M2MyMWEzY2FjM2ViNjc1Y2Y5MWRjYmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA0MTU5MTk5MzE3NjYwYjRhMjI5NjIyMGUyOTM0NGIwZTM0Mjc2YWQ3Yzc0NzlhYzBlMmYxMWRhZDg0YTJiNzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8d104ee2a4de411ba53c43f16e1e2744",
+      "statement": "実行専用 Workspace の composer は inspection panel に置き換わり、owner view と Stop は明示 host scope と host を含む query key で扱う。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/pages/workspaces/WorkspacesMainContainer.tsx#L241-L263",
+          "version": "repo-lines-v1:sha256:767aa6bd9b119e4bf7b2326d893bfc8b1d63c062efcc4e7ce097403d2a11b281:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhMzkwNDE0OGI5MzMzMjRhY2E1ZjExMTIzNDQ5ZDE5MmUwMDUwNjBlYTFjODAxMjJmYmJhY2RmZDg0YzJjZTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjYjQ4YWVhZDE1ZjRhN2IzMWQ1Y2RjZGY0NDY4ZjYwMmNlZjE0MTE4MjA5OGQ4YWVhMGI3YWI0YmY4Y2UzYmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVjMDFjY2RiYzVkNmFmODJmYjQyZjZlOWUwM2Q1ZGViMWYxYWM4ZDExYTM5ZWQ4NjQyOTk5YWRlODZiYzZjNDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM2M2M2MWI0MDZkMTE1YzEyZmMwMjFiM2FmN2U3NDFhMDAyZDVhMmFkMDIwMGNhNjI5ZWM4ZDU4ZGUxODIwMTYifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/shared/hooks/useWorkspaceOwner.ts#L6-L59",
+          "version": "repo-lines-v1:sha256:ecf6e779d0521851992992030a7e1bbc7425d3a92582a4cadcd0a9e1abd9fbd7:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3MTY2YzdiMzE0MTkyYmRmMjZiYzQ4Yjc3ZmQ5MDgyYWMyODM5MjJlYWE0YTVhN2MzNmMyMDFjYjZmMmMyMzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU5MmJiNzllNTA3OTIyNDQ5YzNmMDk2M2JiYmJkOTdkYWI1YmMxMzJlZjg1ZTVkNjg0ZGU2YzA5ODViYmVlY2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8d64fbd9adf645af8dd29d4a6c762ceb",
+      "statement": "Session 再取得は既存の手動選択や新規 draft を保持し、host/Workspace または明示 Session link の変更時に選択を再解決する。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/shared/hooks/useWorkspaceSessions.ts#L51-L87",
+          "version": "repo-lines-v1:sha256:f2a0cd0902bc8895655678615b7072e769603e60539b1a3969dbb69625bac745:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0NTQ4MWNkMWZiOTFlNmNiNTI0NTI3ODg2NmE3YjExN2FmMzAxZGM4NzU4NDQwODc1ZTRhODJmMGYzZjZmZmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiYjgzZTJlOTdlYTRlMThkNzZmZDc5ODQyYzBkZjg2ZjY2NmM1M2E4ZTg2ZmVmOGI4OTcxMGRhNDJjNzc0YmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg3YzI3YTk2ZDU4MGMxYjIyNmVjOTE4ZGEwMzM4NGU3YzkxYWZlZmRjNzE2OWI4ZTViZTI3YmE0Nzk0OWVjYzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJjYTExZWEyNmZiYTE5ZjZmMjRkZDVmMzMzM2M5MzI0MDM2MjY4MmM1Mjg2ZDMwMmY3MjdjZDc3YjBlNWVkZjMifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/shared/hooks/workspaceSessionSelection.test.ts#L4-L36",
+          "version": "repo-lines-v1:sha256:7def1edfa9e6ed49a73007a17aa65d74147d6a0a6e60f22834b779321a44e81c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhNzZhMzMzMDM0NzUxY2E0NTAwZmRkZjI1Y2ZlMWM5ZTQ2ZjQyNDRmNDk2YTBjNDgwMGYyMzYyMTgxN2EwNDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2ZjViNDBiMTU4NDU3ZDE3ODY0ZjIxNzkwNzg2ZGQ1YTJlY2RiNjRiNjZhNjUxZjc4OGQ0ZTI1Y2QzMzAzZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkOTAyODc3ZjRmMmE4MWY4OTczMWNlMjBlOWQ3NjM2YjRkOGUyZGRkNmFmODIzOTc0OGZiZWRjNzZmZWNmMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://packages/web-core/src/shared/hooks/workspaceSessionSelection.ts#L3-L25",
+          "version": "repo-lines-v1:sha256:f5cf95d2fb9a2b36050d6a17786a7d94efc7935b316589599065eab9644ad98d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkNmIzZjU0MTYyNTE0YjVlNmZjNzE0NDZlYTczNTdjN2I4MTI1YTMwOGEyZTdhMTdjNGYxNGQxNTExMTljZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzMTYyNzk0NmJhOTgzZmFjNTU4YjYyMjI4ZWExZWY3MzQ2ZmI0ODM2YjA1ZjU2ODJjNzZiNmRiZjg4YjlhYmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.1",
-    "at": "2026-09-16T18:13:42.498Z"
+    "at": "2026-09-21T08:16:36.701Z"
   }
 }

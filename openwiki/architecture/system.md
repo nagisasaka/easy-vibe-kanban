@@ -3,9 +3,6 @@ type: architecture
 title: システム境界と起動順序
 description: ローカル実行基盤、Remote サービス、Web、Git と永続化の所有境界、および二つのサーバー起動経路の回復順序。
 tags: [architecture, deployment, startup, database]
-verified:
-  - by: openwiki/0.5.1
-    at: 2026-09-15T16:13:17.964Z
 sources:
   - id: openwiki-source-651d1fb6c9e49916a916ab51
     resource: repo://Cargo.toml
@@ -21,7 +18,12 @@ sources:
     resource: repo://crates/server/src/main.rs
   - id: openwiki-source-ed8c84278dba8a1f45af40e9
     resource: repo://crates/server/src/startup.rs
-generated: { by: "codex", at: "2026-09-15T16:13:17.964Z" }
+  - id: openwiki-source-2e1d91f21691cd271afffb6f
+    resource: repo://docs/self-hosting/server-container.mdx
+generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
+verified:
+  - by: openwiki/0.5.1
+    at: 2026-09-21T08:16:36.701Z
 ---
 
 # システム境界と起動順序
@@ -62,6 +64,8 @@ Remote は PostgreSQL pool、migration、Electric 用 role/publication を準備
 
 Git の作業木、Native Audit、Repository Memory は SQLite と別の永続状態を持つ。復旧で DB の状態だけを正しいと決めず、[実行ホスト](agent-runtime.md)や [記憶の統合状態](../concepts/repository-memory.md)の証拠も確認する。
 
+新しい [単一サーバーコンテナー](../operations/server-container.md)は、この local application を Linux サーバーで動かす配布形態である。Remote の PostgreSQL / Electric 系を立ち上げるものではない。nginx の認証・preview origin、実行環境と永続 volume の境界は同ページに置く。[配布の適用範囲](../../docs/self-hosting/server-container.mdx#what-the-image-contains)
+
 ## 起動時は内側の所有者から回復する
 
 standalone の `main.rs` と Tauri が使う `startup.rs` の両方に回復経路がある。
@@ -72,7 +76,9 @@ standalone の `main.rs` と Tauri が使う `startup.rs` の両方に回復経�
 4. orchestration の outbox/inbox/lease、続いて Workflow を照合する。
 5. 最後に OpenWiki の製品回復 monitor を開始する。
 
-この順序は、複数の回復主体が同じ実行を進めることを避けるためにコードで明示されている。古い ExecutionProcess の孤児処理を新しい AgentRun へ流用すると、生きたプロセスを誤判定し得る。[standalone](../../crates/server/src/main.rs#L87-L133)、[embedded](../../crates/server/src/startup.rs#L170-L223)
+この順序は、複数の回復主体が同じ実行を進めることを避けるためにコードで明示されている。古い ExecutionProcess の孤児処理を新しい AgentRun へ流用すると、生きたプロセスを誤判定し得る。[standalone](../../crates/server/src/main.rs#L87-L137)、[embedded](../../crates/server/src/startup.rs#L170-L225)
+
+Deployment の構築中には、DB 初期化後に既存の製品実行記録から [Workspace の用途](../concepts/workspace.md#操作用途と実行所有者)を backfill する。[呼出し](../../crates/local-deployment/src/lib.rs#L155-L156)。standalone は bootstrap fence に続いて中断した Integration preparation も fence し、OpenWiki monitor の次に [正式 Integration](../concepts/formal-integration.md) の monitor を開始する。一方、現行 embedded の対応箇所にはこの二つの Integration 呼出しがない。両起動経路で正式統合の自動進行が同じと仮定せず、desktop 対応を変更する際に確認する。[standalone の追加処理](../../crates/server/src/main.rs#L87-L137)、[embedded の現行配線](../../crates/server/src/startup.rs#L170-L225)
 
 standalone は main と preview proxy に別 listener を作り、`BACKEND_PORT`、次に `PORT`、未指定なら OS の空き port を使う。既定 host は `127.0.0.1`。embedded の `start()` は `localhost:0` を使い、hostname と IPv6 接続の不一致を避ける理由が記録されている。[standalone listener](../../crates/server/src/main.rs#L146-L171)、[embedded listener](../../crates/server/src/startup.rs#L107-L142)
 

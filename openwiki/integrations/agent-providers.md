@@ -18,6 +18,8 @@ sources:
     resource: repo://crates/executors/src/executors/mod.rs
   - id: openwiki-source-f4e0f9b2ce513d3f8b8b070e
     resource: repo://crates/executors/src/executors/provider_adapter.rs
+  - id: openwiki-source-38bb7eaa90f0c92a0514844d
+    resource: repo://crates/executors/src/legacy_wiki.rs
   - id: openwiki-source-f07f62eba81c4ffbaf0db9d5
     resource: repo://crates/executors/src/profile.rs
   - id: openwiki-source-8fd7f4fe2d73e778cc63c256
@@ -32,10 +34,10 @@ sources:
     resource: repo://crates/server/src/routes/config.rs
   - id: openwiki-source-bd8b8c5ef2cd6ade70bfa3e5
     resource: repo://docs/future/agent-runtime/delegated-agent-display.md
-generated: { by: "codex", at: "2026-09-16T18:13:42.498Z" }
+generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
 verified:
   - by: openwiki/0.5.1
-    at: 2026-09-16T18:13:42.498Z
+    at: 2026-09-21T08:16:36.701Z
 ---
 
 # Agent provider・設定・MCP・Skill
@@ -65,7 +67,7 @@ Approval が Native という capability snapshot と、host に人の応答を�
 
 ### Codex の override と解決済み effort を分ける
 
-EVK の profile/実行 override が空でも、app-server は利用者・project 設定から model と reasoning effort を解決できる。client は `thread/start` / `thread/resume` の応答を採用してから collaboration mode と turn を構築する。したがって依頼の JSON の `reasoning_effort: null` だけで「設定ファイルの effort が無視された」と結論しない。逆に provider が返した `None` も解決結果として採用し、前回の明示値を残さない。[採用処理](../../crates/executors/src/executors/codex/client.rs#L183-L190)、[start/resume と turn](../../crates/executors/src/executors/codex/client.rs#L257-L298)
+EVK の profile/実行 override が空でも、app-server は利用者・project 設定から model と reasoning effort を解決できる。client は `thread/start` / `thread/resume` の応答を採用してから collaboration mode と turn を構築する。したがって依頼の JSON の `reasoning_effort: null` だけで「設定ファイルの effort が無視された」と結論しない。逆に provider が返した `None` も解決結果として採用し、前回の明示値を残さない。[採用処理](../../crates/executors/src/executors/codex/client.rs#L183-L190)、[start/resume と turn](../../crates/executors/src/executors/codex/client.rs#L257-L322)
 
 実際の値を診断するときは、依頼 override と native の thread 応答・後続 turn の設定を分けて確認する。継承の回帰テストは [reasoning_tests](../../crates/executors/src/executors/codex/client/reasoning_tests.rs#L67-L205) にある。EVK の型が値を表現できることを、任意の provider/model がその値に対応する保証とは扱わない。
 
@@ -78,11 +80,13 @@ Codex の selected_skills は name/path の参照であり、渡し方は実行�
 | 通常 chat（Goal の直接起動以外） | 構造化 `UserInput::Skill` を本文 `UserInput::Text` より前に並べ、turn を開始する |
 | Goal の直接起動 | 選択した name/path の JSON 参照を thread の `developer_instructions` に追加してから thread を start/resume し、Goal を開始する。既存の developer instructions は保持する |
 
-[起動分岐](../../crates/executors/src/executors/codex.rs#L1129-L1184)、[chat 入力](../../crates/executors/src/executors/codex.rs#L1341-L1358)、[Goal context と resume への継承](../../crates/executors/src/executors/codex.rs#L26-L40)、[resume 変換](../../crates/executors/src/executors/codex.rs#L78-L98)
+[起動分岐](../../crates/executors/src/executors/codex.rs#L1148-L1197)、[chat 入力](../../crates/executors/src/executors/codex.rs#L1354-L1371)、[Goal context と resume への継承](../../crates/executors/src/executors/codex.rs#L26-L40)、[resume 変換](../../crates/executors/src/executors/codex.rs#L78-L98)
 
 この区別の理由は、Goal activation に UserInput 配列がないこと、余分な推論 turn を発生させず、永続する 4,000 文字上限の objective を Skill 参照で膨らませないことである。これはソースコメントと [Control and skills の設計説明](../../docs/future/agent-runtime/delegated-agent-display.md#control-and-skills) に記録された理由である。同文書は明示的な承認・廃止ステータスを持たず Validation plan も含むが、この Skill の節は現行コードおよび [通常 chat の順序テスト](../../crates/executors/src/executors/codex.rs#L1922-L1949)、[Goal の初回・再開・既存指示保持テスト](../../crates/executors/src/executors/codex.rs#L2038-L2061) と整合する。文書内の将来の再投影構想まで実装済みとは扱わない。
 
-両経路が補う recall/enrich Skill の選択は [wikillm の Card context](../concepts/card-context-and-llm-wiki.md)、PlanWithGoal の承認後の遷移と現在の承認サービスの接続状態は [Session の承認・質問](../concepts/session-and-agent-run.md#承認質問と現在の接続状態) を参照する。
+両経路とも、旧 EVK 同梱 `skills/llm-wiki` 配下の参照を除外する。同じ名前でも利用者が別の場所に置いた Skill は残し、既存ファイルを削除しない。旧 Pipeline の互換処理は [Card context と LLM Wiki の終了](../concepts/card-context-and-llm-wiki.md)に置く。[選択のフィルター](../../crates/executors/src/legacy_wiki.rs#L101-L119)
+
+PlanWithGoal の承認後の遷移は [Session の承認・質問](../concepts/session-and-agent-run.md#承認質問と現在の接続状態)、resume 時に現在の host context を会話へ反映する順序と失敗は [Provider session の継続](../concepts/session-and-agent-run.md#provider-session-の継続と取り込み)を参照する。
 
 Tool Manager は MCP Server と Skill を User / Project scope で扱う。Project は project_path があるときに探索し、個別の読み取りエラーも結果に収集する。これは会話単位の設定ではなく provider の実ファイルを管理する API である。[型](../../crates/executors/src/agent_tools.rs#L87-L115)・[探索](../../crates/executors/src/agent_tools.rs#L577-L604)・[操作 API](../../crates/server/src/routes/agent_tools.rs#L1-L156)
 
@@ -96,7 +100,9 @@ EVK の設定操作は agent の native config を更新する。Codex は TOML 
 
 接続例と通常の設定手順は [Connecting MCP Servers](../../docs/integrations/mcp-server-configuration.mdx) を参照する。そこに示す JSON 例を Codex の保存形式そのものと解釈しない。
 
-OpenWiki maintenance writer は例外的に、登録 MCP が実行の前提である。EVK は該当 thread だけに `openwiki mcp --host codex` を設定し、`enabled=true` / `required=true` と 10 秒の startup timeout を指定する。thread 登録後、通常 turn / Goal activation の前に、その thread の MCP catalog で六つの lifecycle tool が揃うことを確認する。server 名や ready 状態だけでは十分としない。欠落・不正な pagination・15 秒の preflight timeout は writer 起動失敗として返し、この確認自体では Wiki run を開始しない。[thread 設定](../../crates/executors/src/executors/codex.rs#L929-L956)、[起動順](../../crates/executors/src/executors/codex.rs#L1168-L1182)、[tool 検査](../../crates/executors/src/executors/codex/client/openwiki.rs#L9-L89)
+OpenWiki maintenance writer は例外的に、登録 MCP が実行の前提である。EVK は該当 thread だけに `openwiki mcp --host codex` を設定し、`enabled=true` / `required=true` と 10 秒の startup timeout を指定する。thread 登録後、通常 turn / Goal activation の前に、その thread の MCP catalog で六つの lifecycle tool が揃うことを確認する。server 名や ready 状態だけでは十分としない。欠落・不正な pagination・15 秒の preflight timeout は writer 起動失敗として返し、この確認自体では Wiki run を開始しない。[thread 設定](../../crates/executors/src/executors/codex.rs#L929-L956)、[起動順](../../crates/executors/src/executors/codex.rs#L1167-L1195)、[tool 検査](../../crates/executors/src/executors/codex/client/openwiki.rs#L9-L89)
+
+通常 coding の thread は OpenWiki MCP を無効にし、旧 `.llm-wiki` の生成停止と canonical OpenWiki の読取専用契約を developer instructions に追加する。保守 writer に設定する required MCP とは異なる所有境界である。[通常 thread の設定](../../crates/executors/src/executors/codex.rs#L959-L973)
 
 Reviewer は別の信頼済み role で、ReadOnly / approval Never を設定し、OpenWiki MCP と Skill を thread 内で無効化する。writer の可用性確認を Reviewer に適用して、書込道具を復活させてはいけない。[Reviewer override](../../crates/executors/src/executors/codex.rs#L912-L928)。登録 MCP ではなく自作の shell/stdin bridge で OpenWiki を呼んでも、EVK の [完了証明](../operations/openwiki-maintenance.md)を代替しない。
 

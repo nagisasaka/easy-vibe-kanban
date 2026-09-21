@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:554f0c498622e75a0989f9676c915fa148a3b3a21dd01f8e6b453c1845cf0293",
+  "pageVersion": "sha256:66cfbbd1ca00c10e5eea013b6e06e40cfd3b204172fa7c922cd967382d2abeed",
   "claims": [
     {
       "id": "claim_82dcbc35b88a441daa22355016e0d3f8",
@@ -112,7 +112,7 @@
       "evidence": [
         {
           "resource": "repo://crates/server/src/main.rs",
-          "version": "repo-file-v1:sha256:897511e381cd297282400bcbae3c3b06fb3ed17fa0b2c820bd533ddc02182388"
+          "version": "repo-file-v1:sha256:ed3742e5a823b95200938c2ef6f68f28229e6149b360added74f2968ba62677a"
         },
         {
           "resource": "repo://crates/server/src/startup.rs#L214-L225",
@@ -144,7 +144,7 @@
       "evidence": [
         {
           "resource": "repo://crates/server/src/main.rs",
-          "version": "repo-file-v1:sha256:897511e381cd297282400bcbae3c3b06fb3ed17fa0b2c820bd533ddc02182388"
+          "version": "repo-file-v1:sha256:ed3742e5a823b95200938c2ef6f68f28229e6149b360added74f2968ba62677a"
         },
         {
           "resource": "repo://crates/server/src/startup.rs#L219-L225",
@@ -183,10 +183,28 @@
           "version": "repo-lines-v1:sha256:6da85e2e8e3dd769458c0db73baf6f95bfe258473b112d0e09cf4ee810c1690c:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkYWNjOTBlYzAxZTQ0MGIwNTE2ODE1MWZhM2MxYmE0Nzg0MDZjYzczODYwYTNjMDkxY2RlNWI2YWZhZDIzYTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3NjM4MTQ4YTkzMDRlYjA5ZWIzNzk5MGRjNWEyN2E1YmUyODBjNWRkZTUyOWE5OGJhZWVmY2M2Nzg1OTAzZjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFkN2NlMjM1MWEyYTMyNmJiZjhjMzVhNjFkMWIwMjllZTUwNDViZWNjMjliZmM2YmU3OTBmNTA2MjlkZWRhMzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc2ZmVhMDE2MzY1ZjYwNWE2YjZkZWZiNDlmNzMwNGNhMjlkYTM1ZmVkYjgxOTFkMjA1MzUyZDRkOTNlODA5YzQifQ"
         }
       ]
+    },
+    {
+      "id": "claim_8ad45c03776043bcbce66b5911af926d",
+      "statement": "Bootstrap は execution-only Workspace を Workflow run に束縛し、owner 専用の Session 作成と phase ごとの child 委任を通して起動する。通常 Workflow の node Session 作成は interactive を要求する。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/workflows.rs#L743-L787",
+          "version": "repo-lines-v1:sha256:1b9dd4886a3678fb2da1814583c0806d11f78bb112555a28a5a460ae915f7599:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlZTI2N2M5OThkNWU2MDdiZTVjM2FlZjIxZjRlNjA2YzA5NzllZjMxNzUxOGEzNjM1ZDE1ZTk4ZjAyODg0MzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExMTdmYzAyMWZkNzM0ZGExY2EyMTE4MzY2NWM0MDUxNzUyNjMyZWJkMDhlODQ2YzAzOWU2ZDU0YmM0ZmVlYTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4ODU5MjEwZWJjYjEyY2Y2OGM2MTYyMjJmYzU2MGMxZjY4ZTJmYTMxZjYzMDQ5M2RmODA5NTg4ODdkNTdhZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNkZTU5ZjBmODRmYmNmNjhhOTM2YmFhYjg1M2IxYjdmOTY1NjY4NWMwMWZiYWUzZWJmODIyMGJiNDNmYTA2ZjkifQ"
+        },
+        {
+          "resource": "repo://crates/server/src/workflow_runtime/bootstrap.rs#L360-L380",
+          "version": "repo-lines-v1:sha256:57a00c5c2a0400b65f1c4e4d8fa58b3674efef15487eee2fdf014448256a39c5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyYWUwY2FlMTc5YzYyODAzYmUzMTQ1YjkzOGI3YWE2MGI2YjBkMmFjN2U3MmRhNTU5MTJjNzcxN2Y4MDkzMjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzMjkyNzJjYzgwOTMxMDQwZTRjZTJiYTUxZDNjYWFlOTBkYjJlN2U5ZjcxOWE0MmM3ZmZlNTM2ODk0MjllYWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE0NDQyYThmOTMzMjk1YTRhNmMyYTBiMjlhNzdkMzVlZjZiNjhmZjBhZWU3YjE4MDM5Njg4OWRjZjNlOGNjYmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMxZTIwNzg3NzZmOTdlNGJmMTRkZDg2NGExMTZhMDQwOTAwZmU1YzNkMjM1ZmMwODY0NjkxYmMxMWI3ODk0ZGIifQ"
+        },
+        {
+          "resource": "repo://crates/server/src/workflow_runtime/bootstrap.rs#L96-L124",
+          "version": "repo-lines-v1:sha256:6a43ee9ecefffad93c14192cb9f2ff3c895871e07fcacab725ca077c48a590c7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5N2Y5NTM5MzE0ZGNhOTU3NWQ5NDc4OTk4MTFlMGEwM2ViYjI3YmZkODc0M2NmOTMzOThjZTQ3MWM5OGExOTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5Yjg1YmIzYzBhMzM3YWVjYzVmYzNlOTczMTY0ZTU1MjdiNjI3NzY5N2IwMDBiZDY4NWM5MjdjZmQ4MTk1MWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZTc2MzU1Y2YxMTk5NDgwYzNmOTk4MzZiMTQ4NmM4NDFkODkxZmFhZDkwNGM2MDhlMDkzMDIyZDM3NTdhZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmN2Y1YTZmODY2NWNhZjdkZjM2Yzk0YjZjNzM2ZjY4Y2UxM2NjZTZiZWE5MTQ5MGYyODgyNzkwYjVlODc1NTgifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.1",
-    "at": "2026-09-16T18:13:42.498Z"
+    "at": "2026-09-21T08:16:36.701Z"
   }
 }

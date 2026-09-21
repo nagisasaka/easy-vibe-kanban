@@ -5,7 +5,7 @@ description: easy-vibe-kanban の目的、主要概念の説明先、変更時�
 tags: [overview, onboarding, concepts, navigation]
 verified:
   - by: openwiki/0.5.1
-    at: 2026-09-16T18:13:42.498Z
+    at: 2026-09-21T08:52:18.882Z
 sources:
   - id: openwiki-source-0d0b05d2fac028aecd3be162
     resource: repo://.github/workflows/publish-easy-npx.yml
@@ -15,14 +15,24 @@ sources:
     resource: repo://crates/api-types/src/tag.rs
   - id: openwiki-source-0ba09128382dd913fe9a4c4a
     resource: repo://crates/db/src/models/tag.rs
+  - id: openwiki-source-dfa8135bd6d4dbe37911c061
+    resource: repo://crates/db/src/models/workspace_usage.rs
+  - id: openwiki-source-38bb7eaa90f0c92a0514844d
+    resource: repo://crates/executors/src/legacy_wiki.rs
   - id: openwiki-source-219b8c8774f9360a647d00af
     resource: repo://crates/remote/src/github_app/pr_review.rs
   - id: openwiki-source-502510e01f3135fb1c5219e4
     resource: repo://crates/remote/src/routes/review.rs
+  - id: openwiki-source-5590f47e4cee001a35a42117
+    resource: repo://crates/server/src/routes/workspaces/wiki.rs
+  - id: openwiki-source-df6b7819295f53fc2381f23d
+    resource: repo://deploy/server/compose.yaml
   - id: openwiki-source-98acd1706f9355ed92cb62a8
     resource: repo://docs/docs.json
   - id: openwiki-source-beb5b5e9c33782df52c2de7e
     resource: repo://docs/getting-started.mdx
+  - id: openwiki-source-2e1d91f21691cd271afffb6f
+    resource: repo://docs/self-hosting/server-container.mdx
   - id: openwiki-source-ffe48d9fc170154e85861afd
     resource: repo://docs/settings/creating-task-tags.mdx
   - id: openwiki-source-26312f1dedcae510b462cb43
@@ -31,11 +41,15 @@ sources:
     resource: repo://packages/local-web/src/app/entry/Bootstrap.tsx
   - id: openwiki-source-2bc26d0169842f4566548104
     resource: repo://packages/local-web/src/app/providers/ConfigProvider.tsx
+  - id: openwiki-source-db035046d01e3f24722812c8
+    resource: repo://packages/web-core/src/features/kanban/ui/IntegrationPanel.tsx
+  - id: openwiki-source-e0c2de9e01617a8949b78360
+    resource: repo://packages/web-core/src/features/kanban/ui/KanbanContainer.tsx
   - id: openwiki-source-d4726fdd33da0f7c2f1ae1ee
     resource: repo://packages/web-core/src/shared/lib/remoteApi.ts
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-generated: { by: "codex", at: "2026-09-16T18:13:42.498Z" }
+generated: { by: "codex", at: "2026-09-21T08:52:18.882Z" }
 ---
 
 # クイックスタートと調査案内
@@ -46,8 +60,10 @@ easy-vibe-kanban（EVK）は、Issue で仕事を整理し、Workspace 内で co
 
 1. 利用する coding agent の認証を済ませて EVK を起動する。配布版の入口として README は npx easy-vibe-kanban を案内する。現在の Easy 同梱版は Linux/Windows x64 を対象にするため、[NPX の配布経路と platform 条件](operations/development.md#npx-配布経路と同梱-binary) を確認する。ソースから開発する場合は [開発環境と検証範囲](operations/development.md) を参照する。[配布版の案内](../README.md)
 2. [Project / Issue](concepts/project-and-issue.md) と、変更先の [Repo / Workspace](concepts/workspace.md) を確認する。仕事の分類と、実ファイルを置く場所は別の設定である。
-3. 通常 Session、[WorkflowAttempt](concepts/workflow-attempt.md)、または [Arena](concepts/arena.md) を選び、[Setup → 実行 → レビュー → 統合](workflows/task-to-integration.md) を進める。
-4. canonical repository memory を使う場合は [OpenWiki 初期生成](operations/openwiki-maintenance.md) を別途設定する。[Card context の LLM Wiki](concepts/card-context-and-llm-wiki.md) と役割を混同しない。成果物の確認は [Wiki Viewer の表示元・形式の選択](operations/workspace-inspection.md#wiki-の本文ツリーと表示元を確認する)から行い、閲覧できることと publication 成功を区別する。
+3. 通常 Session、[WorkflowAttempt](concepts/workflow-attempt.md)、または [Arena](concepts/arena.md) を選び、[Setup → 実行 → レビュー → 統合](workflows/task-to-integration.md) を進める。local Board で複数 Card の採用成果を統合する場合は [正式 Integration](concepts/formal-integration.md)を使う。専用環境で検証し、local target の公開と条件付き Done を扱う。
+4. canonical repository memory は [OpenWiki 初期生成・Sync](operations/openwiki-maintenance.md)を Repo ごとに設定する。新規 Card の既定 [Shared directories context](concepts/card-context-and-llm-wiki.md)とは独立しており、旧 LLM Wiki の自動生成は終了している。成果物は [OpenWiki Viewer の表示元](operations/workspace-inspection.md#wiki-の本文ツリーと表示元を確認する)を確認し、閲覧可能と publication 成功を区別する。
+
+サーバーに常駐させる場合は [単一サーバーコンテナー](operations/server-container.md)を参照する。local EVK の HTTPS 配布と Cloud/relay の構成、データの永続化と実行プロセスの継続を区別する。
 
 画面の基本操作は [Get Started](../docs/getting-started.mdx) が入口になる。ただし同文書の「sign-in を省略すると看板・Issue が利用不可」という記載は、現行の local-web 全体には適用できない。local-web は local API を有効化し、remote API base が空なら local identity と /api/local の経路を使う。[旧来の説明](../docs/getting-started.mdx)・[local 設定](../packages/local-web/src/app/providers/ConfigProvider.tsx#L122-L125)・[identity](../packages/local-web/src/app/entry/Bootstrap.tsx#L82-L90)・[API 選択](../packages/web-core/src/shared/lib/remoteApi.ts#L19-L32)
 
@@ -58,11 +74,12 @@ easy-vibe-kanban（EVK）は、Issue で仕事を整理し、Workspace 内で co
 | 共有データを誰が所有し、誰を招待・管理できるか | [Organization・Member・Invitation](concepts/organization-and-membership.md)。個人用組織、Admin、招待 token の寿命 |
 | 何を作るか、誰の仕事か、status や親子関係は何か | [Project・Issue](concepts/project-and-issue.md)。ボード表示と共有 status の差、Workspace との link と旧 Task の違いもここ |
 | Issue を共同編集し、添付を確定し、変更を受け取るには | [Issue の共同作業](concepts/issue-collaboration.md)。Attachment/Blob、購読者、通知の生成と配達 |
-| どこで変更するか、何を共有し、何を削除できるか | [Workspace・Repo](concepts/workspace.md)。Worktree / DirectFolder、所有権、共有ディレクトリ、archive と cleanup |
+| どこで変更するか、何を共有し、何を削除できるか | [Workspace・Repo](concepts/workspace.md)。Worktree / DirectFolder、物理所有権と interactive/execution_only の用途、共有領域、cleanup |
 | 会話、実行、再試行をどう識別するか | [Session・AgentRun・RunAttempt](concepts/session-and-agent-run.md)。native session、現在の承認配線、未送信ドラフト、Goal、queue、子 agent の境界 |
 | 複数段階の仕事をどう定義して動かすか | [WorkflowAttempt](concepts/workflow-attempt.md)。template と Run、分岐・合流、人の判断待ち |
 | 候補をどう比較し、採用後の実装へ移るか | [Arena](concepts/arena.md)。Design / Implementation、候補、promotion と Workflow 内の選択 |
-| prompt の再利用 context と branch 上の知識をどう扱うか | [Card context・Pipeline・LLM Wiki](concepts/card-context-and-llm-wiki.md) |
+| prompt の再利用文脈と並列 source をどう扱うか | [Card context・Shared dirs・旧 LLM Wiki](concepts/card-context-and-llm-wiki.md)。fresh 会話への保存文脈、固定 snapshot と移行境界 |
+| 採用した並列成果を安全に local target へ反映するには | [正式 Integration](concepts/formal-integration.md)。受付予約、host 検証、公開と取消、条件付き Done、回復 |
 | 並列作業の知識を統合済み repository にどう反映するか | [Repository memory](concepts/repository-memory.md)。canonical Wiki、Change Manifest、Workspace Memory、source checkpoint と receipt |
 
 ## 変更内容から調査する
@@ -80,9 +97,11 @@ easy-vibe-kanban（EVK）は、Issue で仕事を整理し、Workspace 内で co
 | PR 自動レビューが始まらない、結果通知が来ない | [GitHub App と Cloud Review](integrations/github-review.md)。組織設定・webhook・R2/worker の受付と完了を分ける |
 | 実行の元データを保全したい | [Native Audit の保存・エクスポート・削除](architecture/agent-runtime.md#native-audit-の保全エクスポート寿命) |
 | Merge / Rebase / PR 後の状態が合わない | [統合までの順序と部分失敗](workflows/task-to-integration.md) → [memory の統合契約](concepts/repository-memory.md) |
-| Wiki を読む、形式を切り替える、表示対象が違う | [Wiki の本文・ツリーと表示元](operations/workspace-inspection.md#wiki-の本文ツリーと表示元を確認する) → [共有 reader とチャット保持](architecture/web-and-sync.md#wiki-のナビゲーションと本文を一つの状態で動かす) |
+| Wiki を読む、表示対象が違う | [Wiki の本文・ツリーと表示元](operations/workspace-inspection.md#wiki-の本文ツリーと表示元を確認する) → [共有 reader とチャット保持](architecture/web-and-sync.md#wiki-のナビゲーションと本文を一つの状態で動かす) |
 | Wiki が stale/error、Bootstrap が途中で止まる | [OpenWiki の phase・共通索引・レポート・完了証拠・回復](operations/openwiki-maintenance.md)。MCP 起動前確認と公開条件を分けて診断する |
-| モバイル・self-hosting・公開運用 | [Remote の接続境界](integrations/remote-access.md) → [運用文書の使い分け](operations/development.md) |
+| 統合・Wiki 実行のログを見る、所有者を止める | [Execution の閲覧と停止](operations/workspace-inspection.md#実行専用-workspace-の確認)。通常開発用 Workspace と操作入口を分ける |
+| local EVK を常駐サーバーへ置く | [単一サーバーコンテナー](operations/server-container.md)。HTTPS/Basic 認証、preview origin、volume、停止と rollback |
+| モバイル・Cloud・relay の self-hosting | [Remote の接続境界](integrations/remote-access.md) → [運用文書の使い分け](operations/development.md) |
 
 ## 小さな用語の境界
 
