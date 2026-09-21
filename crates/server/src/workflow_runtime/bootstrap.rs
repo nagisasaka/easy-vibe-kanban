@@ -103,6 +103,13 @@ pub async fn start(
     root: &std::path::Path,
 ) -> anyhow::Result<()> {
     let run_id = Uuid::new_v4();
+    Workspace::bind_execution_owner(
+        &deployment.db().pool,
+        workspace.id,
+        db::models::workspace_usage::OPENWIKI_BOOTSTRAP,
+        run_id,
+    )
+    .await?;
     state.status = RepositoryWikiStatus::Initializing;
     state.maintenance_workspace_id = Some(workspace.id);
     state.maintenance_session_id = None;
@@ -910,10 +917,42 @@ pub(super) async fn cleanup_with_service<P: executors::runtime::AgentRunPort + '
         .error
         .clone()
         .unwrap_or_else(|| "OpenWiki Bootstrap failed or was cancelled".into());
+    let workflow_status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM workflow_runs WHERE id=?")
+            .bind(owner.workflow_run_id)
+            .fetch_optional(pool)
+            .await?;
+    let cancelled = workflow_status.as_deref() == Some("cancelling");
+    // Inventory/setup may fail after binding ownership but before a Workflow
+    // reservation. Retain its failure on the workspace, not just latest repo state.
+    if workflow_status.is_none()
+        && let Some(workspace_id) = state.maintenance_workspace_id
+        && let Some(workspace) = Workspace::find_by_id(pool, workspace_id).await?
+        && workspace.is_execution_only()
+    {
+        Workspace::save_execution_result(
+            pool,
+            workspace_id,
+            db::models::workspace_usage::OPENWIKI_BOOTSTRAP,
+            Some(owner.workflow_run_id),
+            &db::models::workspace_usage::WorkspaceExecutionResult {
+                status: db::models::workspace_usage::WorkspaceExecutionTerminalStatus::Failed,
+                completed_at: chrono::Utc::now(),
+                error: Some(reason.clone()),
+                wiki_commit: None,
+                no_op: false,
+            },
+        )
+        .await?;
+    }
     runner::update_run_status(
         pool,
         owner.workflow_run_id,
-        WorkflowRunStatus::Failed,
+        if cancelled {
+            WorkflowRunStatus::Canceled
+        } else {
+            WorkflowRunStatus::Failed
+        },
         None,
         Some(&reason),
         true,
@@ -947,6 +986,17 @@ pub async fn cancel_owned_run(deployment: &DeploymentImpl, run_id: Uuid) -> Resu
             "Wiki publication has already started; its exact result must be reconciled before releasing ownership",
         ));
     }
+    // Durable user intent, distinct from failure-driven cleanup. The workflow
+    // remains non-terminal until all children exit and restoration completes.
+    runner::update_run_status(
+        &deployment.db().pool,
+        run_id,
+        WorkflowRunStatus::Cancelling,
+        None,
+        None,
+        false,
+    )
+    .await?;
     state
         .bootstrap
         .as_mut()

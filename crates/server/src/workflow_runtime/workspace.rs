@@ -156,6 +156,7 @@ impl WorkflowWorkspaceResolver for DeploymentWorkflowWorkspaceResolver {
         let pool = &self.deployment.db().pool;
 
         if let Some(workspace_id) = request.existing_workspace_id {
+            db::models::workspace_usage::require_interactive(pool, workspace_id).await?;
             let exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM workspaces WHERE id = ?")
                 .bind(workspace_id)
                 .fetch_one(pool)

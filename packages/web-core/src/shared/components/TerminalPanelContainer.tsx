@@ -15,6 +15,7 @@ export function TerminalPanelContainer() {
   } = useTerminal();
 
   const workspaceId = workspace?.id;
+  const interactive = workspace?.usage === 'interactive';
   const containerRef = workspace?.container_ref ?? null;
   const tabs = workspaceId ? getTabsForWorkspace(workspaceId) : [];
   const activeTab = workspaceId ? getActiveTab(workspaceId) : null;
@@ -37,6 +38,7 @@ export function TerminalPanelContainer() {
   useEffect(() => {
     if (
       workspaceId &&
+      interactive &&
       containerRef &&
       tabs.length === 0 &&
       !creatingRef.current
@@ -47,7 +49,14 @@ export function TerminalPanelContainer() {
     if (tabs.length > 0) {
       creatingRef.current = false;
     }
-  }, [workspaceId, containerRef, tabs.length, createTab]);
+  }, [workspaceId, containerRef, tabs.length, createTab, interactive]);
+
+  if (!interactive)
+    return (
+      <p className="p-base text-low">
+        Interactive terminals are unavailable in execution-only workspaces.
+      </p>
+    );
 
   return (
     <TerminalPanel

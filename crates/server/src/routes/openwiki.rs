@@ -223,11 +223,21 @@ async fn prepare_run(
     OpenWikiAdapter::default()
         .verify_version(&repo.path)
         .await?;
-    let workspace = super::workspaces::create::create_workspace_record(
+    let initial = !services::services::openwiki::has_canonical_wiki(&repo.path, &source)?;
+    let owner_kind = if initial {
+        db::models::workspace_usage::OPENWIKI_BOOTSTRAP
+    } else {
+        db::models::workspace_usage::OPENWIKI_SYNC
+    };
+    let workspace = super::workspaces::create::create_workspace_record_with_owner(
         deployment,
         Some(format!("OpenWiki: {}", repo.display_name)),
+        Some(&db::models::workspace_usage::WorkspaceExecutionOwner::new(
+            owner_kind, repo.id, None,
+        )),
     )
     .await?;
+    let preparation = async {
     WorkspaceRepo::create_many(
         &deployment.db().pool,
         workspace.id,
@@ -278,7 +288,6 @@ async fn prepare_run(
     let events = pending_events(store, &branch)?;
 
     // First bootstrap is explicit init; subsequent sync preserves existing Wiki.
-    let initial = !root.join("openwiki/index.md").exists();
     if initial {
         state.active_sync_input_digest = None;
         state.active_source_commit = Some(source.clone());
@@ -353,9 +362,35 @@ async fn prepare_run(
     };
     state.active_run_id = Some(snapshot.agent_run_id);
     store.save_state(state)?;
+    Workspace::bind_execution_owner(&deployment.db().pool, workspace.id, owner_kind, snapshot.agent_run_id).await?;
     super::sessions::launch_reserved_coding_agent_execution(deployment, snapshot.agent_run_id)
         .await?;
-    Ok(())
+    Ok::<(), anyhow::Error>(())
+    }.await;
+    if let Err(error) = &preparation {
+        // Keep the environment inspectable even when preparation never produced
+        // a run. Do not infer completion or undo a possibly active owner here.
+        let current = Workspace::find_by_id(&deployment.db().pool, workspace.id).await?;
+        if let Some(owner) = current.as_ref().and_then(|ws| ws.execution_owner.as_ref())
+            && owner.run_id.is_none()
+        {
+            Workspace::save_execution_result(
+                &deployment.db().pool,
+                workspace.id,
+                owner_kind,
+                None,
+                &db::models::workspace_usage::WorkspaceExecutionResult {
+                    status: db::models::workspace_usage::WorkspaceExecutionTerminalStatus::Failed,
+                    completed_at: chrono::Utc::now(),
+                    error: Some(format!("Preparation failed: {error:#}")),
+                    wiki_commit: None,
+                    no_op: false,
+                },
+            )
+            .await?;
+        }
+    }
+    preparation
 }
 
 async fn recover_repository(deployment: &DeploymentImpl, repo: &Repo) -> anyhow::Result<()> {
@@ -428,6 +463,29 @@ async fn recover_repository(deployment: &DeploymentImpl, repo: &Repo) -> anyhow:
         // successful host owner/checkpoint and retry; never pay for another run.
         return Ok(());
     }
+    let outcome = db::models::workspace_usage::WorkspaceExecutionResult {
+        status: match &result {
+            Ok(_) => db::models::workspace_usage::WorkspaceExecutionTerminalStatus::Succeeded,
+            Err(_) if run.status == AgentRunStatus::Cancelled => {
+                db::models::workspace_usage::WorkspaceExecutionTerminalStatus::Cancelled
+            }
+            Err(_) => db::models::workspace_usage::WorkspaceExecutionTerminalStatus::Failed,
+        },
+        completed_at: chrono::Utc::now(),
+        error: result.as_ref().err().map(|error| format!("{error:#}")),
+        wiki_commit: result.as_ref().ok().and_then(|(commit, _)| commit.clone()),
+        no_op: result.as_ref().ok().is_some_and(|(_, no_op)| *no_op),
+    };
+    // Retain the run-specific result before the repository's latest pointer can
+    // be reused. Until receipts/state finish, the live owner view stays finalizing.
+    Workspace::save_execution_result(
+        &deployment.db().pool,
+        run.workspace_id,
+        db::models::workspace_usage::OPENWIKI_SYNC,
+        Some(run.id),
+        &outcome,
+    )
+    .await?;
     record_reconciliation_result(&store, &mut state, result)
 }
 

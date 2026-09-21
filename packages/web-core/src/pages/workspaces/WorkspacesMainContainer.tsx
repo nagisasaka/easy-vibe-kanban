@@ -27,6 +27,7 @@ import { useDiffStats } from '@/shared/stores/useWorkspaceDiffStore';
 import { useIsMobile } from '@/shared/hooks/useIsMobile';
 import { useHostId } from '@/shared/providers/HostIdProvider';
 import { WorkspaceWorkflowLink } from '@/features/workflow/ui/WorkspaceWorkflowLink';
+import { ExecutionInspectionPanel } from '@/features/workspace-chat/ui/ExecutionInspectionPanel';
 
 /**
  * Isolated component that reads diffStats from WorkspaceContext.
@@ -237,7 +238,16 @@ export const WorkspacesMainContainer = forwardRef<
     </div>
   ) : null;
 
-  const chatBoxContent = (
+  const chatBoxContent = !selectedWorkspace ? null : selectedWorkspace.usage ===
+    'execution_only' ? (
+    <ExecutionInspectionPanel
+      key={`${selectedWorkspace.id}:${selectedSessionId}`}
+      workspace={selectedWorkspace}
+      sessions={sessions}
+      selectedSessionId={selectedSessionId}
+      onSelectSession={onSelectSession}
+    />
+  ) : selectedWorkspace.usage === 'interactive' ? (
     <ChatBoxWithDiffStats
       session={session}
       workspaceId={workspaceWithSession?.id}
@@ -250,7 +260,7 @@ export const WorkspacesMainContainer = forwardRef<
       onScrollToUserMessage={handleScrollToUserMessage}
       getActiveTurnPatchKey={handleGetActiveTurnPatchKey}
     />
-  );
+  ) : null;
 
   const contextBarContent = workspaceWithSession ? (
     <>

@@ -31,6 +31,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
   const {
     workspaces: activeWorkspaces,
     archivedWorkspaces,
+    executionWorkspaces,
     isLoading: isLoadingList,
   } = useWorkspaces();
 
@@ -196,6 +197,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
       workspace,
       activeWorkspaces,
       archivedWorkspaces,
+      executionWorkspaces,
       isWorkspacesListLoading: isLoadingList,
       isLoading,
       isCreateMode,
@@ -217,6 +219,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
       workspace,
       activeWorkspaces,
       archivedWorkspaces,
+      executionWorkspaces,
       isLoadingList,
       isLoading,
       isCreateMode,

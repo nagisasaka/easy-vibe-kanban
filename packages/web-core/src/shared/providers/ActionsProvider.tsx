@@ -24,6 +24,7 @@ import {
   ActionTargetType,
   resolveLabel,
   getActionLabel,
+  isInspectionAction,
 } from '@/shared/types/actions';
 import { useWorkspaceContext } from '@/shared/hooks/useWorkspaceContext';
 import { UserContext } from '@/shared/hooks/useUserContext';
@@ -34,6 +35,7 @@ import { useLogStream } from '@/shared/hooks/useLogStream';
 import { ActionsContext } from '@/shared/hooks/useActions';
 import { useAppNavigation } from '@/shared/hooks/useAppNavigation';
 import { useAppRuntime } from '@/shared/hooks/useAppRuntime';
+import { workspacesApi } from '@/shared/lib/api';
 
 interface ActionsProviderProps {
   children: ReactNode;
@@ -271,6 +273,16 @@ export function ActionsProvider({ children }: ActionsProviderProps) {
       issueIds?: string[]
     ): Promise<void> => {
       try {
+        const targetWorkspaceId =
+          workspaceId ?? executorContext.currentWorkspaceId;
+        if (targetWorkspaceId && !isInspectionAction(action)) {
+          const target = await workspacesApi.get(targetWorkspaceId);
+          if (target.usage !== 'interactive') {
+            throw new Error(
+              'This workspace is execution-only. Use its owner controls and inspection views.'
+            );
+          }
+        }
         switch (action.requiresTarget) {
           case ActionTargetType.NONE:
             await action.execute(executorContext);

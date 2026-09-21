@@ -147,6 +147,10 @@ pub async fn stop_workspace_execution(
     Extension(workspace): Extension<Workspace>,
     State(deployment): State<DeploymentImpl>,
 ) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+    if workspace.is_execution_only() {
+        super::usage::stop(&deployment, &workspace).await?;
+        return Ok(ResponseJson(ApiResponse::success(())));
+    }
     deployment.container().try_stop(&workspace, false).await;
 
     deployment

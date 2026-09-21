@@ -128,7 +128,7 @@ pub trait ContainerService {
 
             let container_ref = match workspace.container_ref.as_deref() {
                 Some(container_ref) if !container_ref.is_empty() => container_ref,
-                _ => &self.ensure_container_exists(&workspace).await?,
+                _ => &self.container_for_inspection(&workspace).await?,
             };
 
             if container_ref.is_empty() {
@@ -161,7 +161,7 @@ pub trait ContainerService {
             let container_ref = match workspace.container_ref.as_deref() {
                 Some(container_ref) if !container_ref.is_empty() => container_ref,
                 _ => {
-                    ensured_container_ref = self.ensure_container_exists(&workspace).await?;
+                    ensured_container_ref = self.container_for_inspection(&workspace).await?;
                     ensured_container_ref.as_str()
                 }
             };
@@ -723,6 +723,19 @@ pub trait ContainerService {
         workspace: &Workspace,
     ) -> Result<ContainerRef, ContainerError>;
 
+    /// Inspection must never recreate an internal execution's environment.
+    async fn container_for_inspection(
+        &self,
+        workspace: &Workspace,
+    ) -> Result<ContainerRef, ContainerError> {
+        if workspace.is_execution_only() {
+            return super::workspace_usage::inspection_root(workspace)
+                .map(|path| path.to_string_lossy().into_owned())
+                .map_err(ContainerError::Other);
+        }
+        self.ensure_container_exists(workspace).await
+    }
+
     async fn is_container_clean(&self, workspace: &Workspace) -> Result<bool, ContainerError>;
 
     async fn start_execution_inner(
@@ -848,6 +861,15 @@ pub trait ContainerService {
         executor_action: &ExecutorAction,
         run_reason: &ExecutionProcessRunReason,
     ) -> Result<ExecutionProcess, ContainerError> {
+        super::workspace_usage::validate_script_owner(
+            &self.db().pool,
+            workspace.id,
+            session.id,
+            executor_action,
+            run_reason,
+        )
+        .await
+        .map_err(ContainerError::Other)?;
         if !matches!(executor_action.typ(), ExecutorActionType::ScriptRequest(_)) {
             return Err(ContainerError::Other(anyhow!(
                 "coding-agent ExecutionProcess actions were removed; use the canonical AgentRun API"

@@ -56,7 +56,7 @@ impl Session {
     }
 
     /// Find all sessions for a workspace, ordered by most recently used.
-    /// "Most recently used" is defined as the most recent non-dev server execution process.
+    /// "Most recently used" includes canonical AgentRuns and legacy non-dev scripts.
     /// Sessions with no executions fall back to created_at for ordering.
     pub async fn find_by_workspace_id(
         pool: &SqlitePool,
@@ -74,8 +74,12 @@ impl Session {
                FROM sessions s
                LEFT JOIN (
                    SELECT ep.session_id, MAX(ep.created_at) as last_used
-                   FROM execution_processes ep
-                   WHERE ep.run_reason != 'devserver' AND ep.dropped = FALSE
+                   FROM (
+                       SELECT session_id, created_at FROM execution_processes
+                       WHERE run_reason != 'devserver' AND dropped = FALSE
+                       UNION ALL
+                       SELECT session_id, created_at FROM agent_runs
+                   ) ep
                    GROUP BY ep.session_id
                ) latest_ep ON s.id = latest_ep.session_id
                WHERE s.workspace_id = $1
@@ -105,8 +109,12 @@ impl Session {
                FROM sessions s
                LEFT JOIN (
                    SELECT ep.session_id, MAX(ep.created_at) as last_used
-                   FROM execution_processes ep
-                   WHERE ep.run_reason != 'devserver' AND ep.dropped = FALSE
+                   FROM (
+                       SELECT session_id, created_at FROM execution_processes
+                       WHERE run_reason != 'devserver' AND dropped = FALSE
+                       UNION ALL
+                       SELECT session_id, created_at FROM agent_runs
+                   ) ep
                    GROUP BY ep.session_id
                ) latest_ep ON s.id = latest_ep.session_id
                WHERE s.workspace_id = $1
@@ -232,5 +240,86 @@ impl Session {
         .execute(pool)
         .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn latest_session_includes_canonical_activity_without_creating_any_session() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let ws = Workspace::create(
+            &pool,
+            &super::super::workspace::CreateWorkspace {
+                name: None,
+                branch: "fixture".into(),
+            },
+            Uuid::new_v4(),
+        )
+        .await
+        .unwrap();
+        let mut sessions = Vec::new();
+        for (name, created) in [
+            ("generate", "2026-09-01T00:00:00Z"),
+            ("review", "2026-09-01T00:00:01Z"),
+            ("refine", "2026-09-01T00:00:02Z"),
+        ] {
+            let session = Session::create(
+                &pool,
+                &CreateSession {
+                    name: Some(name.into()),
+                    executor: None,
+                },
+                Uuid::new_v4(),
+                ws.id,
+            )
+            .await
+            .unwrap();
+            sqlx::query("UPDATE sessions SET created_at=? WHERE id=?")
+                .bind(created)
+                .bind(session.id)
+                .execute(&pool)
+                .await
+                .unwrap();
+            sessions.push(session);
+        }
+        assert_eq!(
+            Session::find_latest_by_workspace_id(&pool, ws.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            sessions[2].id
+        );
+        let run = Uuid::new_v4();
+        sqlx::query("INSERT INTO agent_runs (id,session_id,workspace_id,request_id,idempotency_key,correlation_id,schema_version,payload_version,runtime_profile_id,provider_id,workspace_mode,workspace_path,request_envelope,created_at) VALUES (?,?,?,?,?,?,1,1,'codex:default','codex','isolated_worktree','/fixture','{}','2026-09-01T00:01:00Z')")
+            .bind(run).bind(sessions[0].id).bind(ws.id).bind(Uuid::new_v4())
+            .bind(run.to_string()).bind(run).execute(&pool).await.unwrap();
+        assert_eq!(
+            Session::find_by_workspace_id(&pool, ws.id).await.unwrap()[0].id,
+            sessions[0].id
+        );
+        assert_eq!(
+            Session::find_latest_by_workspace_id(&pool, ws.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            sessions[0].id
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sessions")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            3
+        );
     }
 }

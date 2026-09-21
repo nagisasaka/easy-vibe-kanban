@@ -48,8 +48,28 @@ describe('workspace sidebar runtime state', () => {
       updated_at: '2026-09-17T00:00:00Z',
       is_running: true,
       archived: false,
+      usage: 'interactive',
     } as WorkspaceWithStatus;
     fixture.summaries = new Map();
+  });
+
+  it('keeps human workspaces even when their name resembles an internal execution', () => {
+    const result = readWorkspaces();
+    expect(result.workspaces.map((workspace) => workspace.id)).toEqual([
+      'workspace',
+    ]);
+    expect(result.executionWorkspaces).toEqual([]);
+  });
+
+  it('separates persistent execution usage even after a successful agent run', () => {
+    fixture.workspace.usage = 'execution_only';
+    fixture.workspace.is_running = false;
+    const result = readWorkspaces();
+    expect(result.workspaces).toEqual([]);
+    expect(result.archivedWorkspaces).toEqual([]);
+    expect(result.executionWorkspaces.map((workspace) => workspace.id)).toEqual(
+      ['workspace']
+    );
   });
 
   it('converges after a terminal AgentRun even when the legacy workspace stream stays running', () => {

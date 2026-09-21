@@ -13,6 +13,7 @@ use super::{
     arena_group::{ArenaGroup, ArenaStatus},
     session::Session,
     workspace_repo::{RepoWithTargetBranch, WorkspaceRepo},
+    workspace_usage::{WorkspaceExecutionOwner, WorkspaceUsage},
 };
 
 #[derive(Debug, Error)]
@@ -65,6 +66,9 @@ pub struct Workspace {
     pub container_ref: Option<String>,
     pub workspace_kind: WorkspaceKind,
     pub container_ownership: ContainerOwnership,
+    pub usage: WorkspaceUsage,
+    #[ts(type = "WorkspaceExecutionOwner | null")]
+    pub execution_owner: Option<Json<WorkspaceExecutionOwner>>,
     pub branch: String,
     pub setup_completed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -156,6 +160,7 @@ impl Workspace {
                           container_ref,
                           workspace_kind AS "workspace_kind!: WorkspaceKind",
                           container_ownership AS "container_ownership!: ContainerOwnership",
+                       usage as "usage!: WorkspaceUsage", execution_owner as "execution_owner: Json<WorkspaceExecutionOwner>",
                           branch,
                           setup_completed_at AS "setup_completed_at: DateTime<Utc>",
                           created_at AS "created_at!: DateTime<Utc>",
@@ -262,6 +267,7 @@ impl Workspace {
                        container_ref,
                        workspace_kind    AS "workspace_kind!: WorkspaceKind",
                        container_ownership AS "container_ownership!: ContainerOwnership",
+                       usage as "usage!: WorkspaceUsage", execution_owner as "execution_owner: Json<WorkspaceExecutionOwner>",
                        branch,
                        setup_completed_at AS "setup_completed_at: DateTime<Utc>",
                        created_at        AS "created_at!: DateTime<Utc>",
@@ -288,6 +294,7 @@ impl Workspace {
                        container_ref,
                        workspace_kind    AS "workspace_kind!: WorkspaceKind",
                        container_ownership AS "container_ownership!: ContainerOwnership",
+                       usage as "usage!: WorkspaceUsage", execution_owner as "execution_owner: Json<WorkspaceExecutionOwner>",
                        branch,
                        setup_completed_at AS "setup_completed_at: DateTime<Utc>",
                        created_at        AS "created_at!: DateTime<Utc>",
@@ -335,6 +342,7 @@ impl Workspace {
                 w.container_ref,
                 w.workspace_kind as "workspace_kind!: WorkspaceKind",
                 w.container_ownership as "container_ownership!: ContainerOwnership",
+                       w.usage as "usage!: WorkspaceUsage", w.execution_owner as "execution_owner: Json<WorkspaceExecutionOwner>",
                 w.branch as "branch!",
                 w.setup_completed_at as "setup_completed_at: DateTime<Utc>",
                 w.created_at as "created_at!: DateTime<Utc>",
@@ -389,17 +397,36 @@ impl Workspace {
         data: &CreateWorkspace,
         id: Uuid,
     ) -> Result<Self, WorkspaceError> {
+        Self::create_with_owner(pool, data, id, None).await
+    }
+
+    /// Internal creation boundary; never expose an intermediate Interactive row.
+    pub async fn create_with_owner(
+        pool: &SqlitePool,
+        data: &CreateWorkspace,
+        id: Uuid,
+        owner: Option<&WorkspaceExecutionOwner>,
+    ) -> Result<Self, WorkspaceError> {
+        let usage = if owner.is_some() {
+            WorkspaceUsage::ExecutionOnly
+        } else {
+            WorkspaceUsage::Interactive
+        };
+        let owner = owner.map(Json);
         Ok(sqlx::query_as!(
             Workspace,
-            r#"INSERT INTO workspaces (id, task_id, container_ref, branch, setup_completed_at, name)
-               VALUES ($1, $2, $3, $4, $5, $6)
-               RETURNING id as "id!: Uuid", task_id as "task_id: Uuid", container_ref, workspace_kind as "workspace_kind!: WorkspaceKind", container_ownership as "container_ownership!: ContainerOwnership", branch, setup_completed_at as "setup_completed_at: DateTime<Utc>", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", archived as "archived!: bool", pinned as "pinned!: bool", name, worktree_deleted as "worktree_deleted!: bool", arena_group_id as "arena_group_id: Uuid", arena_status as "arena_status!: ArenaStatus""#,
+            r#"INSERT INTO workspaces (id, task_id, container_ref, branch, setup_completed_at, name, usage, execution_owner)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+               RETURNING id as "id!: Uuid", task_id as "task_id: Uuid", container_ref, workspace_kind as "workspace_kind!: WorkspaceKind", container_ownership as "container_ownership!: ContainerOwnership",
+                       usage as "usage!: WorkspaceUsage", execution_owner as "execution_owner: Json<WorkspaceExecutionOwner>", branch, setup_completed_at as "setup_completed_at: DateTime<Utc>", created_at as "created_at!: DateTime<Utc>", updated_at as "updated_at!: DateTime<Utc>", archived as "archived!: bool", pinned as "pinned!: bool", name, worktree_deleted as "worktree_deleted!: bool", arena_group_id as "arena_group_id: Uuid", arena_status as "arena_status!: ArenaStatus""#,
             id,
             Option::<Uuid>::None,
             Option::<String>::None,
             data.branch,
             Option::<DateTime<Utc>>::None,
-            data.name
+            data.name,
+            usage,
+            owner
         )
         .fetch_one(pool)
         .await?)
@@ -429,6 +456,7 @@ impl Workspace {
                          container_ref,
                          workspace_kind as "workspace_kind!: WorkspaceKind",
                          container_ownership as "container_ownership!: ContainerOwnership",
+                       usage as "usage!: WorkspaceUsage", execution_owner as "execution_owner: Json<WorkspaceExecutionOwner>",
                          branch,
                          setup_completed_at as "setup_completed_at: DateTime<Utc>",
                          created_at as "created_at!: DateTime<Utc>",
@@ -578,6 +606,7 @@ impl Workspace {
                        container_ref,
                        workspace_kind    AS "workspace_kind!: WorkspaceKind",
                        container_ownership AS "container_ownership!: ContainerOwnership",
+                       usage as "usage!: WorkspaceUsage", execution_owner as "execution_owner: Json<WorkspaceExecutionOwner>",
                        branch,
                        setup_completed_at AS "setup_completed_at: DateTime<Utc>",
                        created_at        AS "created_at!: DateTime<Utc>",
@@ -746,6 +775,8 @@ impl Workspace {
                    w.container_ref,
                    w.workspace_kind,
                    w.container_ownership,
+                   w.usage,
+                   w.execution_owner,
                    w.branch,
                    w.setup_completed_at,
                    w.created_at,
@@ -794,7 +825,8 @@ impl Workspace {
         }
 
         for ws in &mut workspaces {
-            if ws.workspace.name.is_none()
+            if !ws.workspace.is_execution_only()
+                && ws.workspace.name.is_none()
                 && let Some(prompt) = Self::get_first_user_message(pool, ws.workspace.id).await?
             {
                 let name = Self::truncate_to_name(&prompt, WORKSPACE_NAME_MAX_LEN);
@@ -827,7 +859,8 @@ impl Workspace {
 
         let mut ws = WorkspaceWithStatus::from(rec);
 
-        if ws.workspace.name.is_none()
+        if !ws.workspace.is_execution_only()
+            && ws.workspace.name.is_none()
             && let Some(prompt) = Self::get_first_user_message(pool, ws.workspace.id).await?
         {
             let name = Self::truncate_to_name(&prompt, WORKSPACE_NAME_MAX_LEN);
@@ -860,6 +893,8 @@ mod tests {
             container_ref: Some("/tmp/workspace".to_string()),
             workspace_kind,
             container_ownership,
+            usage: Default::default(),
+            execution_owner: None,
             branch: "main".to_string(),
             setup_completed_at: None,
             created_at: now,

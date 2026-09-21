@@ -578,8 +578,12 @@ export const ConversationList = forwardRef<
 
   // Show placeholders only if script not configured AND not already run AND first turn
   const showSetupPlaceholder =
-    !hasSetupScript && !hasSetupScriptRun && hasEntries;
+    attempt.usage !== 'execution_only' &&
+    !hasSetupScript &&
+    !hasSetupScriptRun &&
+    hasEntries;
   const showCleanupPlaceholder =
+    attempt.usage !== 'execution_only' &&
     !hasCleanupScript &&
     !hasCleanupScriptRun &&
     !hasRunningProcess &&
@@ -828,13 +832,22 @@ export const ConversationList = forwardRef<
           {showEmptyState && (
             <div className="flex min-h-full items-center justify-center px-double py-12">
               <ChatEmptyState
-                title={t('conversation.emptyTitle', {
-                  defaultValue: 'Send a message to start the conversation.',
-                })}
-                description={t('conversation.emptyDescription', {
-                  defaultValue:
-                    'Your workspace conversation will appear here once a new turn starts.',
-                })}
+                title={
+                  attempt.usage === 'execution_only'
+                    ? 'No saved messages in this session.'
+                    : t('conversation.emptyTitle', {
+                        defaultValue:
+                          'Send a message to start the conversation.',
+                      })
+                }
+                description={
+                  attempt.usage === 'execution_only'
+                    ? 'This execution is inspected here; its owner controls agent activity.'
+                    : t('conversation.emptyDescription', {
+                        defaultValue:
+                          'Your workspace conversation will appear here once a new turn starts.',
+                      })
+                }
               />
             </div>
           )}

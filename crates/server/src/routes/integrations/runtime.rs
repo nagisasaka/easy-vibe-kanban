@@ -394,9 +394,14 @@ async fn prepare(deployment: &DeploymentImpl, mut run: IntegrationRun) -> anyhow
     );
     run.status = "preparing".into();
     run.save(pool).await?;
-    let workspace = crate::routes::workspaces::create::create_workspace_record(
+    let workspace = crate::routes::workspaces::create::create_workspace_record_with_owner(
         deployment,
         Some(format!("Integration: {}", repo.display_name)),
+        Some(&db::models::workspace_usage::WorkspaceExecutionOwner::new(
+            db::models::workspace_usage::INTEGRATION,
+            repo.id,
+            Some(run.id),
+        )),
     )
     .await?;
     run.workspace_id = Some(workspace.id);

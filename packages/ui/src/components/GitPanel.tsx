@@ -1,9 +1,9 @@
-import { GitBranchIcon } from '@phosphor-icons/react';
-import { useTranslation } from 'react-i18next';
-import { cn } from '../lib/cn';
-import { RepoCard, type RepoAction } from './RepoCard';
-import { InputField } from './InputField';
-import { ErrorAlert } from './ErrorAlert';
+import { GitBranchIcon } from "@phosphor-icons/react";
+import { useTranslation } from "react-i18next";
+import { cn } from "../lib/cn";
+import { RepoCard, type RepoAction } from "./RepoCard";
+import { InputField } from "./InputField";
+import { ErrorAlert } from "./ErrorAlert";
 
 export interface RepoInfo {
   id: string;
@@ -14,7 +14,7 @@ export interface RepoInfo {
   remoteCommitsAhead?: number;
   prNumber?: number;
   prUrl?: string;
-  prStatus?: 'open' | 'merged' | 'closed' | 'unknown';
+  prStatus?: "open" | "merged" | "closed" | "unknown";
   showPushButton?: boolean;
   isPushPending?: boolean;
   isPushSuccess?: boolean;
@@ -23,6 +23,7 @@ export interface RepoInfo {
 }
 
 interface GitPanelProps {
+  readOnly?: boolean;
   repos: RepoInfo[];
   repoSelectedActions?: Record<string, RepoAction>;
   workingBranchName: string;
@@ -37,6 +38,7 @@ interface GitPanelProps {
 }
 
 export function GitPanel({
+  readOnly = false,
   repos,
   repoSelectedActions,
   workingBranchName,
@@ -48,19 +50,20 @@ export function GitPanel({
   className,
   error,
 }: GitPanelProps) {
-  const { t } = useTranslation(['tasks', 'common']);
+  const { t } = useTranslation(["tasks", "common"]);
 
   return (
     <div
       className={cn(
-        'flex flex-col flex-1 w-full bg-secondary text-low overflow-y-auto',
-        className
+        "flex flex-col flex-1 w-full bg-secondary text-low overflow-y-auto",
+        className,
       )}
     >
       {error && <ErrorAlert message={error} />}
       <div className="gap-base px-base">
         {repos.map((repo) => (
           <RepoCard
+            readOnly={readOnly}
             key={repo.id}
             repoId={repo.id}
             name={repo.name}
@@ -75,12 +78,12 @@ export function GitPanel({
             isPushSuccess={repo.isPushSuccess}
             isPushError={repo.isPushError}
             isTargetRemote={repo.isTargetRemote}
-            selectedAction={repoSelectedActions?.[repo.id] ?? 'pull-request'}
+            selectedAction={repoSelectedActions?.[repo.id] ?? "pull-request"}
             onSelectedActionChange={(action) =>
               onRepoActionChange?.(repo.id, action)
             }
-            onChangeTarget={() => onActionsClick?.(repo.id, 'change-target')}
-            onRebase={() => onActionsClick?.(repo.id, 'rebase')}
+            onChangeTarget={() => onActionsClick?.(repo.id, "change-target")}
+            onRebase={() => onActionsClick?.(repo.id, "rebase")}
             onActionsClick={(action) => onActionsClick?.(repo.id, action)}
             onPushClick={() => onPushClick?.(repo.id)}
             onMoreClick={() => onMoreClick?.(repo.id)}
@@ -90,15 +93,19 @@ export function GitPanel({
           <div className="flex gap-base items-center">
             <GitBranchIcon className="size-icon-md text-base" weight="fill" />
             <p className="font-medium truncate">
-              {t('common:sections.workingBranch')}
+              {t("common:sections.workingBranch")}
             </p>
           </div>
-          <InputField
-            variant="editable"
-            value={workingBranchName}
-            onChange={onWorkingBranchNameChange}
-            placeholder={t('gitPanel.advanced.placeholder')}
-          />
+          {readOnly ? (
+            <p className="break-all text-sm">{workingBranchName}</p>
+          ) : (
+            <InputField
+              variant="editable"
+              value={workingBranchName}
+              onChange={onWorkingBranchNameChange}
+              placeholder={t("gitPanel.advanced.placeholder")}
+            />
+          )}
         </div>
       </div>
     </div>

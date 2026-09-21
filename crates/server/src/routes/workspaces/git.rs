@@ -452,7 +452,7 @@ pub async fn get_workspace_branch_status(
 
     let container_ref = deployment
         .container()
-        .ensure_container_exists(&workspace)
+        .container_for_inspection(&workspace)
         .await?;
     let workspace_dir = PathBuf::from(&container_ref);
 

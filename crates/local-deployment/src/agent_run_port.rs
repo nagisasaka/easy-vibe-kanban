@@ -702,6 +702,14 @@ impl LocalAgentRunPort {
             .map_err(port_database)?
             .ok_or(AgentRunPortError::NotFound(request.workspace.workspace_id))?;
         let current_dir = Path::new(&request.workspace.path);
+        services::services::workspace_usage::validate_agent_owner(
+            &self.db.pool,
+            &workspace,
+            request,
+            false,
+        )
+        .await
+        .map_err(|error| AgentRunPortError::Rejected(format!("{error:#}")))?;
         if !current_dir.is_dir() {
             return Err(AgentRunPortError::Rejected(format!(
                 "AgentRun workspace does not exist: {}",
@@ -736,6 +744,14 @@ impl LocalAgentRunPort {
         workspace: &Workspace,
         provider: DirectProvider,
     ) -> Result<ExecutionEnv, AgentRunPortError> {
+        services::services::workspace_usage::validate_agent_owner(
+            &self.db.pool,
+            workspace,
+            request,
+            true,
+        )
+        .await
+        .map_err(|error| AgentRunPortError::Rejected(format!("{error:#}")))?;
         let repos = WorkspaceRepo::find_repos_for_workspace(&self.db.pool, workspace.id)
             .await
             .map_err(port_database)?;
@@ -760,7 +776,8 @@ impl LocalAgentRunPort {
             db::models::integration::is_integration_workspace(&self.db.pool, workspace.id)
                 .await
                 .map_err(port_database)?;
-        let source_completion_allowed = !integration_workspace
+        let source_completion_allowed = !workspace.is_execution_only()
+            && !integration_workspace
             && executors::executors::provider_adapter::memory_source_completion_allowed(
                 provider,
                 direct_intent(request.intent, attempt.mode),
@@ -2428,6 +2445,28 @@ impl AgentRunPort for LocalAgentRunPort {
         self.validate_durable_command(&command).await?;
         if !matches!(&command.command, AgentRunPortCommand::Cancel { .. }) {
             let (request, _) = self.load_request(command.agent_run_id).await?;
+            let workspace = Workspace::find_by_id(&self.db.pool, request.workspace.workspace_id)
+                .await
+                .map_err(port_database)?
+                .ok_or(AgentRunPortError::NotFound(request.workspace.workspace_id))?;
+            if workspace.is_execution_only() {
+                if !matches!(
+                    &command.command,
+                    AgentRunPortCommand::Create { .. }
+                        | AgentRunPortCommand::SubmitInput { .. }
+                        | AgentRunPortCommand::ResolveApproval { .. }
+                ) {
+                    return Err(AgentRunPortError::Rejected("Execution-only workspace does not accept free-form controls or retries; use its owner".into()));
+                }
+                services::services::workspace_usage::validate_agent_owner(
+                    &self.db.pool,
+                    &workspace,
+                    &request,
+                    true,
+                )
+                .await
+                .map_err(|error| AgentRunPortError::Rejected(error.to_string()))?;
+            }
             if let Some(owner) = db::models::integration::workspace_owner(
                 &self.db.pool,
                 request.workspace.workspace_id,

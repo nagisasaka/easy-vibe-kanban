@@ -183,6 +183,7 @@ pub async fn create_session(
         .ok_or(ApiError::Workspace(WorkspaceError::ValidationError(
             "Workspace not found".to_string(),
         )))?;
+    _workspace.require_interactive()?;
 
     let session = Session::create(
         pool,

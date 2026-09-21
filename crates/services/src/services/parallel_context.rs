@@ -79,7 +79,7 @@ pub async fn discover(
          LEFT JOIN local_workspace_links l ON l.workspace_id=w.id
          LEFT JOIN local_issues i ON i.id=l.issue_id
          LEFT JOIN local_project_statuses st ON st.id=i.status_id
-         WHERE wr.repo_id=? AND (? IS NULL OR w.id>?) ORDER BY w.id LIMIT ?",
+         WHERE w.usage='interactive' AND wr.repo_id=? AND (? IS NULL OR w.id>?) ORDER BY w.id LIMIT ?",
     ).bind(repo.id).bind(query.after_workspace).bind(query.after_workspace)
         .bind((limit + 1) as i64).fetch_all(pool).await?;
     let next_workspace = (activities.len() > limit).then(|| activities[limit - 1].workspace_id);

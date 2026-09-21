@@ -124,7 +124,10 @@ export const RightSidebar = memo(function RightSidebar({
       {
         title: 'Terminal',
         persistKey: PERSIST_KEYS.terminalSection,
-        visible: isTerminalVisible && !isTerminalExpanded,
+        visible:
+          selectedWorkspace?.usage === 'interactive' &&
+          isTerminalVisible &&
+          !isTerminalExpanded,
         expanded: terminalExpanded,
         content: <TerminalPanelContainer />,
         actions: [{ icon: ArrowsOutSimpleIcon, onClick: expandTerminal }],

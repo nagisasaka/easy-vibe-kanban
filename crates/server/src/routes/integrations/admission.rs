@@ -95,6 +95,7 @@ async fn inspect_source(
         let workspace = Workspace::find_by_id(pool, *id)
             .await?
             .context("Workspace missing")?;
+        workspace.require_interactive()?;
         let repos = WorkspaceRepo::find_repos_for_workspace(pool, *id).await?;
         for member in repos {
             let membership = WorkspaceRepo::find_by_workspace_and_repo_id(pool, *id, member.id)

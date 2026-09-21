@@ -1062,7 +1062,14 @@ pub(super) async fn reserve_repository_workflow(
         Uuid::parse_str(workflow::templates::OPENWIKI_BOOTSTRAP_ID).expect("system UUID");
     get_workflow_template(pool, template_id).await?;
     validate_graph_for_run(&graph).map_err(orchestration_api_error)?;
-    ensure_agent_node_sessions(pool, workspace_id, &mut graph).await?;
+    crate::routes::workflows::ensure_repository_owner_sessions(
+        pool,
+        workspace_id,
+        repository_id,
+        run_id,
+        &mut graph,
+    )
+    .await?;
     sqlx::query("INSERT INTO workflow_runs (id, workflow_id, repository_id, workspace_id, trigger_source, input_text, graph_snapshot, status, started_at) VALUES (?, ?, ?, ?, 'openwiki_bootstrap', ?, ?, 'running', datetime('now','subsec'))")
         .bind(run_id).bind(template_id).bind(repository_id).bind(workspace_id)
         .bind(input_text)
@@ -1267,7 +1274,7 @@ fn workflow_graph_snapshot_version(graph: &WorkflowGraph) -> Result<String, ApiE
     Ok(format!("sha256:{digest:x}"))
 }
 
-pub(super) fn stable_workflow_identity(
+pub(crate) fn stable_workflow_identity(
     orchestration_run_id: Uuid,
     node_execution_id: Uuid,
     iteration: i64,

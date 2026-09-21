@@ -87,6 +87,8 @@ import { deriveCanonicalAgentRunActionPolicy } from '@/features/agent-runtime';
 import { canonicalAgentControls } from '../model/canonicalAgentControls';
 import { GoalProgressCard } from './GoalProgressCard';
 import { PlanGoalApprovalCard } from './PlanGoalApprovalCard';
+import { useWorkspaceRecord } from '@/shared/hooks/useWorkspaceRecord';
+import { ExecutionInspectionPanel } from './ExecutionInspectionPanel';
 
 /** Compute execution status from boolean flags */
 function computeExecutionStatus(params: {
@@ -165,6 +167,32 @@ type SessionChatBoxContainerProps =
   | PlaceholderProps;
 
 export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
+  const workspaceId =
+    props.mode === 'existing-session'
+      ? props.session.workspace_id
+      : props.mode === 'new-session'
+        ? props.workspaceId
+        : undefined;
+  const { data: workspace } = useWorkspaceRecord(workspaceId);
+  // All entry points (Board, VS Code, Arena and main Workspace) share this gate.
+  // Do not mount composer hooks/draft/queue effects until usage is known.
+  if (workspaceId && workspace?.usage !== 'interactive') {
+    if (!workspace || props.mode === 'placeholder') return null;
+    return (
+      <ExecutionInspectionPanel
+        workspace={workspace}
+        sessions={props.sessions}
+        selectedSessionId={
+          props.mode === 'existing-session' ? props.session.id : undefined
+        }
+        onSelectSession={props.onSelectSession}
+      />
+    );
+  }
+  return <InteractiveSessionChatBox {...props} />;
+}
+
+function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
   const {
     mode,
     sessions,

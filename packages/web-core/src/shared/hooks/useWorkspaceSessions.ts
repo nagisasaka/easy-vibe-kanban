@@ -4,6 +4,7 @@ import { sessionsApi } from '@/shared/lib/api';
 import { useHostId } from '@/shared/providers/HostIdProvider';
 import { workspaceSessionKeys } from '@/shared/hooks/workspaceSessionKeys';
 import type { Session } from 'shared/types';
+import { resolveSessionSelection } from './workspaceSessionSelection';
 
 interface UseWorkspaceSessionsOptions {
   enabled?: boolean;
@@ -47,7 +48,10 @@ export function useWorkspaceSessions(
   const [selection, setSelection] = useState<SessionSelection | undefined>(
     undefined
   );
-  const prevWorkspaceIdRef = useRef(workspaceId);
+  const scopeKey = `${hostId ?? 'local'}:${workspaceId ?? ''}`;
+  const prevWorkspaceIdRef = useRef(scopeKey);
+  const requestedSessionId = getRequestedSessionId();
+  const prevRequestedSessionRef = useRef(requestedSessionId);
 
   const { data: sessions = [], isLoading } = useQuery<Session[]>({
     queryKey: workspaceSessionKeys.byWorkspace(workspaceId, hostId),
@@ -59,28 +63,28 @@ export function useWorkspaceSessions(
   // This replaces two separate effects that had a race condition where the reset
   // effect would fire after auto-select when sessions were cached, undoing the selection.
   useEffect(() => {
-    const workspaceChanged = prevWorkspaceIdRef.current !== workspaceId;
-    prevWorkspaceIdRef.current = workspaceId;
-    const requestedSessionId = getRequestedSessionId();
+    const workspaceChanged =
+      prevWorkspaceIdRef.current !== scopeKey ||
+      prevRequestedSessionRef.current !== requestedSessionId;
+    prevWorkspaceIdRef.current = scopeKey;
+    prevRequestedSessionRef.current = requestedSessionId;
 
     if (sessions.length > 0) {
       // Workflow run links can request a specific session; otherwise sessions
       // are ordered by most recent use, so the first session is the default.
       // Only preserve new session mode within the same workspace.
-      setSelection((prev) => {
-        if (
-          requestedSessionId &&
-          sessions.some((session) => session.id === requestedSessionId)
-        ) {
-          return { mode: 'existing', sessionId: requestedSessionId };
-        }
-        if (prev?.mode === 'new' && !workspaceChanged) return prev;
-        return { mode: 'existing', sessionId: sessions[0].id };
-      });
+      setSelection((prev) =>
+        resolveSessionSelection(
+          sessions,
+          prev,
+          requestedSessionId,
+          workspaceChanged
+        )
+      );
     } else {
       setSelection(undefined);
     }
-  }, [workspaceId, sessions]);
+  }, [scopeKey, sessions, requestedSessionId]);
 
   const isNewSessionMode = selection?.mode === 'new' || sessions.length === 0;
   const selectedSessionId =
