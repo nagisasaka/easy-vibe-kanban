@@ -1,0 +1,30 @@
+name: evk-server
+services:
+  evk:
+    image: ${EVK_IMAGE:?Set EVK_IMAGE to a versioned GHCR image}
+    restart: unless-stopped
+    ports:
+      - "443:8443"
+    environment:
+      EVK_DOMAIN: ${EVK_DOMAIN:?Set the HTTPS hostname}
+      EVK_PREVIEW_DOMAIN: ${EVK_PREVIEW_DOMAIN:-}
+    volumes:
+      - home:/home/appuser
+      - repos:/repos
+      - work:/var/tmp
+      - type: bind
+        source: ./secrets
+        target: /run/evk-secrets
+        read_only: true
+        bind:
+          create_host_path: false
+    stop_grace_period: 150s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  home:
+  repos:
+  work:

@@ -52,6 +52,7 @@ Do not manually edit shared/remote-types.ts, instead edit crates/remote/src/bin/
 - For validation builds, use GitHub Actions to build and publish to npm. Do not attempt to build release packages on this machine.
 - After the action completes, verify the published `easy-vibe-kanban` version with the official npm registry (`https://registry.npmjs.org/`) and install/run from npm for user-facing checks.
 - `git-build.md` may document historical artifact-based flows, but `PROJECT.md` overrides it for current build/release decisions.
+- Server container distribution: `.github/workflows/publish-server.yml` builds and validates the root Dockerfile's `server` target in GitHub Actions, then publishes version-tagged images to GHCR. A manual dispatch builds/tests without publishing. This is separate from npm release validation; do not run local Docker release builds unless explicitly requested. Docker-free validation is `pnpm run server:check`, plus the relevant Rust/frontend gates. Report container/host tests as unverified when Docker or host access is unavailable.
 
 ## Before Completing a Task
 - Run `pnpm run format` to format all Rust workspaces and web code.
@@ -68,4 +69,3 @@ Do not manually edit shared/remote-types.ts, instead edit crates/remote/src/bin/
 ## Security & Config Tips
 - Use `.env` for local overrides; never commit secrets. Key envs: `FRONTEND_PORT`, `BACKEND_PORT`, `HOST` 
 - Dev ports and assets are managed by `scripts/setup-dev-environment.js`.
-

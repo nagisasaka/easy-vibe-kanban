@@ -52,6 +52,15 @@ Dockerfile*
 .env.development.local
 .env.test.local
 .env.production.local
+**/.env*
+!**/.env.example
+**/secrets/
+**/backups/
+**/.evk-shared/
+**/.codex/
+**/.ssh/
+**/.agents/
+PROJECT.md
 
 # Logs
 logs/

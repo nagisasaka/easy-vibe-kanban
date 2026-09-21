@@ -1,0 +1,87 @@
+name: Build and publish EVK server image
+
+on:
+  push:
+    tags: ["v*"]
+  # Test a branch's image without publishing it. No GitHub Release is required.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22.22.1"
+  PNPM_VERSION: "10.13.1"
+
+concurrency:
+  group: evk-server-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  server-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node
+      - run: pnpm install --frozen-lockfile
+      - name: Validate server configuration
+        run: pnpm run server:check
+      - name: Choose image reference
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9]+([.-][A-Za-z0-9]+)*)?$ ]] || {
+              echo 'Expected v1.2.3 or v1.2.3-rc.1'; exit 1;
+            }
+          else
+            version="test-${GITHUB_SHA:0:12}"
+          fi
+          echo "reference=$repository:$version" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (not yet published)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: server
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ steps.image.outputs.reference }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.image.outputs.version }}
+            org.opencontainers.image.licenses=Apache-2.0
+          cache-from: type=gha,scope=evk-server-amd64
+          cache-to: type=gha,mode=max,scope=evk-server-amd64
+      - name: Check the built image before publishing
+        env:
+          EVK_SMOKE_IMAGE: ${{ steps.image.outputs.reference }}
+        run: bash deploy/server/smoke-image.sh "$EVK_SMOKE_IMAGE"
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the tested image
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        env:
+          EVK_PUBLISH_IMAGE: ${{ steps.image.outputs.reference }}
+        run: |
+          set -euo pipefail
+          docker push "$EVK_PUBLISH_IMAGE"
+          echo "Published: $EVK_PUBLISH_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Use the digest printed by docker push for immutable deployment pinning.' >> "$GITHUB_STEP_SUMMARY"

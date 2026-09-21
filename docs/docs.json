@@ -100,6 +100,7 @@
         "group": "Self-Hosting",
         "pages": [
           "self-hosting/local-development",
+          "self-hosting/server-container",
           "self-hosting/deploy-docker"
         ]
       },

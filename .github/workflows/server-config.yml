@@ -1,0 +1,44 @@
+name: Validate server distribution
+on:
+  pull_request:
+    paths:
+      - "deploy/server/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/*server*"
+      - "docs/self-hosting/server-container.mdx"
+      - "package.json"
+      - "pnpm-lock.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "deploy/server/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/*server*"
+      - "docs/self-hosting/server-container.mdx"
+      - "package.json"
+      - "pnpm-lock.yaml"
+permissions:
+  contents: read
+env:
+  NODE_VERSION: "22.22.1"
+  PNPM_VERSION: "10.13.1"
+jobs:
+  config:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node
+      - run: pnpm install --frozen-lockfile
+      - run: sudo apt-get update && sudo apt-get install -y nginx apache2-utils
+      - run: pnpm run server:check
+        env:
+          EVK_REQUIRE_NGINX_TEST: "1"
+      - name: Validate Compose syntax without starting containers
+        run: docker compose -f deploy/server/compose.yaml config --quiet
+        env:
+          EVK_IMAGE: ghcr.io/example/evk:test
+          EVK_DOMAIN: evk.example.test

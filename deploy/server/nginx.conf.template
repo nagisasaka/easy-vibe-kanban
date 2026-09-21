@@ -1,0 +1,66 @@
+# One non-blocking worker is sufficient for a single-user development server.
+worker_processes 1;
+pid /tmp/evk-server/nginx.pid;
+error_log stderr warn;
+events { worker_connections 1024; }
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    server_tokens off;
+    # Do not log query strings, credentials, or agent messages.
+    log_format safe '$remote_addr $request_method $uri $status';
+    access_log /dev/stdout safe;
+    client_body_temp_path /tmp/evk-server/client;
+    proxy_temp_path /tmp/evk-server/proxy;
+    fastcgi_temp_path /tmp/evk-server/fastcgi;
+    uwsgi_temp_path /tmp/evk-server/uwsgi;
+    scgi_temp_path /tmp/evk-server/scgi;
+    client_max_body_size 100m;
+    map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+
+    ssl_certificate /run/evk-secrets/tls/fullchain.pem;
+    ssl_certificate_key /run/evk-secrets/tls/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:TLS:10m;
+    ssl_session_tickets off;
+    auth_basic "EVK private development server";
+    auth_basic_user_file /run/evk-secrets/htpasswd;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $http_host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    # Basic credentials must never reach EVK or a project's dev server.
+    proxy_set_header Authorization "";
+    proxy_set_header Proxy-Authorization "";
+    # Remote relay authentication is not an ingress path in this distribution.
+    proxy_set_header X-VK-Relayed "";
+    proxy_set_header X-VK-Sig-Session "";
+    proxy_set_header X-VK-Sig-Ts "";
+    proxy_set_header X-VK-Sig-Nonce "";
+    proxy_set_header X-VK-Sig-Signature "";
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+
+    server {
+        listen 8443 ssl default_server;
+        server_name _;
+        return 444;
+    }
+    server {
+        listen 8443 ssl;
+        server_name @@APP_DOMAIN@@;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy no-referrer always;
+        # Never serve project-controlled HTML in the EVK application's origin.
+        location ~ ^/api/(?:host/[^/]+/)?preview(?:/|$) { return 403; }
+        location / { proxy_pass http://127.0.0.1:3000; }
+    }
+    @@PREVIEW_SERVER@@
+}
