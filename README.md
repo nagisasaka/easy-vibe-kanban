@@ -22,6 +22,11 @@
 npx easy-vibe-kanban
 ```
 
+To keep agents running while your laptop is offline, use the
+[single-user server distribution](docs/self-hosting/server-container.mdx): a
+prebuilt GHCR image with HTTPS, Basic authentication, persistent volumes and an
+extensible development toolchain. Deployment files are in `deploy/server/`.
+
 ![](packages/public/vibe-kanban-screenshot-overview.png)
 
 ## Why

@@ -1,0 +1,231 @@
+---
+title: "EVK single-user server"
+description: "Run the EVK application and coding agents on a Linux server with HTTPS, Basic authentication and persistent Docker volumes."
+---
+
+Run EVK and its agents on an always-on server, then use EVK in your laptop's browser. Closing the browser or putting the laptop to sleep does not stop a server-side run. Stopping the container, rebooting the server or losing power does stop its processes; persistent volumes preserve data, not executing processes.
+
+This distribution runs the **local EVK application** remotely. It is separate from [Vibe Kanban Cloud deployment](/self-hosting/deploy-docker), and does not require PostgreSQL, ElectricSQL, upstream billing access or a relay service.
+
+<Warning>
+  This is a single trusted user's development environment, not a multi-tenant
+  service. Anyone with the Basic-auth password can operate agents and access
+  repositories and credentials. Agents share the same Linux user as EVK and
+  nginx. Read-only secret mounts prevent overwriting, not reading. Use a
+  dedicated server, restrict ingress to your IP/VPN where possible, and do not
+  mount the Docker socket, your host home or cloud administrator credentials.
+</Warning>
+
+## What the image contains
+
+- Prebuilt EVK frontend, Rust server, sibling `agent-process-host` executable and `vibe-kanban-mcp` CLI.
+- nginx with HTTPS and Basic authentication; only host port **443** is published.
+- Codex CLI, OpenWiki, Node.js, pnpm, Git, Git LFS, GitHub CLI and Python.
+- The repository's pinned Rust toolchain, rustfmt, Clippy, cargo-watch, C/C++ compiler, CMake and native build dependencies for developing EVK itself.
+- A non-root runtime user, `appuser` (**UID/GID 10001**).
+
+The serving binaries live in `/usr/local/bin`, not in a project's checkout. Editing or building EVK in `/repos` does not replace the application that is managing that work. Additional agent CLIs and project-specific SDKs can be added with a derived image.
+
+The initial published platform is **Linux amd64** (x86-64 EC2, not Graviton/ARM). Resource needs depend mostly on your builds and concurrent agents. The image is deliberately larger than a minimal runtime image because it contains a development toolchain.
+
+## Prepare the host
+
+You need Docker Engine, Docker Compose v2, disk space for images, repositories and build caches, and a DNS name. Allow inbound TCP 443 in both the cloud firewall and host firewall. Do not expose ports 3000, 3001, 8443 or project development ports directly. This configuration does not provide HTTP on port 80.
+
+Copy `deploy/server/compose.yaml`, `.env.example` and `.gitignore` from the **same source tag as the image** into a dedicated directory on the host. You do not need to clone or compile the application to run it.
+
+Copy `.env.example` to `.env`, then edit it:
+
+```dotenv .env
+# Replace this example with an image that has actually been published.
+EVK_IMAGE=ghcr.io/nagisasaka/easy-vibe-kanban:1.2.0
+EVK_DOMAIN=evk.example.com
+EVK_PREVIEW_DOMAIN=preview.example.com
+```
+
+The version above is illustrative, not a claim that this image exists. You can instead pin `EVK_IMAGE` to the immutable `ghcr.io/owner/repository@sha256:...` digest from the publication output. Keep the Compose project name (`evk-server`) stable: changing it selects different named volumes.
+
+Point `evk.example.com` and `*.preview.example.com` at the server. The preview wildcard must be separate from the EVK application's origin. Set `EVK_PREVIEW_DOMAIN=` if you do not need project previews; only the application hostname and certificate are then required.
+
+## Provide TLS and the password file
+
+Obtain a trusted TLS certificate with SANs covering `evk.example.com` and, if enabled, `*.preview.example.com`. Use your existing certificate issuer; wildcard certificates typically use automated DNS-01 validation. This container does **not** issue or renew certificates, and does not need your DNS provider's credentials.
+
+The mount must contain these actual files, not symlinks pointing outside it:
+
+```text
+secrets/
+├── htpasswd
+└── tls/
+    ├── fullchain.pem
+    └── privkey.pem
+```
+
+After placing the certificate and key in `secrets/tls`, create the password file using the image's bundled tool. The following commands run in your deployment directory, not inside a project repository:
+
+```bash
+mkdir -p secrets/tls
+docker compose pull
+# The normal secrets mount is read-only. This temporary mount writes only the
+# password file and runs as your host user. Enter a strong password when asked.
+docker compose run --rm --no-deps --user "$(id -u):$(id -g)" \
+  --entrypoint htpasswd -v "$PWD/secrets:/password-setup" \
+  evk -Bc /password-setup/htpasswd owner
+sudo chown -R 10001:10001 secrets
+sudo chmod 750 secrets secrets/tls
+sudo chmod 640 secrets/htpasswd secrets/tls/fullchain.pem secrets/tls/privkey.pem
+```
+
+`-B` selects bcrypt. Use `-c` only when creating the file: it replaces an existing password file. For rotation, use the same interactive command **without `-c`**, and run it as UID/GID 10001 after the ownership change. Do not put passwords in `.env`, image layers, shell command arguments, Git or build logs.
+
+EVK refuses to start if the certificate is expired/not yet valid, does not cover the configured hostnames, has a mismatched private key, or the password file is missing or is not bcrypt. These checks do not replace browser verification of the certificate's trust chain.
+
+## Start and sign in
+
+```bash
+docker compose config --quiet
+docker compose up -d
+docker compose ps
+docker compose logs --tail=100 evk
+```
+
+Open `https://evk.example.com`. Your browser first asks for the Basic-auth user and password. Without credentials, `/`, `/api/info` and WebSocket connections return 401. Health checks probe the internal backend and the unauthenticated HTTPS challenge. A failed service causes the supervisor to stop its sibling; `restart: unless-stopped` restarts the container. An `unhealthy` status alone does not cause Docker to restart it.
+
+Authenticate Codex once, from a terminal on the host:
+
+```bash
+docker compose exec evk codex login --device-auth
+docker compose exec evk codex login status
+```
+
+Open the printed link in your laptop's browser and enter the one-time code. Device-code login may need to be enabled in your ChatGPT account/workspace. This avoids exposing a localhost OAuth callback port. See [OpenAI's headless authentication instructions](https://learn.chatgpt.com/docs/auth#login-on-headless-devices) for account requirements and alternatives. Codex credentials and sessions live under the persistent user home; treat that volume and its backups as secrets.
+
+Configure Git identity as `appuser`, clone your project into `/repos`, and select that server-side path in EVK:
+
+```bash
+docker compose exec evk git config --global user.name "Your Name"
+docker compose exec evk git config --global user.email "you@example.com"
+docker compose exec evk git clone https://github.com/nagisasaka/easy-vibe-kanban.git /repos/easy-vibe-kanban
+```
+
+For private repositories, authenticate the bundled GitHub CLI or configure a repository-scoped deploy key inside the persistent home. Do not bake credentials into a derived image. A server-side folder picker cannot open your laptop's native file dialog; use the server path input instead. Local desktop editor launching and upstream cloud/relay integration are not configured by this kit.
+
+For EVK's MCP integration inside the container, you can configure the bundled `vibe-kanban-mcp --mode global` command instead of an npm download. It connects to the local backend. The image does not overwrite your agent's MCP configuration.
+
+Agent approval and sandbox settings remain under EVK/Codex control. Container hosts differ in their support for nested sandbox mechanisms. If a run reports a sandbox/namespace error, investigate the specific restriction; do not make the container privileged, mount the Docker socket or disable agent safeguards as a blanket workaround.
+
+## Project previews
+
+With previews enabled, a development server on port 5173 is reached as `https://5173.preview.example.com`, not your laptop's `localhost`. EVK exposes this domain through its system-info API and uses it in the preview pane. HTTP redirects, Next.js redirect headers, streaming and WebSocket/HMR requests use the proxy.
+
+- Start development servers inside the EVK container; loopback listeners are sufficient.
+- Use unprivileged ports 1024–65535 except **3000, 3001 and 8443**, which are reserved for EVK/nginx.
+- Basic authentication also protects preview hosts. Browsers may suppress authentication prompts inside an iframe: open the preview URL in a new tab, authenticate there, then reload the preview pane. This may be needed for each development port.
+- Basic credentials are removed before forwarding to EVK or a development server. An application requiring its own HTTP `Authorization` header needs a separate deployment/authentication arrangement; the same header cannot carry both credentials.
+- Project-controlled HTML is never served through `/api/preview` on the main EVK origin. The public proxy is single-host; remote relay previews are not supported by this distribution.
+- External assets or absolute `localhost` URLs hard-coded in a project's HTML/JavaScript are not automatically rewritten. Configure that application's public URL/HMR options where needed.
+
+## Persistent storage and build caches
+
+| Volume  | Container path  | Contents                                                                              |
+| ------- | --------------- | ------------------------------------------------------------------------------------- |
+| `home`  | `/home/appuser` | EVK database/configuration, credentials, agent sessions, Git settings, package caches |
+| `repos` | `/repos`        | Original Git repositories and their untracked files                                   |
+| `work`  | `/var/tmp`      | EVK worktrees, shared resources and run-related temporary storage                     |
+
+Release data includes `/home/appuser/.local/share/vibe-kanban/db.v2.sqlite`. Release worktrees/shared resources are under `/var/tmp/vibe-kanban`; a development checkout uses `/var/tmp/vibe-kanban-dev`. Both are covered by the `work` volume. Keep custom worktree roots inside these mounts, or explicitly add another persistent mount.
+
+EVK's `.evk-shared/persistent` and `.evk-shared/cache` links continue to work across cards. Cargo does not automatically use the shared cache: configure the project's target directory when appropriate. Do not share one `cargo clean` operation across concurrently active worktrees. The kit does not modify project settings or inject language-specific cache policies.
+
+Do not use `docker compose down -v`, `docker volume prune`, or host temporary-file cleanup against these volumes: those operations can delete the database, credentials or worktrees. Restarting/recreating the container with the same named volumes preserves data.
+
+## Renew certificates and rotate credentials
+
+Arrange automatic renewal **on the host** using your certificate issuer. Its deployment hook must copy the renewed full chain and private key into `secrets/tls`, preserve UID/GID 10001 and mode 640, then validate and reload nginx:
+
+```bash
+docker compose exec -T evk nginx -e stderr -t -c /tmp/evk-server/nginx.conf
+docker compose exec -T evk nginx -e stderr -s reload -c /tmp/evk-server/nginx.conf
+```
+
+Use both commands only after a successful renewal/copy, and reload only if validation succeeds. Mounting the whole `secrets` directory allows host-side file replacement to be visible. Check the externally served certificate after renewal and monitor its expiry. Updating `htpasswd` takes effect on subsequent authentication checks without restarting agents. Basic authentication has no application logout/MFA; rotate the password to revoke access, and close active connections/restart during an appropriate maintenance window when immediate revocation is required.
+
+## Back up, update and roll back
+
+Pause or finish agents before maintenance. Stop EVK before copying its SQLite database so that the database, journals, Git worktrees and their metadata form one consistent backup. Back up **all three volumes together**, plus the deployment `.env` and secrets, using your encrypted backup system.
+
+For a manual backup from the deployment directory:
+
+```bash
+umask 077
+docker compose stop
+backup_dir="backups/$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$backup_dir"
+docker compose run --rm --no-deps -T --entrypoint tar evk -C /home/appuser -czf - . > "$backup_dir/home.tar.gz"
+docker compose run --rm --no-deps -T --entrypoint tar evk -C /repos -czf - . > "$backup_dir/repos.tar.gz"
+docker compose run --rm --no-deps -T --entrypoint tar evk -C /var/tmp -czf - . > "$backup_dir/work.tar.gz"
+# Back up .env and secrets with your encrypted secret-backup procedure as well.
+```
+
+Check each command's exit status and verify the archives before upgrading. Some host policies remove old files in `/var/tmp`; Docker's named-volume data must be exempt from such cleanup. Volume contents may include sensitive prompts, source code and tokens.
+
+After a successful backup, select the new version/digest in `.env`, then:
+
+```bash
+docker compose pull
+docker compose up -d
+docker compose ps
+docker compose logs --tail=100 evk
+```
+
+Verify that existing cards, conversation history, repositories and shared files remain, then run a small agent task. A container restart does not promise automatic resumption of an interrupted Goal; inspect its state and resume intentionally through EVK.
+
+For rollback, stop the new container and restore the matching backup of **all three volumes** into a separate recovery deployment with the same internal paths, select the old image digest, and validate it before switching traffic. Do not simply run an older image against a database that a newer version has migrated. Keep the original deployment and backups until recovery is verified.
+
+## Extend the development environment
+
+Build a derived image in your own CI when you need another SDK or coding agent. For example:
+
+```dockerfile Dockerfile.custom
+FROM ghcr.io/nagisasaka/easy-vibe-kanban:1.2.0
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends jq \
+ && rm -rf /var/lib/apt/lists/*
+USER appuser
+```
+
+Replace the example base with your published version/digest. Preserve the non-root user, entrypoint, internal ports and storage paths. Point `EVK_IMAGE` at your derived image afterwards. Files installed into mounted `/home/appuser` during an image build can be hidden by an existing volume; put image-owned tools under `/opt` or `/usr/local`.
+
+## Publish from your fork
+
+The `Build and publish EVK server image` workflow builds the root Dockerfile's `server` target. It uses `GITHUB_TOKEN` with `packages: write`, and publishes to `ghcr.io/<owner>/<repository>` in lowercase. It does not alter the existing npm release workflow.
+
+1. Merge tested changes into `main`; merging alone does not publish an image.
+2. For an image-build rehearsal, manually dispatch the workflow on your branch. It builds and smoke-tests, but does **not** publish.
+3. At the chosen commit, create and push a version Git tag such as `v1.2.0` or `v1.2.0-rc.1`. The workflow strips `v`, builds the image, runs smoke tests, then publishes `:1.2.0` or `:1.2.0-rc.1`.
+4. On the first publication, check the package's visibility and access under GitHub Packages. Make it public for anonymous pulls, or give users the appropriate package-read authentication. GitHub Releases need not be created.
+5. Record the source commit and image digest from the workflow. Do not move/reuse version tags; the workflow intentionally does not publish a mutable `latest` tag. GHCR tags themselves are mutable, so pin deployments by digest when you require exact artefact identity.
+
+The image carries OCI source, revision and version labels. See [GitHub's container publishing documentation](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images) for registry permissions and organisation restrictions. A successful source merge or local test is not evidence that an image has been published: check the workflow result and GHCR package before telling users to pull it.
+
+## Validation boundaries
+
+The kit includes Docker-free Node tests for settings, certificates, supervision, Compose/workflow structure and shell syntax; native nginx integration tests exercise TLS, Basic authentication, WebSockets, SSE and preview isolation. Rust and TypeScript tests cover public preview URLs and redirects.
+
+```bash
+pnpm run server:check
+pnpm --filter @vibe/web-core exec vitest run src/shared/lib/previewProxyUrl.test.ts
+cargo test -p preview-proxy
+```
+
+If nginx is not installed, the native test reports a skip. Use `EVK_TEST_NGINX=/path/to/nginx EVK_REQUIRE_NGINX_TEST=1 pnpm run server:check` to require it. The PR configuration workflow installs nginx and requires this test. The release workflow additionally tests the built image's tools, real EVK health/authentication and persistence across container recreation before pushing it.
+
+<Note>
+  Docker builds, Compose lifecycle commands, real DNS/certificate issuance, EC2
+  connectivity and live agent authentication/execution were not run in the
+  implementation environment. The deployment commands above are operational
+  instructions with static validation, not a report of a successful server
+  deployment. Run the workflow rehearsal and the host checks before relying on
+  this for unattended work.
+</Note>

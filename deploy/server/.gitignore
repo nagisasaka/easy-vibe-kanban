@@ -1,0 +1,4 @@
+.env
+secrets/
+backups/
+compose.override.yaml

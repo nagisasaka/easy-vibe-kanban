@@ -30,6 +30,7 @@ mod proxy_common;
 #[derive(Clone)]
 pub struct PreviewProxyService {
     http_client: Client,
+    public_domain: Option<String>,
 }
 
 impl Default for PreviewProxyService {
@@ -44,12 +45,41 @@ impl PreviewProxyService {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("failed to build preview proxy HTTP client");
-        Self { http_client }
+        let public_domain = std::env::var("VK_PREVIEW_DOMAIN")
+            .ok()
+            .filter(|domain| valid_public_domain(domain));
+        Self {
+            http_client,
+            public_domain,
+        }
+    }
+
+    /// Optional HTTPS wildcard domain supplied by the server distribution.
+    pub fn public_domain(&self) -> Option<&str> {
+        self.public_domain.as_deref()
     }
 
     pub(crate) fn http_client(&self) -> &Client {
         &self.http_client
     }
+}
+
+fn valid_public_domain(domain: &str) -> bool {
+    domain.len() <= 253
+        && domain.contains('.')
+        && domain.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+        })
+        && domain
+            .rsplit('.')
+            .next()
+            .is_some_and(|label| label.starts_with(|c: char| c.is_ascii_lowercase()))
 }
 
 fn env_flag_enabled(name: &str) -> bool {
@@ -236,6 +266,7 @@ fn rewrite_redirect_like_header_value(
     target_port: u16,
     proxy_port: u16,
     relay_host_id: Option<Uuid>,
+    public_domain: Option<&str>,
 ) -> Option<String> {
     let original_value = value.trim();
     if original_value.is_empty() {
@@ -276,14 +307,27 @@ fn rewrite_redirect_like_header_value(
         return Some(normalized_value);
     }
 
-    parsed.set_scheme("http").ok()?;
+    parsed
+        .set_scheme(if public_domain.is_some() {
+            "https"
+        } else {
+            "http"
+        })
+        .ok()?;
     parsed
         .set_host(Some(&format!(
-            "{}.localhost",
-            proxy_host_label(target_port, relay_host_id)
+            "{}.{}",
+            proxy_host_label(target_port, relay_host_id),
+            public_domain.unwrap_or("localhost")
         )))
         .ok()?;
-    parsed.set_port(Some(proxy_port)).ok()?;
+    parsed
+        .set_port(if public_domain.is_some() {
+            None
+        } else {
+            Some(proxy_port)
+        })
+        .ok()?;
     Some(parsed.to_string())
 }
 
@@ -292,6 +336,7 @@ fn rewrite_refresh_header_value(
     target_port: u16,
     proxy_port: u16,
     relay_host_id: Option<Uuid>,
+    public_domain: Option<&str>,
 ) -> Option<String> {
     let mut segments: Vec<String> = value.split(';').map(|s| s.trim().to_string()).collect();
     if segments.len() < 2 {
@@ -310,9 +355,13 @@ fn rewrite_refresh_header_value(
             continue;
         }
 
-        if let Some(rewritten) =
-            rewrite_redirect_like_header_value(raw_unquoted, target_port, proxy_port, relay_host_id)
-        {
+        if let Some(rewritten) = rewrite_redirect_like_header_value(
+            raw_unquoted,
+            target_port,
+            proxy_port,
+            relay_host_id,
+            public_domain,
+        ) {
             *segment = format!("url={rewritten}");
             return Some(segments.join("; "));
         }
@@ -334,6 +383,7 @@ fn rewrite_redirect_like_headers(
     target_port: u16,
     proxy_port: Option<u16>,
     relay_host_id: Option<Uuid>,
+    public_domain: Option<&str>,
 ) {
     let Some(proxy_port) = proxy_port else {
         return;
@@ -350,9 +400,21 @@ fn rewrite_redirect_like_headers(
         };
 
         let rewritten = if name_lower == "refresh" {
-            rewrite_refresh_header_value(value_str, target_port, proxy_port, relay_host_id)
+            rewrite_refresh_header_value(
+                value_str,
+                target_port,
+                proxy_port,
+                relay_host_id,
+                public_domain,
+            )
         } else {
-            rewrite_redirect_like_header_value(value_str, target_port, proxy_port, relay_host_id)
+            rewrite_redirect_like_header_value(
+                value_str,
+                target_port,
+                proxy_port,
+                relay_host_id,
+                public_domain,
+            )
         };
 
         if let Some(rewritten) = rewritten
@@ -511,7 +573,14 @@ async fn http_proxy_handler(
     {
         req_builder = req_builder.header("X-Forwarded-Host", host_str);
     }
-    req_builder = req_builder.header("X-Forwarded-Proto", "http");
+    req_builder = req_builder.header(
+        "X-Forwarded-Proto",
+        if service.public_domain().is_some() {
+            "https"
+        } else {
+            "http"
+        },
+    );
     req_builder = req_builder.header("Accept-Encoding", "identity");
 
     let forwarded_for = headers
@@ -549,6 +618,7 @@ async fn http_proxy_handler(
         target.port,
         Some(proxy_port),
         target.relay_host_id,
+        service.public_domain(),
     );
 
     let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
@@ -658,6 +728,7 @@ async fn http_proxy_handler(
                         target.port,
                         proxy_port,
                         target.relay_host_id,
+                        service.public_domain(),
                     )
                     .unwrap_or_else(|| redirect_info.url.clone())
                 } else {
@@ -839,6 +910,67 @@ mod tests {
     use super::*;
 
     #[test]
+    fn public_preview_domains_are_hostnames_not_urls() {
+        assert!(valid_public_domain("preview.example.com"));
+        for invalid in [
+            "",
+            "localhost",
+            "https://preview.example.com",
+            "preview.test:443",
+            "a..test",
+            "-a.test",
+            "a.test/path",
+            "A.test",
+            "a.123",
+        ] {
+            assert!(!valid_public_domain(invalid), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn public_preview_redirects_use_https_origin() {
+        let domain = Some("preview.example.com");
+        assert_eq!(
+            rewrite_redirect_like_header_value(
+                "http://localhost:5173/path?q=1#section",
+                5173,
+                3001,
+                None,
+                domain
+            )
+            .as_deref(),
+            Some("https://5173.preview.example.com/path?q=1#section")
+        );
+        assert_eq!(
+            rewrite_refresh_header_value(
+                "0; url=http://127.0.0.1:5173/login",
+                5173,
+                3001,
+                None,
+                domain
+            )
+            .as_deref(),
+            Some("0; url=https://5173.preview.example.com/login")
+        );
+        for value in [
+            "/relative",
+            "https://external.test/",
+            "http://localhost:4000/other-port",
+        ] {
+            assert_eq!(
+                rewrite_redirect_like_header_value(value, 5173, 3001, None, domain),
+                None
+            );
+        }
+        let mut headers = vec![(
+            HeaderName::from_static("x-nextjs-redirect"),
+            HeaderValue::from_static("//localhost:5173/login"),
+        )];
+        rewrite_redirect_like_headers(&mut headers, 5173, Some(3001), None, domain);
+        assert_eq!(headers[0].1, "https://5173.preview.example.com/login");
+    }
+
+    #[test]
     fn collect_response_headers_preserves_multiple_set_cookie_values() {
         let mut upstream_headers = HeaderMap::new();
         upstream_headers.append(SET_COOKIE, HeaderValue::from_static("first=1; Path=/"));
@@ -936,6 +1068,7 @@ mod tests {
             4000,
             3009,
             None,
+            None,
         );
 
         assert_eq!(
@@ -947,15 +1080,21 @@ mod tests {
     #[test]
     fn rewrite_redirect_like_header_value_keeps_relative_and_non_loopback_urls() {
         assert_eq!(
-            rewrite_redirect_like_header_value("/generate", 4000, 3009, None),
+            rewrite_redirect_like_header_value("/generate", 4000, 3009, None, None),
             None
         );
         assert_eq!(
-            rewrite_redirect_like_header_value("?from=auth", 4000, 3009, None),
+            rewrite_redirect_like_header_value("?from=auth", 4000, 3009, None, None),
             None
         );
         assert_eq!(
-            rewrite_redirect_like_header_value("https://example.com/generate", 4000, 3009, None),
+            rewrite_redirect_like_header_value(
+                "https://example.com/generate",
+                4000,
+                3009,
+                None,
+                None
+            ),
             None
         );
     }
@@ -963,7 +1102,7 @@ mod tests {
     #[test]
     fn rewrite_redirect_like_header_value_rewrites_scheme_relative_loopback_url() {
         let rewritten =
-            rewrite_redirect_like_header_value("//localhost:4000/generate", 4000, 3009, None);
+            rewrite_redirect_like_header_value("//localhost:4000/generate", 4000, 3009, None, None);
 
         assert_eq!(
             rewritten.as_deref(),
@@ -979,6 +1118,7 @@ mod tests {
             4000,
             3009,
             Some(host_id),
+            None,
         );
 
         assert_eq!(
@@ -993,6 +1133,7 @@ mod tests {
             "0; URL='http://localhost:4000/generate?from=auth'",
             4000,
             3009,
+            None,
             None,
         );
 
@@ -1009,6 +1150,7 @@ mod tests {
             4000,
             3009,
             None,
+            None,
         );
 
         assert_eq!(
@@ -1019,7 +1161,8 @@ mod tests {
 
     #[test]
     fn rewrite_redirect_like_header_value_cleans_quoted_relative_url() {
-        let rewritten = rewrite_redirect_like_header_value("\"/generate\",", 4000, 3009, None);
+        let rewritten =
+            rewrite_redirect_like_header_value("\"/generate\",", 4000, 3009, None, None);
 
         assert_eq!(rewritten.as_deref(), Some("/generate"));
     }
@@ -1030,6 +1173,7 @@ mod tests {
             "\"http://localhost:4000/generate\",",
             4000,
             3009,
+            None,
             None,
         );
 
@@ -1045,6 +1189,7 @@ mod tests {
             "url=\"http://localhost:4000/generate\", mode=replace",
             4000,
             3009,
+            None,
             None,
         );
 
@@ -1072,7 +1217,7 @@ mod tests {
             ),
         ];
 
-        rewrite_redirect_like_headers(&mut headers, 4000, Some(3009), None);
+        rewrite_redirect_like_headers(&mut headers, 4000, Some(3009), None, None);
 
         assert_eq!(
             headers[0].1,
@@ -1105,7 +1250,7 @@ mod tests {
             ),
         ];
 
-        rewrite_redirect_like_headers(&mut headers, 4000, Some(3009), None);
+        rewrite_redirect_like_headers(&mut headers, 4000, Some(3009), None, None);
 
         assert_eq!(
             headers[0].1,
@@ -1138,7 +1283,7 @@ mod tests {
             HeaderValue::from_static("http://localhost:4000/generate"),
         )];
 
-        rewrite_redirect_like_headers(&mut headers, 4000, Some(3009), None);
+        rewrite_redirect_like_headers(&mut headers, 4000, Some(3009), None, None);
 
         assert_eq!(
             headers[0].1,
@@ -1167,7 +1312,7 @@ mod tests {
             HeaderValue::from_static("/generate"),
         )];
 
-        rewrite_redirect_like_headers(&mut headers, 4000, Some(3009), None);
+        rewrite_redirect_like_headers(&mut headers, 4000, Some(3009), None, None);
 
         // Relative URLs are NOT rewritten — only absolute loopback URLs are
         assert_eq!(headers[0].1, HeaderValue::from_static("/generate"));

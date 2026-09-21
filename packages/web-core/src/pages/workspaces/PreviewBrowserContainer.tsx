@@ -27,6 +27,7 @@ import { useHostId } from '@/shared/providers/HostIdProvider';
 import { ScriptFixerDialog } from '@/shared/dialogs/scripts/ScriptFixerDialog';
 import { usePreviewNavigation } from '@/shared/hooks/usePreviewNavigation';
 import { PreviewDevToolsBridge } from '@/shared/lib/previewDevToolsBridge';
+import { previewProxyUrl } from '@/shared/lib/previewProxyUrl';
 import { useInspectModeStore } from '@/features/workspace-chat/model/store/useInspectModeStore';
 import type { PreviewDevToolsMessage } from '@/shared/types/previewDevTools';
 
@@ -186,7 +187,7 @@ export function PreviewBrowserContainer({
     (s) => s.triggerPreviewRefresh
   );
   const { repos, workspaceId: activeWorkspaceId } = useWorkspaceContext();
-  const { previewProxyPort } = useUserSystem();
+  const { previewProxyPort, previewProxyDomain } = useUserSystem();
   const hostId = useHostId();
 
   const {
@@ -287,7 +288,9 @@ export function PreviewBrowserContainer({
     if (!previewProxyPort) return undefined;
 
     // Don't proxy to Vibe Kanban's own ports (would create infinite loop)
-    const vibeKanbanPort = window.location.port || '80';
+    const vibeKanbanPort =
+      window.location.port ||
+      (window.location.protocol === 'https:' ? '443' : '80');
     if (devServerPort === vibeKanbanPort) {
       console.warn(
         `[Preview] Ignoring dev server URL with same port as Vibe Kanban (${devServerPort}). ` +
@@ -304,14 +307,14 @@ export function PreviewBrowserContainer({
       return undefined;
     }
 
-    const path = effectiveParsedUrl.pathname + effectiveParsedUrl.search;
-
-    // Subdomain-based routing: the proxy extracts the port from the Host header
-    const hostToken =
-      hostId != null ? `${devServerPort}--${hostId}` : devServerPort;
-    const proxyUrl = new URL(
-      `http://${hostToken}.localhost:${previewProxyPort}${path}`
+    const proxyUrl = previewProxyUrl(
+      effectiveParsedUrl,
+      devServerPort,
+      previewProxyPort,
+      previewProxyDomain,
+      hostId
     );
+    if (!proxyUrl) return undefined;
     proxyUrl.searchParams.set('_refresh', String(previewRefreshKey));
 
     return proxyUrl.toString();
@@ -321,6 +324,7 @@ export function PreviewBrowserContainer({
     hostId,
     isLoopbackPreview,
     previewProxyPort,
+    previewProxyDomain,
     previewRefreshKey,
   ]);
 
@@ -371,7 +375,7 @@ export function PreviewBrowserContainer({
       if (!isLoopbackPreview) {
         return stripPreviewRefreshParam(navigation.url) ?? navigation.url;
       }
-      if (hostId != null) {
+      if (hostId != null || previewProxyDomain) {
         return stripPreviewRefreshParam(navigation.url) ?? navigation.url;
       }
       if (devServerPort) {
@@ -385,7 +389,7 @@ export function PreviewBrowserContainer({
       }
     }
 
-    if (hostId != null && iframeUrl) {
+    if ((hostId != null || previewProxyDomain) && iframeUrl) {
       return stripPreviewRefreshParam(iframeUrl) ?? iframeUrl;
     }
 
@@ -397,6 +401,7 @@ export function PreviewBrowserContainer({
     iframeUrl,
     isLoopbackPreview,
     navigation?.url,
+    previewProxyDomain,
   ]);
 
   const handleBridgeMessage = useCallback(

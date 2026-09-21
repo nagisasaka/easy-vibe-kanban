@@ -40,6 +40,7 @@ export function useUserSystemController({
   const config = userSystemInfo?.config || null;
   const appVersion = userSystemInfo?.version || null;
   const previewProxyPort = userSystemInfo?.preview_proxy_port ?? null;
+  const previewProxyDomain = userSystemInfo?.preview_proxy_domain ?? null;
   const environment = userSystemInfo?.environment || null;
   const machineId = userSystemInfo?.machine_id || null;
   const loginStatus = userSystemInfo?.login_status || null;
@@ -146,6 +147,7 @@ export function useUserSystemController({
       system: {
         appVersion,
         previewProxyPort,
+        previewProxyDomain,
         config,
         environment,
         profiles,
@@ -156,6 +158,7 @@ export function useUserSystemController({
       },
       appVersion,
       previewProxyPort,
+      previewProxyDomain,
       config,
       environment,
       profiles,
@@ -180,6 +183,7 @@ export function useUserSystemController({
       environment,
       loading,
       previewProxyPort,
+      previewProxyDomain,
       loginStatus,
       remoteAuthDegraded,
       profiles,
