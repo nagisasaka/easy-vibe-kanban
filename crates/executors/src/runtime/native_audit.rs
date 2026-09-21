@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Write},
+    io::{self, BufRead, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -21,6 +21,106 @@ pub const NATIVE_AUDIT_SCHEMA_VERSION: u16 = 1;
 pub use workspace_utils::native_audit::NATIVE_AUDIT_ROOT_RELATIVE;
 pub const NATIVE_AUDIT_MANIFEST_FILE: &str = "manifest.json";
 pub const NATIVE_AUDIT_FRAMES_FILE: &str = "frames.jsonl";
+
+/// Bounded, sequential verification for a confirmed-dead process host. This
+/// verifies existing Audit evidence; it does not rebuild product projections.
+pub struct NativeAuditEvidenceReader {
+    reader: io::BufReader<File>,
+    pub manifest: NativeAuditManifest,
+    sequence: u64,
+    checksum: Option<String>,
+    hasher: Sha256,
+}
+
+impl NativeAuditEvidenceReader {
+    pub fn open(
+        directory: &Path,
+        session: Uuid,
+        run: Uuid,
+        attempt: Uuid,
+    ) -> Result<Self, NativeAuditError> {
+        let manifest: NativeAuditManifest =
+            serde_json::from_reader(File::open(directory.join(NATIVE_AUDIT_MANIFEST_FILE))?)?;
+        if manifest.audit_schema_version != NATIVE_AUDIT_SCHEMA_VERSION
+            || manifest.session_id != session
+            || manifest.agent_run_id != run
+            || manifest.run_attempt_id != attempt
+        {
+            return Err(NativeAuditError::PartialManifest);
+        }
+        Ok(Self {
+            reader: io::BufReader::new(File::open(directory.join(NATIVE_AUDIT_FRAMES_FILE))?),
+            manifest,
+            sequence: 0,
+            checksum: None,
+            hasher: Sha256::new(),
+        })
+    }
+
+    fn next(&mut self) -> Result<bool, NativeAuditError> {
+        // Same hard ceiling as host transport; one malformed line must not
+        // allocate unbounded memory during restart recovery.
+        const LIMIT: u64 = 64 * 1024 * 1024;
+        let mut line = Vec::new();
+        self.reader
+            .by_ref()
+            .take(LIMIT + 1)
+            .read_until(b'\n', &mut line)?;
+        if line.is_empty() {
+            return Ok(false);
+        }
+        if line.len() as u64 > LIMIT || line.last() != Some(&b'\n') {
+            return Err(NativeAuditError::TruncatedFrame);
+        }
+        let frame: NativeAuditFrame = serde_json::from_slice(&line)?;
+        frame.validate(self.sequence + 1)?;
+        self.hasher.update(&line);
+        self.sequence = frame.sequence;
+        self.checksum = Some(frame.payload_checksum);
+        Ok(true)
+    }
+
+    pub fn verify_reference(
+        &mut self,
+        reference: &NativeAuditReference,
+    ) -> Result<(), NativeAuditError> {
+        if reference.stream_id != self.manifest.run_attempt_id || reference.sequence < self.sequence
+        {
+            return Err(NativeAuditError::MalformedFrame(reference.sequence));
+        }
+        while self.sequence < reference.sequence {
+            if !self.next()? {
+                return Err(NativeAuditError::TruncatedFrame);
+            }
+        }
+        if reference.checksum.is_none() || reference.checksum != self.checksum {
+            return Err(NativeAuditError::MalformedFrame(reference.sequence));
+        }
+        Ok(())
+    }
+
+    pub fn verify_terminal(
+        mut self,
+        expected: &NativeAuditManifest,
+    ) -> Result<(), NativeAuditError> {
+        if &self.manifest != expected || self.manifest.closed_at.is_none() {
+            return Err(NativeAuditError::PartialManifest);
+        }
+        while self.next()? {}
+        let checksum = hex_digest(&self.hasher);
+        if self.manifest.frame_count != self.sequence
+            || self.manifest.first_sequence != (self.sequence > 0).then_some(1)
+            || self.manifest.last_sequence != (self.sequence > 0).then_some(self.sequence)
+            || self.manifest.final_checksum.as_deref() != Some(&checksum)
+        {
+            return Err(NativeAuditError::StreamChecksumMismatch {
+                expected: self.manifest.final_checksum.unwrap_or_default(),
+                actual: checksum,
+            });
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1088,6 +1188,62 @@ mod tests {
             mapper_version: "mapper-1".to_string(),
             created_at: DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
         }
+    }
+
+    #[test]
+    fn evidence_reader_verifies_prefix_identity_checksums_and_closed_tail() {
+        let root = tempdir().unwrap();
+        let metadata = metadata();
+        let mut writer = NativeAuditWriter::create_in(root.path(), metadata.clone()).unwrap();
+        let reference = writer
+            .append_native_output(
+                NativeAuditChannel::Stdout,
+                "text/plain",
+                Uuid::from_u128(5),
+                b"raw delta",
+            )
+            .unwrap();
+        let directory = writer.paths().0.parent().unwrap().to_path_buf();
+        let open = || {
+            NativeAuditEvidenceReader::open(
+                &directory,
+                metadata.session_id,
+                metadata.agent_run_id,
+                metadata.run_attempt_id,
+            )
+            .unwrap()
+        };
+        open().verify_reference(&reference).unwrap();
+        assert!(
+            open().verify_terminal(writer.manifest()).is_err(),
+            "a verified prefix is not closed Audit"
+        );
+        assert!(
+            NativeAuditEvidenceReader::open(
+                &directory,
+                Uuid::new_v4(),
+                metadata.agent_run_id,
+                metadata.run_attempt_id
+            )
+            .is_err()
+        );
+        let mut bad = reference.clone();
+        bad.checksum = Some("wrong".into());
+        assert!(open().verify_reference(&bad).is_err());
+        let manifest = writer.close().unwrap();
+        open().verify_terminal(&manifest).unwrap();
+        let frames = directory.join(NATIVE_AUDIT_FRAMES_FILE);
+        OpenOptions::new()
+            .append(true)
+            .open(&frames)
+            .unwrap()
+            .write_all(b"{partial")
+            .unwrap();
+        open().verify_reference(&reference).unwrap();
+        assert!(
+            open().verify_terminal(&manifest).is_err(),
+            "unreferenced tail is still verified for completion"
+        );
     }
 
     #[test]

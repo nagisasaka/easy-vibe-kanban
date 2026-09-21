@@ -46,6 +46,51 @@ infrastructure errors are never quarantined: their cursor remains unchanged so
 the next attach can replay them. The Native Audit reference remains the evidence
 needed for a future projection rebuild.
 
+## Bounded process-host replay (protocol 2)
+
+New hosts keep attempt/host-scoped replay evidence under
+`runtime/host-events/<attempt>-<host>.v1.jsonl` in the asset directory. This is
+not another raw audit: it retains semantic events, usage snapshots, lifecycle
+evidence and Native Audit references, but strips transient text deltas. Existing
+Native Audit raw-frame writes and checksums are unchanged.
+
+The host groups up to 128 events or roughly 256 KiB and flushes every 50 ms;
+Started/Terminal flush immediately. Only a successful sync makes its cursor
+visible. A Live ring is limited to 256 events / 4 MiB. The projection queue has
+64 slots and an 8 MiB byte budget. Pages have at most 128 events / 4 MiB, with an
+explicit singleton exception for a semantic event up to 8 MiB. Larger semantic
+events fail closed with a diagnostic; their received raw frame remains audited.
+Individual provider frame decoding still allocates a complete frame; these are
+backlog bounds, not a guarantee of constant process memory. The seek index uses
+one offset per committed batch and grows with run length. Journal retention
+follows runtime evidence retention; no automatic deletion policy is introduced.
+
+Authenticated Subscribe connections repair from the committed database cursor
+after disconnect/timeout. Heartbeats are 10 seconds, read timeout 30 seconds,
+write timeout 10 seconds. Attach remains page-bounded. A slow reader may lose
+old Live deltas, never the completed semantic message. The journal is an ordered
+transport replay source; SQLite remains the canonical product state store.
+
+Recovery requires repeated transport failure **and confirmed host absence**.
+On Linux, boot ID and process start time distinguish PID reuse; older/other
+platform records use conservative presence checks. A missing PID, permission
+error or live/unknown process is not proof of death. Recovery validates the
+whole journal (identity, sequence, checksum, complete vs unfinished tail) and
+its Native Audit references before projection, and syncs complete records before
+advancing the database cursor. It never replacement-spawns a provider or retries
+an unacknowledged non-idempotent control command. Provider/group presence is
+checked separately; a dead host with a live child remains active/cancellable.
+
+Only a Host Terminal with closed, verified Audit proves successful completion.
+Provider turn-complete notifications no longer close the canonical run ahead of
+Audit/process finalization. An incomplete journal tail may be discarded as
+uncommitted evidence, but cannot prove success. Corruption/gaps/foreign identity
+fail closed with a durable projection-degraded diagnostic and no cursor advance.
+Emergency audited Cancel remains available. Old protocol hosts reconnect with
+Attach, never with guessed journal paths; unknown versions are diagnosed.
+Canonical completion, process exit, owner cleanup and OpenWiki's operation
+completion proof remain separate contracts.
+
 ## UI convergence and emergency cancellation
 
 The WebSocket protocol distinguishes `event` (durable) from `live` (ephemeral).

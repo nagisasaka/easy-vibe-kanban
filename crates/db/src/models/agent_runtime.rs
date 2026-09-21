@@ -836,15 +836,19 @@ impl AgentRunRecord {
         pool: &SqlitePool,
         run_attempt_id: Uuid,
         host_pid: u32,
+        protocol_version: u16,
+        start_identity: Option<&str>,
     ) -> Result<(), AgentRuntimePersistenceError> {
         sqlx::query(
             r#"
             UPDATE agent_process_registry
-            SET host_pid = ?, updated_at = ?
+            SET host_pid = ?, host_protocol_version = ?, host_start_identity = ?, updated_at = ?
             WHERE run_attempt_id = ? AND registry_status != 'exited'
             "#,
         )
         .bind(i64::from(host_pid))
+        .bind(i64::from(protocol_version))
+        .bind(start_identity)
         .bind(Utc::now())
         .bind(run_attempt_id)
         .execute(pool)
@@ -866,6 +870,8 @@ impl AgentRunRecord {
                 host_token = NULL,
                 host_instance_id = NULL,
                 host_pid = NULL,
+                host_protocol_version = NULL,
+                host_start_identity = NULL,
                 updated_at = ?
             WHERE run_attempt_id = ? AND registry_status = 'reserved'
             "#,
@@ -2346,6 +2352,40 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(registry_status, "reserved");
+    }
+
+    #[tokio::test]
+    async fn host_replay_migration_preserves_legacy_identity_and_cursor() {
+        let pool = setup_pool().await;
+        let (session, workspace) = insert_anchors(&pool).await;
+        let (request, attempt) = requests(session, workspace, "legacy-host-migration");
+        AgentRunRecord::persist_identity_before_launch(&pool, &request, &attempt)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE agent_process_registry SET host_pid = 1234, last_host_event_sequence = 17 WHERE run_attempt_id = ?")
+            .bind(attempt.run_attempt_id).execute(&pool).await.unwrap();
+        sqlx::raw_sql(include_str!(
+            "../../migrations/20260922010000_host_replay_identity.sql"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let row: (Option<i64>, i64, Option<i64>, Option<String>) = sqlx::query_as(
+            "SELECT host_pid, last_host_event_sequence, host_protocol_version, host_start_identity FROM agent_process_registry WHERE run_attempt_id = ?"
+        ).bind(attempt.run_attempt_id).fetch_one(&pool).await.unwrap();
+        assert_eq!(row, (Some(1234), 17, None, None));
+        AgentRunRecord::mark_process_host_attached(
+            &pool,
+            attempt.run_attempt_id,
+            1234,
+            2,
+            Some("boot:start"),
+        )
+        .await
+        .unwrap();
+        let (version, identity, cursor): (i64, String, i64) = sqlx::query_as("SELECT host_protocol_version, host_start_identity, last_host_event_sequence FROM agent_process_registry WHERE run_attempt_id = ?")
+            .bind(attempt.run_attempt_id).fetch_one(&pool).await.unwrap();
+        assert_eq!((version, identity.as_str(), cursor), (2, "boot:start", 17));
     }
 
     #[tokio::test]

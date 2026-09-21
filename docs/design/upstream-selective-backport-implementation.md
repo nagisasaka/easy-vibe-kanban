@@ -91,6 +91,7 @@ MCP実機受入はまだ未実施。接続確認を受入成功へ読み替え�
 
 - 第1弾: `fix/merge-upstream-test` / `d4e305c3`。BP01〜BP05、関連unit/fixtureとformat/check/lint成功。MCPは五段階の最終コードで実施予定。
 - 第2弾: 第1弾commitから `fix/upstream-settings-safety` を作成。main/origin/mainは動かしていない。
+- 第2弾完了commit: `fb509b17`（BP06〜BP08）。第3弾はこのcommitから `fix/upstream-host-recovery` を作成。
 
 ### 第2弾 — 設定・編集の安全性
 
@@ -121,6 +122,40 @@ MCP実機受入はまだ未実施。接続確認を受入成功へ読み替え�
 互換性: 設定公開APIはsafe DTOと明示write intentへ更新。旧clientの全文再送は黙って受理せず、更新版UIを使用する。DB内容と実際のユーザー設定はmigrationで書き換えない。Workflow editorの保存ACK／draft／Undo改善は第5弾でこのCASへ接続する。
 
 ## 最終受入の計画
+
+### 第3弾 — 実装前の配信・回復契約
+
+現行HostはrawをNative Auditへsync後に分類し、Projected（durable/live/native ref）を無制限Vecへ保持。Attachはcursor以降全件をcloneし、observerは1秒poll。DBは意味的event／usage snapshotとHost cursorをbatch transactionで保存する。commandは既存durable identityを持ち、Host制御を再送してよい根拠とはしない。
+
+- 上流固定SHAのjournal／Subscribe／dead-host recoveryを参照し、LVKのProjectedと四planeへ適応。raw全文は従来Native Auditのみ。Host journalは意味的event・usage snapshot・制御開始/終端・監査参照を保持し、Message/Thinking/Tool delta本文は保存しない。
+- journalはattempt／Host instanceを明記したchecksum付きbatch。最大128件または256KiBを目安にまとめ、50msの有限flushと開始/終端flush。sync成功前のsequenceを配信せず、DB cursorも進めない。Native Audit自身の既存sync契約は弱めない。未flush窓の途中出力はAuditに残るが、journal未完了から成功を復元しない。
+- Live deltaは件数とbytesを制限したringに限定。遅いreaderが失ったdeltaは再表示せず、durable completedで収束。usage snapshotはdeltaと異なりjournalに残す。
+- Attach／Subscribeは件数・bytesでpage制限。単一巨大eventは明記したhard limit、上限超過は明確なエラーとし黙って切らない。subscriberは独立connectionで、有限send/read timeout・heartbeat・定期repair、失敗時はDB cursorから再接続。
+- seek indexはbatch数に比例し、定数メモリとは呼ばない。readerは一つのbounded batch/pageだけを保持する。raw二重耐久化やper-delta追加fsyncを避け、実fixtureで書込量・flush回数・サイズ・追従を計測する。
+- 新Host protocolは明示versionを持つ。旧HostはAttach互換で再接続し、新journalと推測しない。Host identity mismatch／生存不明は終了扱いしない。確認されたHost終了後だけjournalを検査・回収し、途中破損・sequence gap・別attempt・不完全末尾を区別する。
+- Host死亡、provider死亡、canonical終端、Audit終端、owner cleanup／OpenWiki proofを別に扱う。回収したtextだけで成功にせず、未完了はcrash/audit failureとして診断。生きたproviderを勝手にkillせず、既存の監査付きCancel経路を維持する。
+
+### 第3弾 — 実装と検証
+
+BP09〜BP11を固定上流の`HostJournal`、`Subscribe`、recoveryから適応した。上流のevent単位syncをそのまま移植せず、上記のgroup journalとLVKのsemantic/live/usage分類を使用した。protocol 2とLinux boot/start identityをnullable migrationで記録し、既存行のPID・cursor・stateを維持する。旧HostはAttachを使用し、未知versionを拒否する。
+
+- 新規`process_host/journal.rs`は128件/4MiB page、8MiB単一semantic event、256件/4MiB Live ring。producer queueも64件/8MiBでbackpressure。indexはbatch数に比例する。50ms/group sync以前のcursorを返さない。回復時は完全recordをsyncしてからDBへ反映する。
+- Subscribeの10秒heartbeat/送信deadline、30秒読取deadline、切断後のDB cursor replay。slow subscriberの送信中はjournal lockを保持せず、別のControl接続を使用できる。
+- Native Auditのidentity/reference checksumをbounded readerで検証。途中破損・gap・foreign attempt・未知protocolはcursorを進めずfail-closed。最後の未完了appendは未commitとして区別し、成功根拠にしない。
+- Host生存/不明/元PID再利用、providerおよびprocess groupの生存を区別する。子が生きている場合はStartedだけを回収して正規Cancel可能にし、terminalを適用しない。無断kill・replacement launch・非冪等commandの再送は追加しない。
+- 関連する既存不具合を修正: providerのterminal通知がHostのAudit閉鎖より先にcanonical成功を確定し得た。terminal化はHost Terminalに限定。さらにcanonical commit後のregistry更新失敗でも、同一page再送でexit後処理を完了できるようにした。重複Startedで終了済みprocessを再登録しない。
+- Journal破損の診断は既存`ProjectionDegraded` eventへ保存し、Host cursorを動かさずactive runの監査付きCancelを残す。OpenWikiの全attempt proofやowner lifecycleの判定自体は変更しない。
+
+検証（段階コード）:
+
+- `cargo test -p local-deployment --lib`: 71 passed。slow consumer/再接続/finite control、Journal flush失敗、Host生存中の拒否、子生存中の非terminal化、全Audit照合、restart重複、未完了末尾、破損、gap/別attempt、DB保存/commit後後処理の故障注入を含む。
+- `cargo test -p executors runtime::native_audit --lib`: 5 passed。prefixを完了と扱わず、closed manifestと末尾までchecksum照合。
+- `cargo test -p db agent_runtime --lib`: 既存21 passed（1,000 delta compaction、cursor atomicity、実SQLite lock解除後retry、usage upsertを含む）。追加の`host_replay_migration`も1 passedで、旧PID/cursorを保持し、新fieldがNULLから明示登録されることを確認。
+- `cargo clippy -p local-deployment -p executors -p db --all-targets -- -D warnings`: 最終追加テスト後も成功。`pnpm run format`、`pnpm run backend:check`も成功。
+- 性能fixture: 1,000個の5,000字deltaについて、旧Vec/全Attachに相当するserialized payloadは5,764,676 bytes。新ringは約1,470,864 bytes、Journalは約300,154 bytes、group fsync 8回、offset 256 bytes、fixture全体約427ms。これはpayload量の比較でありRSSや任意環境の速度保証ではない。旧Journal書込は0、新Journalのdisk増分は約300KiB。Native Auditの既存raw/frame毎syncは維持する。
+- production adapter→journal→Audit検証→port→DBの別fixtureは1,000delta+completed+input（raw 1,002）からcanonical 4件（user/running/completed/terminal）、8 page transaction。semantic compactionは移植前から4件であり、新たな削減と誤記しない。server再生成と同一page再適用後も4件、回収2周約280ms。SQLite commit数はpage境界で有界化され、control/registry/Audit metadataの別書込はこれと区別する。
+
+未実施: 実Codex/Goal/OpenWikiを通す最終MCP受入、最終全workspace gates。現時点の旧serverを本変更の成功証拠にはしていない。
 
 最終コードの自動gatesと両binary開発用コンパイル後に、仕様第11節の8シナリオを実施する。隔離した小repo／test branchのみをGit反映先とする。実Codex/OpenWikiは小規模試験に限定する。
 
