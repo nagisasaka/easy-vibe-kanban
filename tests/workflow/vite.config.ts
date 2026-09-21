@@ -9,6 +9,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@tanstack/react-router': `${repoRoot}/packages/web-core/node_modules/@tanstack/react-router`,
       '@tanstack/react-query': `${repoRoot}/packages/web-core/node_modules/@tanstack/react-query`,
       '@': `${repoRoot}/packages/web-core/src`,
       '@xyflow/react': `${repoRoot}/packages/web-core/node_modules/@xyflow/react`,

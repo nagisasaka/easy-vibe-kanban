@@ -419,6 +419,12 @@ impl StandardCodingAgentExecutor for Codex {
     }
 
     fn get_availability_info(&self) -> AvailabilityInfo {
+        if !crate::command::is_command_installed(
+            crate::command::CODEX_DEFAULT_BASE_COMMAND,
+            &self.cmd,
+        ) {
+            return AvailabilityInfo::NotFound;
+        }
         if let Some(timestamp) = codex_home()
             .and_then(|home| std::fs::metadata(home.join("auth.json")).ok())
             .and_then(|m| m.modified().ok())
@@ -430,20 +436,7 @@ impl StandardCodingAgentExecutor for Codex {
             };
         }
 
-        let mcp_config_found = self
-            .default_mcp_config_path()
-            .map(|p| p.exists())
-            .unwrap_or(false);
-
-        let installation_indicator_found = codex_home()
-            .map(|home| home.join("version.json").exists())
-            .unwrap_or(false);
-
-        if mcp_config_found || installation_indicator_found {
-            AvailabilityInfo::InstallationFound
-        } else {
-            AvailabilityInfo::NotFound
-        }
+        AvailabilityInfo::InstallationFound
     }
 
     fn get_preset_options(&self) -> ExecutorConfig {

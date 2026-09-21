@@ -92,6 +92,7 @@ MCP実機受入はまだ未実施。接続確認を受入成功へ読み替え�
 - 第1弾: `fix/merge-upstream-test` / `d4e305c3`。BP01〜BP05、関連unit/fixtureとformat/check/lint成功。MCPは五段階の最終コードで実施予定。
 - 第2弾: 第1弾commitから `fix/upstream-settings-safety` を作成。main/origin/mainは動かしていない。
 - 第2弾完了commit: `fb509b17`（BP06〜BP08）。第3弾はこのcommitから `fix/upstream-host-recovery` を作成。
+- 第3弾完了commit: `56af98b6`（BP09〜BP11）。第4弾はこのcommitから `fix/upstream-compatibility` を作成。
 
 ### 第2弾 — 設定・編集の安全性
 
@@ -160,3 +161,25 @@ BP09〜BP11を固定上流の`HostJournal`、`Subscribe`、recoveryから適応�
 最終コードの自動gatesと両binary開発用コンパイル後に、仕様第11節の8シナリオを実施する。隔離した小repo／test branchのみをGit反映先とする。実Codex/OpenWikiは小規模試験に限定する。
 
 MCPのUI操作記録、run／session／workflow／integration ID、source OID、publication commit、監査参照を記録する。秘密や全文会話をこの文書へ転載しない。executionに影響する修正後は影響する実機runを新規実行する。
+
+### 第4弾 — 適応方針と段階検証
+
+- BP12: 固定上流のuser executable探索とavailabilityを既存resolverへ適応。明示pathは実行可能性まで確認し、無効な指定から別CLIへfallbackしない。native設定／認証ファイルだけではinstalledにせず、各providerのcommand overrideを起動と同じparser／resolverで検証する。npm／bun prefixとper-user配置のfallbackはglobal PATHへ追加しない。既存login-shell PATH refreshは維持する。インストールも資格情報変更も行わない。
+- BP13: 固定上流のnested text、Claude API error／retry fixturesをLVK adapterへ適応。混在するtext／tool use／tool resultは同一Native Audit参照から意味的eventへ展開する。新規non-Codex mapperをv3とし、v1／v2の過去の分類・sequenceは変更しない。replay decoderへ最新分類を混ぜず、旧frameが新validationに巻き込まれないようにした。CodexのLive／Canonical／Goal／親子分類を変更しない。retryは非terminal状態表示、errorは構造化された理由を保持する。
+- BP14: production frontend routerのAPI namespace guardを移植。未知APIは404、非GETも非成功、SPA deep linkとstatic assetは従来どおり。API middleware／signed／Host relay経路は変えず、上流の開発redirectは取り込まない。
+- BP15: 適用。両Vite設定で既存TanStackのautoCodeSplittingが無効で、初期entryに全routeが含まれていた。既存pluginの分割を有効化し、共有のloading／error表示は既存CrashScreenとi18nを利用。chat／Wiki表示のmount契約は変更しない。
+
+ビルド比較（同じdevelopment mode、manifestのentryから静的importsを再帰集計、source mapを除外）:
+
+| app | 変更前 JS / gzip | route分割後 JS / gzip |
+| --- | --- | --- |
+| local | 6,488,384 / 1,954,826 bytes | 1,517,832 / 473,957 bytes |
+| remote | 5,983,797 / 1,806,869 bytes | 3,133,957 / 967,670 bytes |
+
+これはroute分割の中間測定（error表示追加前）で、全route閲覧時の総転送量や実機速度の保証ではない。成果物は `/tmp/lvk-backport-bundles.i2KwAc/` のbefore／split各directory。既存のchunk size／Browserslist／Tailwind警告は残る。release packageは作らない。最終frontend buildとMCP deep link／Viewer操作を後続で確認する。
+
+実行済み: provider adapter 33 tests、CLI resolver 5 tests、production frontend HTTP fallback 1 test、Vitest 72 files / 402 tests、Playwright 27 tests（lazy deep link／reload／failure／keyboardを2件追加）。全executorテストは287 passed / 6既存ignored。追加のavailability経路testを含めて最終再実行する。初回checkでremoteの共有module alias誤りを検出し、既存の`@/`へ修正。修正前のcheck失敗を合格として数えない。
+
+第4弾最終再実行: executor 288 passed / 6既存ignored、resolver 5 passed、frontend HTTP 1 passed。`pnpm run check`と`pnpm run lint`成功。local／remote development buildも成功し、error表示を含むentryはそれぞれ1,518,982 / 474,355 bytes、3,136,498 / 968,469 bytes（JS / gzip）。fixtureはprovider資格情報・有料呼出しを使わない。最終MCP受入はまだ未実施。
+
+`pnpm run generate-types:check`も成功し、生成型／schemaに追加差分なし。stage差分レビューで旧mapperのdecoder互換性とtool展開後のreplay cursorを確認・修正し、再実行済み。

@@ -93,10 +93,7 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
         .layer(axum::middleware::from_fn(middleware::log_server_errors))
         .with_state(deployment);
 
-    Router::new()
-        .route("/", get(frontend::serve_frontend_root))
-        .route("/{*path}", get(frontend::serve_frontend))
-        .nest("/api", api_routes)
+    frontend::router(api_routes)
         .layer(CompressionLayer::new())
         .into_make_service()
 }
