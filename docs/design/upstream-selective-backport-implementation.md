@@ -171,9 +171,9 @@ MCPのUI操作記録、run／session／workflow／integration ID、source OID、
 
 ビルド比較（同じdevelopment mode、manifestのentryから静的importsを再帰集計、source mapを除外）:
 
-| app | 変更前 JS / gzip | route分割後 JS / gzip |
-| --- | --- | --- |
-| local | 6,488,384 / 1,954,826 bytes | 1,517,832 / 473,957 bytes |
+| app    | 変更前 JS / gzip            | route分割後 JS / gzip     |
+| ------ | --------------------------- | ------------------------- |
+| local  | 6,488,384 / 1,954,826 bytes | 1,517,832 / 473,957 bytes |
 | remote | 5,983,797 / 1,806,869 bytes | 3,133,957 / 967,670 bytes |
 
 これはroute分割の中間測定（error表示追加前）で、全route閲覧時の総転送量や実機速度の保証ではない。成果物は `/tmp/lvk-backport-bundles.i2KwAc/` のbefore／split各directory。既存のchunk size／Browserslist／Tailwind警告は残る。release packageは作らない。最終frontend buildとMCP deep link／Viewer操作を後続で確認する。
@@ -208,3 +208,40 @@ BP19は既存publish workflowにeasy限定validatorがあるため適用。stabl
 - `pnpm run server:check`: 12 passed / 1既存skip（nginx未導入）。静的設定・実entrypoint故障fixtureは実行したが、HTTPS ingress実機は未検証。server/hostの配布構造は変更していない。
 
 小規模実機資産: `/workspace/lvk-backport-acceptance.tGwIkS`、target `test/upstream-backport-acceptance`、開始source `147ceb2d45e2f61d9dbdebd2c6a69688d7282aa3`。Node built-insのみのLabel Kit、初期4 tests成功、既存Wiki／ignoreなし。test repo内だけfixture Git identityを設定し、global identity／資格情報は変更していない。UIからの開始・publicationはまだ未実施。
+
+第5弾commit: `34987ca0fd7a2fd17b6bf907c0d1fde44bc7d85d`、branch `fix/upstream-workflow-editing`。main／origin/mainは開始時の`39bbba0f`のまま。
+
+### 最終コードのquality gatesと実機準備
+
+`34987ca0`のcodeに対し、format、check、lint、Vitest 407、Playwright全34、版番号3 testsが成功。`RUST_TEST_THREADS=8 cargo test --workspace`もexit 0。多数のDB／fsync fixturesと実機準備を並行するためtest並列数を8に限定した（testの省略はしていない）。既存ignoredは8件。先のOpenWiki testの原因は引き続き未確定であり、diagnosticを残した。private remote backendのCargo検証は規定どおり実行していない。
+
+server／agent-process-hostを同一codeからdevelopment buildし、2026-09-21T23:30:21Zに旧serverをSIGTERMして再起動。直前のactive AgentRun、active Workflow、enabled scheduleはいずれも0。frontendは0.0.0.0:4020、APIは4021。migration両件は既存DBでsuccess=1。起動時の履歴workspace再分類は0件。開始時から存在するterminal runのpending Cancelに対するrecovery警告が1件あり、今回の試験runとは別で、手動で履歴を修正していない。
+
+- server SHA256: `8b758be004a1bc9746908b93cb926af232b3ec364f8db459714066b0dc9bc868`
+- process-host SHA256: `3284a810c7c298fae259071faebfa16b73d6380195942954eab200faa980e1ed`
+- 新server PID: `3783455`。試験時の追加差分は本記録のみ。
+- MCP専用browser context `lvk-upstream-backport-acceptance`、page 4。既存userのpages 2／3は操作しない。
+- MCPで作成したproject `94f8ef0e-6453-40ae-ad4d-8bc6e601dacb`、名称 `Upstream Backport Acceptance 20260922`。まだ各実行の受入完了ではない。
+
+最終frontend development buildも両app成功（`pnpm exec vite build --mode development --manifest --outDir ...`）。出力は`/tmp/lvk-backport-final-web.4D6pOu/{local,remote}`。generate-types checkをcommit後にも再実行し成功。既存Browserslist／chunk-size等の警告は残る。
+
+実機受入開始（最終code `34987ca0`、差分は本記録のみ）:
+
+- 2026-09-21T23:36:25Z、MCP page 4でproject設定のInitialize Wikiをクリック。repo `8dc5c831-f4ad-49cd-9fa3-be445e2b763e`、targetは明示保存した`test/upstream-backport-acceptance`、language en。
+- Bootstrap Workflow `2881ebef-21c6-4b61-8f2f-ad5efddf3f96`、execution-only workspace `be2f5025-07c9-459b-a152-1dedb540e668`、worktree `/var/tmp/vibe-kanban-dev/worktrees/be2f-openwiki-lvk-bac/lvk-backport-acceptance.tGwIkS`。
+- Generate Session `c8fceee9-5c44-46b2-befb-a6757b88a92d`、AgentRun `3f891684-c06b-574f-48db-125b546cc16e`。UIのView Workflowから進捗・実MCP beginを確認。system graph編集／自由chatはdisabled。
+- 原資料索引は候補3、Markdown解析2、instruction-only 1、問題0、chunk 1、digest `sha256:c91c9e99e860b0cf926b7df859dc68af43e86d73ac43420c25e0279a41fa308c`。生成結果ではなく開始時source `147ceb2d45e2f61d9dbdebd2c6a69688d7282aa3`に固定。
+- MCPのfilePath指定保存はMCP側workspace roots制限で拒否されたため、UI操作／snapshotのtool記録を証拠とする。これをブラウザ操作不能とは扱わず、権限設定も変更していない。
+
+### MCP受入で確認した関連不具合と再検証
+
+- 既存不具合（BP18）: Stage枠を選択すると本番CSSのselected z-indexがAgentより前面になり、内側のnodeや編集ボタンのpointer eventsを奪った。本番CSSとcontrolled selectionをfixtureにも読み込み、修正前はclick timeout／Stage interceptionで失敗、selected時も背面を維持すると成功。全Playwright 35件成功。MCPでもStage選択後にAgent編集を開き保存できた。CSSのみの変更でruntime／publication証拠は無効にしない。
+- 既存不具合（通常Workflow受入）: MCPで作成・保存したAttemptの最初の実行 `c48f6b37-b23a-447c-b1df-9c77d829d7d5` が `Workflow workspace has no local path` で失敗。Workspace `ca60b7f3-5aee-4688-aa4a-01526f2d98ae` はDB上だけ作成済みで、AgentRunへ移行したdispatcherが旧container経路の遅延worktree準備を呼ばなかった。閲覧により偶然worktreeが作られることに依存せず、Agent dispatchで既存ContainerServiceを呼ぶ。Sessionの所属検証後・新規Session作成前とし、Integration予約は準備前に拒否。execution-onlyはownerが用意した既存環境のみ読取り、setup／復元を再実行しない。通常／内部共通のowner・launch validationは維持。実際のDB migrationを用いた新規2 testsは旧動作で失敗、修正後成功。実runへの再検証は後続。
+- 説明欄の入力が保持されない疑いは、MCPのfill操作とmodal focusの誤りを切り分けた。実input focusを確認してkeyboard入力・保存した結果、revision 3のDB descriptionに正確に保存された。未確認の製品不具合としてコードを追加変更しない。
+- 二つの実backend editorでrevision 1→2の保存競合を再現。409後も別タブのdraftを保持し、reload後も元revisionのまま保存を拒否。離脱時の編集継続とfocus、明示確認後の破棄を確認。Note追加→Undo（0件）→Redo（1件）→Ctrl+Z（0件）をMCPで確認。API-onlyではなく本番UIで実施。
+
+初回Bootstrapは2026-09-21T23:36:29.969Z〜23:43:42.695Z（約7分13秒）で成功。Generate／fresh Review(pass)／Refine skipped／Publishの経路。Review Session `019eecce-c898-4e65-9bef-4820962f2e49`、AgentRun `7335a53b-a13b-8b2d-ca5f-9ac919b7ebb7`。publication `48ffe453311374d6d79895a0029b7fb445d39289` は隔離targetのみ。2本文ページと索引があり、MCP ViewerでCurrent workspace／branch表示、index→quickstartを確認。今回のdispatcher修正は内部phaseにも通るため、この成功を最終runtimeの合格へ流用せず、`test/upstream-backport-final`（同じ初期source `147ceb2d`、既存Wikiを削除せず新規ref）で改めてUIから開始する。
+
+上記修正後はserver lib 154／Workflow routes 40／Playwright 35 tests成功、format・check・lintも成功。serverとprocess-hostを同じcodeからdevelopment build（hostのsource変更はなくbinary hashも同じ）。AgentRun／Workflow／Integration active=0を確認して2026-09-21T23:55:48Zに再起動、server PID `3938671`、SHA256 `f4ca60fa8f9cd59f4addbffb95e0b84d94fc1ebfe25683590d8de71c8a825a2d`。ユーザー実行は停止していない。
+
+通常WorkflowはMCPから新規run `25b09c1a-cf26-4b40-98ea-9b9da2b53617` を開始し、23:56:22〜23:57:53Zで成功。AgentRun `6386e9d1-10e8-e758-7c59-75353e27b9a9`。修正前に失敗した同じlazy workspaceでCodexのLive出力と完了を確認。修正版BootstrapはMCPから `a7b5311f-1faa-4156-bca0-3f340ad2a6d5`、Workspace `1a7220eb-4ce4-49c2-ac88-1ee02a08476a` として23:56:44Z開始。Generate Session `923467c2-019b-414d-9256-ded10c72453b`、AgentRun `118f4868-3d55-8c0e-4676-4475fc7bfdd5`。完了は別途確認する。

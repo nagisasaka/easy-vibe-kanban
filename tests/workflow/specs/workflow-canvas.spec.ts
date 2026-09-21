@@ -159,6 +159,31 @@ test('adds an unconnected agent step from the toolbar', async ({ page }) => {
   expect(graph.edges.length).toBe(before.edges.length);
 });
 
+test('a selected stage never covers the contained agent or its edit action', async ({
+  page,
+}) => {
+  await page.goto('/?mode=default-graph');
+  // Include the actual Canvas stacking rules; the lightweight fixture normally
+  // supplies only layout utilities, not the application stylesheet.
+  await page.addStyleTag({
+    path: 'packages/web-core/src/app/styles/new/index.css',
+  });
+  const stage = page.locator('.react-flow__node[data-id="stage-understand"]');
+  await expect(stage).toBeVisible();
+  // Real pointer hit-testing is essential: dispatchEvent/force would bypass
+  // a selected decorative group's overlay and hide this regression.
+  await stage.click({ position: { x: 12, y: 12 } });
+  await expect(stage).toHaveClass(/selected/);
+  const node = await waitForWorkflowNodeVisible(page, 'familiarize');
+  await node.click({ position: { x: 100, y: 40 }, timeout: 5000 });
+  await expect(page.getByTestId('agent-step-edit-dialog')).toBeVisible();
+  await page.getByRole('button', { name: 'Save step', exact: true }).click();
+  await node.getByRole('button', { name: 'Edit', exact: true }).click({
+    timeout: 5000,
+  });
+  await expect(page.getByTestId('agent-step-edit-dialog')).toBeVisible();
+});
+
 test('moves an existing workflow node by dragging it on the canvas', async ({
   page,
 }) => {

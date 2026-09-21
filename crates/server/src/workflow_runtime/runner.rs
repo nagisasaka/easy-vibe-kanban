@@ -35,7 +35,10 @@ use executors::{
 use futures_util::StreamExt;
 use git::{GitCli, StatusEntry, WorktreeStatus};
 use serde_json::{Value, json};
-use services::services::orchestration::{OrchestrationService, OrchestrationServiceError};
+use services::services::{
+    container::ContainerService,
+    orchestration::{OrchestrationService, OrchestrationServiceError},
+};
 use sha2::{Digest, Sha256};
 use sqlx::{Row, SqlitePool, sqlite::SqliteRow};
 use thiserror::Error;
@@ -716,7 +719,7 @@ impl WorkflowAgentExecutor for DeploymentWorkflowAgentExecutor {
             .ok_or(ApiError::Workspace(WorkspaceError::WorkspaceNotFound))?;
         let executor_config = executor_config_from_node(request.executor_config.clone()).await?;
 
-        let session = if let Some(session_id) = request.session_id {
+        let existing_session = if let Some(session_id) = request.session_id {
             let session =
                 Session::find_by_id(pool, session_id)
                     .await?
@@ -730,6 +733,19 @@ impl WorkflowAgentExecutor for DeploymentWorkflowAgentExecutor {
                     request.node_id, session.workspace_id, workspace.id
                 )));
             }
+            Some(session)
+        } else {
+            None
+        };
+        let workspace_path = super::workspace::agent_workspace_path(pool, &workspace, || async {
+            self.deployment
+                .container()
+                .ensure_container_exists(&workspace)
+                .await
+                .map_err(ApiError::from)
+        })
+        .await?;
+        let session = if let Some(session) = existing_session {
             session
         } else {
             Session::create(
@@ -744,9 +760,6 @@ impl WorkflowAgentExecutor for DeploymentWorkflowAgentExecutor {
             .await?
         };
 
-        let workspace_path = workspace.container_ref.clone().ok_or_else(|| {
-            ApiError::BadRequest("Workflow workspace has no local path".to_string())
-        })?;
         let workspace_mode = match workspace.workspace_kind {
             WorkspaceKind::DirectFolder => WorkspaceMode::SharedWorkspace,
             WorkspaceKind::Worktree => WorkspaceMode::IsolatedWorktree,

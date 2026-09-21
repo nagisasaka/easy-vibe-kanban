@@ -352,6 +352,8 @@ function WorkflowCanvasHarness() {
             graph={graph}
             validationIssues={canvasValidationIssues}
             readOnly={readOnly}
+            selectedNodeId={selectedNodeId}
+            selectedEdgeId={selectedEdgeId}
             onChange={setGraph}
             onNodeDrop={handleNodeDrop}
             onSelectionChange={(selection) => {
