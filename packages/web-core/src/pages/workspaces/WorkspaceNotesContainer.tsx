@@ -30,6 +30,7 @@ export function WorkspaceNotesContainer() {
   return (
     <div className="p-base flex flex-col flex-1 min-h-0 overflow-y-auto">
       <WYSIWYGEditor
+        disabled={workspace?.usage !== 'interactive'}
         placeholder={t('notes.placeholder')}
         value={content}
         onChange={setContent}

@@ -71,6 +71,8 @@ async fn setup_workflow_pool() -> SqlitePool {
             container_ref TEXT,
             workspace_kind TEXT NOT NULL DEFAULT 'worktree',
             container_ownership TEXT NOT NULL DEFAULT 'managed',
+            usage TEXT NOT NULL DEFAULT 'interactive',
+            execution_owner TEXT,
             branch TEXT NOT NULL,
             setup_completed_at TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now', 'subsec')),

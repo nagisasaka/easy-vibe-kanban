@@ -163,9 +163,11 @@ async fn resolve_workspace_editor_path(
 ) -> Result<PathBuf, ApiError> {
     let container_ref = deployment
         .container()
-        .ensure_container_exists(workspace)
+        .container_for_inspection(workspace)
         .await?;
-    deployment.container().touch(workspace).await?;
+    if !workspace.is_execution_only() {
+        deployment.container().touch(workspace).await?;
+    }
 
     let workspace_path = Path::new(&container_ref);
     let workspace_repos =

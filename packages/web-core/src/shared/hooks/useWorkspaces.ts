@@ -10,10 +10,12 @@ import type {
   WorkspaceSummary,
   WorkspaceSummaryResponse,
   ApiResponse,
+  WorkspaceUsage,
 } from 'shared/types';
 
 // UI-specific workspace type for sidebar display
 export interface SidebarWorkspace {
+  usage?: WorkspaceUsage;
   id: string;
   name: string;
   branch: string;
@@ -42,6 +44,7 @@ export type Workspace = SidebarWorkspace;
 export interface UseWorkspacesResult {
   workspaces: SidebarWorkspace[];
   archivedWorkspaces: SidebarWorkspace[];
+  executionWorkspaces: SidebarWorkspace[];
   isLoading: boolean;
   isConnected: boolean;
   error: string | null;
@@ -58,6 +61,7 @@ function toSidebarWorkspace(
   summary?: WorkspaceSummary
 ): SidebarWorkspace {
   return {
+    usage: ws.usage,
     id: ws.id,
     name: ws.name ?? ws.branch, // Use name if available, fallback to branch
     branch: ws.branch,
@@ -230,9 +234,20 @@ export function useWorkspaces(): UseWorkspacesResult {
   // Combined error (show first error if any)
   const error = activeError || archivedError;
 
+  const scopes = useMemo(
+    () => ({
+      workspaces: workspaces.filter((ws) => ws.usage !== 'execution_only'),
+      archivedWorkspaces: archivedWorkspaces.filter(
+        (ws) => ws.usage !== 'execution_only'
+      ),
+      executionWorkspaces: [...workspaces, ...archivedWorkspaces].filter(
+        (ws) => ws.usage === 'execution_only'
+      ),
+    }),
+    [workspaces, archivedWorkspaces]
+  );
   return {
-    workspaces,
-    archivedWorkspaces,
+    ...scopes,
     isLoading,
     isConnected,
     error,

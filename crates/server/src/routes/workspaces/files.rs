@@ -139,7 +139,7 @@ pub async fn get_workspace_file_tree(
         WorkspaceRepo::find_repos_for_workspace(&deployment.db().pool, workspace.id).await?;
     let container_ref = deployment
         .container()
-        .ensure_container_exists(&workspace)
+        .container_for_inspection(&workspace)
         .await?;
     let workspace_dir = PathBuf::from(container_ref);
     let mut repo_nodes = Vec::with_capacity(repos.len());
@@ -307,7 +307,7 @@ pub(super) async fn resolve_workspace_repo_root(
 
     let container_ref = deployment
         .container()
-        .ensure_container_exists(workspace)
+        .container_for_inspection(workspace)
         .await?;
     let repo_root = PathBuf::from(container_ref).join(&repo.name);
     let canonical_repo_root = fs::canonicalize(&repo_root)

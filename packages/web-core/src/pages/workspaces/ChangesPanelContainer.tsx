@@ -42,6 +42,7 @@ import {
 import { DiffSide } from '@/shared/types/diff';
 import { isRealMobileDevice } from '@/shared/hooks/useIsMobile';
 import { useOpenInEditor } from '@/shared/hooks/useOpenInEditor';
+import { useWorkspaceRecord } from '@/shared/hooks/useWorkspaceRecord';
 import { OpenInIdeButton } from '@/shared/components/OpenInIdeButton';
 import { CopyButton } from '@/shared/components/CopyButton';
 import { writeClipboardViaBridge } from '@/shared/lib/clipboard';
@@ -345,6 +346,8 @@ const DiffFileItem = memo(function DiffFileItem({
   const getGitHubCommentsForFile = useGetGitHubCommentsForFile();
 
   const openInEditor = useOpenInEditor(workspaceId);
+  const { data: workspace } = useWorkspaceRecord(workspaceId);
+  const readOnly = workspace?.usage !== 'interactive';
 
   const fileDiffMetadata = useMemo(
     () => getCachedFileDiffMetadata(diff, ignoreWhitespace),
@@ -385,6 +388,7 @@ const DiffFileItem = memo(function DiffFileItem({
 
   const handleLineClick = useCallback(
     (props: { lineNumber: number; annotationSide: AnnotationSide }) => {
+      if (readOnly) return;
       const { lineNumber, annotationSide } = props;
       const splitSide = mapAnnotationSideToSplitSide(annotationSide);
       const widgetKey = `${filePath}-${splitSide}-${lineNumber}`;
@@ -399,7 +403,7 @@ const DiffFileItem = memo(function DiffFileItem({
         ...(codeLine !== undefined ? { codeLine } : {}),
       });
     },
-    [filePath, diff, setDraft]
+    [filePath, diff, setDraft, readOnly]
   );
 
   const options = useMemo(
@@ -411,12 +415,12 @@ const DiffFileItem = memo(function DiffFileItem({
       overflow: wrapText ? ('wrap' as const) : ('scroll' as const),
       hunkSeparators: 'line-info' as const,
       collapsed: !expanded,
-      enableHoverUtility: true,
+      enableHoverUtility: !readOnly,
       onLineClick: handleLineClick,
       theme: { dark: 'github-dark', light: 'github-light' } as const,
       unsafeCSS: PIERRE_DIFFS_THEME_CSS,
     }),
-    [globalMode, actualTheme, wrapText, expanded, handleLineClick]
+    [globalMode, actualTheme, wrapText, expanded, handleLineClick, readOnly]
   );
 
   const handleToggle = useCallback(() => {
@@ -462,7 +466,7 @@ const DiffFileItem = memo(function DiffFileItem({
             {githubCommentCount}
           </span>
         )}
-        {!IS_MOBILE && (
+        {!IS_MOBILE && !readOnly && (
           <OpenInIdeButton
             onClick={handleOpenInIde}
             className="size-icon-xs p-0"
@@ -482,6 +486,7 @@ const DiffFileItem = memo(function DiffFileItem({
       githubCommentCount,
       additions,
       deletions,
+      readOnly,
     ]
   );
 
@@ -581,7 +586,9 @@ const DiffFileItem = memo(function DiffFileItem({
         renderAnnotation={annotations ? renderAnnotation : undefined}
         renderHeaderPrefix={renderHeaderPrefix}
         renderHeaderMetadata={renderHeaderMetadata}
-        renderHoverUtility={expanded ? renderHoverUtility : undefined}
+        renderHoverUtility={
+          expanded && !readOnly ? renderHoverUtility : undefined
+        }
       />
     </div>
   );

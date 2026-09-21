@@ -29,3 +29,4 @@ pub mod remote_sync;
 pub mod repo;
 pub mod repository_memory;
 pub mod wiki;
+pub mod workspace_usage;

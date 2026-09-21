@@ -505,7 +505,9 @@ function DisplayConversationEntry(props: Props) {
           workspaceId={workspaceWithSession?.id}
           sessionId={sessionId}
           executionProcessId={executionProcessId}
-          executorCanFork={executorCanFork}
+          executorCanFork={
+            executorCanFork && workspaceWithSession?.usage === 'interactive'
+          }
           resetAction={resetAction}
         />
       );

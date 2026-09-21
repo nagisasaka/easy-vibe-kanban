@@ -19,7 +19,7 @@ history are preserved, not migrated or deleted; see [legacy data handling](/work
    run uses the saved branch and language, not the draft shown in the form.
 3. Select **Initialize Wiki**. EVK creates an OpenWiki maintenance workspace and
    a repository-scoped system Workflow, without creating an Issue. Select
-   **View Workflow** in these settings or above the maintenance workspace's chat
+   **View Workflow** in these settings or above the maintenance workspace's logs
    to open the existing Workflow **Canvas** and **Dashboard**.
 4. Wait for **Current**. A successful model exit alone is not sufficient: EVK
    checks the native audit for successful OpenWiki finalisation before publishing.
@@ -74,6 +74,12 @@ use the Dashboard for step status, errors and whole-workflow cancellation.
 System-managed executions do not offer template editing or individual step retry.
 After resolving a failure, start a new bootstrap from repository settings.
 The chat's session selection remains independent of the Workflow view.
+Maintenance workspaces appear under **Executions / History**, not the normal
+**Work** list. Their details are inspection-only: use saved sessions to read logs
+and **Stop execution** to cancel the owner before publication. You cannot send
+new chat requests or resume a completed maintenance session as ordinary work.
+Missing worktree files are reported without recreating the execution environment.
+See [workspace usage and history](/workspaces/managing-workspaces#work-and-execution-history).
 Remote-machine Workflow viewing is not yet supported; use that machine's local
 EVK UI. Normal Sync workspaces have no bootstrap Workflow link.
 The Workflow owns maintenance throughout, so another maintenance request cannot

@@ -118,6 +118,7 @@ export interface ActionVisibilityContext {
   // Workspace state
   hasWorkspace: boolean;
   workspaceArchived: boolean;
+  workspaceReadOnly?: boolean;
 
   // Diff state
   hasDiffs: boolean;
@@ -242,6 +243,7 @@ export function isActionVisible(
   action: ActionDefinition,
   ctx: ActionVisibilityContext
 ): boolean {
+  if (ctx.workspaceReadOnly && !isInspectionAction(action)) return false;
   return action.isVisible ? action.isVisible(ctx) : true;
 }
 
@@ -256,7 +258,21 @@ export function isActionEnabled(
   action: ActionDefinition,
   ctx: ActionVisibilityContext
 ): boolean {
+  if (ctx.workspaceReadOnly && !isInspectionAction(action)) return false;
   return action.isEnabled ? action.isEnabled(ctx) : true;
+}
+
+/** Usage is generic: no Wiki/Integration names in workspace action policy. */
+export function isInspectionAction(action: ActionDefinition): boolean {
+  if (
+    action.requiresTarget === ActionTargetType.WORKSPACE ||
+    action.requiresTarget === ActionTargetType.GIT
+  ) {
+    return ['copy-workspace-path', 'repo-copy-path'].includes(action.id);
+  }
+  return !['open-in-ide', 'toggle-dev-server', 'toggle-preview-mode'].includes(
+    action.id
+  );
 }
 
 export function getActionIcon(

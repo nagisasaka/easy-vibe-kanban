@@ -10,6 +10,7 @@ use db::models::{
     session::{CreateSession, Session},
     workspace::{CreateWorkspace, Workspace},
     workspace_repo::{CreateWorkspaceRepo, WorkspaceRepo},
+    workspace_usage::WorkspaceExecutionOwner,
 };
 use deployment::Deployment;
 use services::services::container::ContainerService;
@@ -33,6 +34,15 @@ pub(crate) async fn create_workspace_record(
     deployment: &DeploymentImpl,
     name: Option<String>,
 ) -> Result<Workspace, ApiError> {
+    create_workspace_record_with_owner(deployment, name, None).await
+}
+
+/// Only product admission paths supply ownership, never a public request body.
+pub(crate) async fn create_workspace_record_with_owner(
+    deployment: &DeploymentImpl,
+    name: Option<String>,
+    owner: Option<&WorkspaceExecutionOwner>,
+) -> Result<Workspace, ApiError> {
     let workspace_id = Uuid::new_v4();
     let branch_label = name
         .as_deref()
@@ -43,13 +53,14 @@ pub(crate) async fn create_workspace_record(
         .git_branch_from_workspace(&workspace_id, branch_label)
         .await;
 
-    let workspace = Workspace::create(
+    let workspace = Workspace::create_with_owner(
         &deployment.db().pool,
         &CreateWorkspace {
             branch: git_branch_name,
             name: name.filter(|workspace_name| !workspace_name.is_empty()),
         },
         workspace_id,
+        owner,
     )
     .await?;
 

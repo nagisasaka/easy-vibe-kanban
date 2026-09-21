@@ -212,7 +212,7 @@ export type CreateScratch = { payload: ScratchPayload, };
 
 export type UpdateScratch = { payload: ScratchPayload, };
 
-export type Workspace = { id: string, task_id: string | null, container_ref: string | null, workspace_kind: WorkspaceKind, container_ownership: ContainerOwnership, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, 
+export type Workspace = { id: string, task_id: string | null, container_ref: string | null, workspace_kind: WorkspaceKind, container_ownership: ContainerOwnership, usage: WorkspaceUsage, execution_owner: WorkspaceExecutionOwner | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, 
 /**
  * AI Arena group this workspace belongs to, if any.
  * `None` for workspaces created outside of arena (race) mode.
@@ -229,7 +229,22 @@ export type WorkspaceKind = "worktree" | "direct_folder";
 
 export type ContainerOwnership = "managed" | "external";
 
-export type WorkspaceWithStatus = { is_running: boolean, is_errored: boolean, id: string, task_id: string | null, container_ref: string | null, workspace_kind: WorkspaceKind, container_ownership: ContainerOwnership, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, 
+export type WorkspaceUsage = "interactive" | "execution_only";
+
+export type WorkspaceExecutionOwner = { kind: string, run_id: string | null, repository_id: string | null, 
+/**
+ * Only for preparation/maintenance results not already retained by the
+ * owner's product record. Never infer publication from AgentRun success.
+ */
+result: WorkspaceExecutionResult | null, };
+
+export type WorkspaceExecutionResult = { status: WorkspaceExecutionTerminalStatus, completed_at: string, error: string | null, wiki_commit: string | null, no_op: boolean, };
+
+export type WorkspaceExecutionTerminalStatus = "succeeded" | "failed" | "cancelled";
+
+export type WorkspaceExecutionView = { workspace_id: string, owner: WorkspaceExecutionOwner | null, status: string, terminal: boolean, can_stop: boolean, stop_requested: boolean, error: string | null, files_available: boolean, published: boolean, };
+
+export type WorkspaceWithStatus = { is_running: boolean, is_errored: boolean, id: string, task_id: string | null, container_ref: string | null, workspace_kind: WorkspaceKind, container_ownership: ContainerOwnership, usage: WorkspaceUsage, execution_owner: WorkspaceExecutionOwner | null, branch: string, setup_completed_at: string | null, created_at: string, updated_at: string, archived: boolean, pinned: boolean, name: string | null, worktree_deleted: boolean, 
 /**
  * AI Arena group this workspace belongs to, if any.
  * `None` for workspaces created outside of arena (race) mode.

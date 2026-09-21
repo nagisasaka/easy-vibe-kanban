@@ -2,6 +2,7 @@ import { Binary, ExternalLink } from 'lucide-react';
 import { Button } from '@vibe/ui/components/Button';
 import { formatFileSize } from '@/shared/lib/utils';
 import { useOpenInEditor } from '@/shared/hooks/useOpenInEditor';
+import { useWorkspaceRecord } from '@/shared/hooks/useWorkspaceRecord';
 import type { WorkspaceFileContent } from 'shared/types';
 import type { WorkspaceFilePreviewTarget } from '../../model/types';
 import { WorkspaceFileEmptyState } from '../WorkspaceFileEmptyState';
@@ -18,6 +19,7 @@ export function UnsupportedFileViewer({
   rawUrl,
 }: UnsupportedFileViewerProps) {
   const openInEditor = useOpenInEditor(target.workspaceId);
+  const { data: workspace } = useWorkspaceRecord(target.workspaceId);
 
   return (
     <WorkspaceFileEmptyState
@@ -49,16 +51,18 @@ export function UnsupportedFileViewer({
             )}
           </dl>
           <div className="flex items-center gap-half">
-            <Button
-              type="button"
-              size="xs"
-              variant="secondary"
-              onClick={() => void openInEditor({ filePath: target.path })}
-              className="gap-half"
-            >
-              <ExternalLink className="size-3" />
-              Open editor
-            </Button>
+            {workspace?.usage === 'interactive' && (
+              <Button
+                type="button"
+                size="xs"
+                variant="secondary"
+                onClick={() => void openInEditor({ filePath: target.path })}
+                className="gap-half"
+              >
+                <ExternalLink className="size-3" />
+                Open editor
+              </Button>
+            )}
             {rawUrl && (
               <Button
                 asChild

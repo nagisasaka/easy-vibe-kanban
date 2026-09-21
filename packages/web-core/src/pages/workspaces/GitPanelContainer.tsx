@@ -256,6 +256,7 @@ export function GitPanelContainer({
 
   return (
     <GitPanel
+      readOnly={selectedWorkspace?.usage !== 'interactive'}
       repos={repoInfosWithPushButton}
       repoSelectedActions={repoActions}
       workingBranchName={selectedWorkspace?.branch ?? ''}

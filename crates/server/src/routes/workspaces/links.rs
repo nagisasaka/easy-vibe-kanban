@@ -65,6 +65,7 @@ pub(crate) async fn link_workspace_to_issue(
     project_id: Uuid,
     issue_id: Uuid,
 ) -> Result<(), ApiError> {
+    workspace.require_interactive()?;
     upsert_local_workspace_link(&deployment.db().pool, workspace.id, project_id, issue_id).await?;
 
     if let Ok(client) = deployment.remote_client() {
@@ -149,6 +150,12 @@ pub async fn unlink_workspace(
     AxumPath(workspace_id): AxumPath<uuid::Uuid>,
     State(deployment): State<DeploymentImpl>,
 ) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+    // Unlike POST, this idempotent route also accepts already-deleted records.
+    // Check an existing workspace before contacting the remote side.
+    if let Some(workspace) = Workspace::find_by_id(&deployment.db().pool, workspace_id).await? {
+        workspace.require_interactive()?;
+        db::models::integration::guard_workspace(&deployment.db().pool, workspace_id).await?;
+    }
     if let Ok(client) = deployment.remote_client() {
         match client.delete_workspace(workspace_id).await {
             Ok(()) => {}

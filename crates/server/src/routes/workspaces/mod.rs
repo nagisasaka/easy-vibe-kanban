@@ -11,6 +11,7 @@ pub mod links;
 pub mod pr;
 pub mod repos;
 pub mod streams;
+pub mod usage;
 pub mod wiki;
 pub mod workspace_summary;
 
@@ -32,6 +33,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         )
         .route("/messages/first", get(core::get_first_user_message))
         .route("/seen", axum::routing::put(core::mark_seen))
+        .route("/usage", get(usage::get))
         .nest("/git", git::router())
         .nest("/execution", execution::router())
         .nest("/integration", integration::router())
@@ -52,6 +54,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/start", post(create::create_and_start_workspace))
         .route("/from-pr", post(pr::create_workspace_from_pr))
         .route("/streams/ws", get(streams::stream_workspaces_ws))
+        .route("/executions", get(usage::list))
         .route(
             "/summaries",
             post(workspace_summary::get_workspace_summaries),

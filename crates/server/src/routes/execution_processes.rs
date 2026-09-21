@@ -206,6 +206,20 @@ async fn stop_execution_process(
     Extension(execution_process): Extension<ExecutionProcess>,
     State(deployment): State<DeploymentImpl>,
 ) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+    let session = db::models::session::Session::find_by_id(
+        &deployment.db().pool,
+        execution_process.session_id,
+    )
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("Session not found".into()))?;
+    let workspace =
+        db::models::workspace::Workspace::find_by_id(&deployment.db().pool, session.workspace_id)
+            .await?
+            .ok_or_else(|| ApiError::BadRequest("Workspace not found".into()))?;
+    if workspace.is_execution_only() {
+        super::workspaces::usage::stop(&deployment, &workspace).await?;
+        return Ok(ResponseJson(ApiResponse::success(())));
+    }
     deployment
         .container()
         .stop_execution(&execution_process, ExecutionProcessStatus::Killed)

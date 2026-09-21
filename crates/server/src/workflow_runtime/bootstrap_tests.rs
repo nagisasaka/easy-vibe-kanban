@@ -85,12 +85,25 @@ impl Fixture {
         .execute(&pool)
         .await
         .unwrap();
-        sqlx::query("INSERT INTO workspaces (id, branch, container_ref) VALUES (?, 'wiki', ?)")
+        sqlx::query("INSERT INTO workspaces (id, branch, container_ref, usage, execution_owner) VALUES (?, 'wiki', ?, 'execution_only', ?)")
             .bind(workspace_id)
             .bind(maintenance.parent().unwrap().to_str())
+            .bind(sqlx::types::Json(db::models::workspace_usage::WorkspaceExecutionOwner::new(
+                db::models::workspace_usage::OPENWIKI_BOOTSTRAP, repository_id, None,
+            )))
             .execute(&pool)
             .await
             .unwrap();
+        WorkspaceRepo::create_many(
+            &pool,
+            workspace_id,
+            &[CreateWorkspaceRepo {
+                repo_id: repository_id,
+                target_branch: "main".into(),
+            }],
+        )
+        .await
+        .unwrap();
         Self {
             _temp: temp,
             pool,
@@ -105,6 +118,14 @@ impl Fixture {
 
     async fn reserve(&self) -> Uuid {
         let id = Uuid::new_v4();
+        Workspace::bind_execution_owner(
+            &self.pool,
+            self.workspace_id,
+            db::models::workspace_usage::OPENWIKI_BOOTSTRAP,
+            id,
+        )
+        .await
+        .unwrap();
         let inventory = DocumentInventory::generate(
             &git::GitService::new(),
             &self.maintenance,
@@ -389,6 +410,80 @@ impl WorkflowAgentExecutor for FakeBootstrap<'_> {
 }
 
 #[tokio::test]
+async fn execution_workspace_sessions_require_bound_repository_owner_not_public_adoption() {
+    let f = Fixture::new().await;
+    let id = Uuid::new_v4();
+    let mut graph = workflow::templates::openwiki_bootstrap().graph;
+    assert!(
+        crate::routes::workflows::ensure_agent_node_sessions(&f.pool, f.workspace_id, &mut graph,)
+            .await
+            .is_err()
+    );
+    assert!(
+        crate::routes::workflows::ensure_repository_owner_sessions(
+            &f.pool,
+            f.workspace_id,
+            f.repository_id,
+            id,
+            &mut graph,
+        )
+        .await
+        .is_err()
+    );
+    Workspace::bind_execution_owner(
+        &f.pool,
+        f.workspace_id,
+        db::models::workspace_usage::OPENWIKI_BOOTSTRAP,
+        id,
+    )
+    .await
+    .unwrap();
+    for (repo, run) in [(Uuid::new_v4(), id), (f.repository_id, Uuid::new_v4())] {
+        assert!(
+            crate::routes::workflows::ensure_repository_owner_sessions(
+                &f.pool,
+                f.workspace_id,
+                repo,
+                run,
+                &mut graph,
+            )
+            .await
+            .is_err()
+        );
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sessions")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
+    crate::routes::workflows::ensure_repository_owner_sessions(
+        &f.pool,
+        f.workspace_id,
+        f.repository_id,
+        id,
+        &mut graph,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sessions")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        3
+    );
+    assert!(
+        Workspace::find_by_id(&f.pool, f.workspace_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_execution_only()
+    );
+}
+
+#[tokio::test]
 async fn inventory_preprocessing_failure_before_reservation_releases_owner() {
     use utils::repository_memory::{
         OpenWikiBootstrapOwner, OpenWikiBootstrapPhase, RepositoryMemoryState, RepositoryWikiStatus,
@@ -396,6 +491,14 @@ async fn inventory_preprocessing_failure_before_reservation_releases_owner() {
     let f = Fixture::new().await;
     let run_id = Uuid::new_v4();
     // The start path has persisted ownership, but no Workflow row/child exists.
+    Workspace::bind_execution_owner(
+        &f.pool,
+        f.workspace_id,
+        db::models::workspace_usage::OPENWIKI_BOOTSTRAP,
+        run_id,
+    )
+    .await
+    .unwrap();
     std::fs::write(f.maintenance.join(".openwikiignore"), "docs/**").unwrap();
     let error = DocumentInventory::generate(
         &git::GitService::new(),
@@ -448,11 +551,28 @@ async fn inventory_preprocessing_failure_before_reservation_releases_owner() {
 
 #[tokio::test]
 async fn bootstrap_cleanup_restores_and_releases_only_after_all_children_exit() {
+    check_bootstrap_cleanup_result(false).await;
+    check_bootstrap_cleanup_result(true).await;
+}
+
+async fn check_bootstrap_cleanup_result(cancelled: bool) {
     use utils::repository_memory::{
         OpenWikiBootstrapOwner, OpenWikiBootstrapPhase, RepositoryMemoryState, RepositoryWikiStatus,
     };
     let f = Fixture::new().await;
     let run_id = f.reserve().await;
+    if cancelled {
+        update_run_status(
+            &f.pool,
+            run_id,
+            WorkflowRunStatus::Cancelling,
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    }
     let repo = db::models::repo::Repo::find_by_id(&f.pool, f.repository_id)
         .await
         .unwrap()
@@ -542,7 +662,11 @@ async fn bootstrap_cleanup_restores_and_releases_only_after_all_children_exit() 
             .await
             .unwrap()
             .status,
-        WorkflowRunStatus::Failed
+        if cancelled {
+            WorkflowRunStatus::Canceled
+        } else {
+            WorkflowRunStatus::Failed
+        }
     );
     assert!(f.store.publication(run_id).unwrap().is_none());
 }
@@ -1000,9 +1124,24 @@ async fn inventory_host_input_identity_and_tampering_fail_before_dispatch() {
             }
             "missing_manifest" => std::fs::remove_file(&manifest).unwrap(),
             "foreign_run" => {
-                let other = f.reserve().await;
-                sqlx::query("UPDATE workflow_runs SET input_text = (SELECT input_text FROM workflow_runs WHERE id = ?) WHERE id = ?")
-                    .bind(other).bind(run_id).execute(&f.pool).await.unwrap();
+                let other = DocumentInventory::generate(
+                    &git::GitService::new(),
+                    &f.maintenance,
+                    &f.store,
+                    InventoryIdentity::new(
+                        f.repository_id,
+                        f.workspace_id,
+                        Uuid::new_v4(),
+                        f.source.clone(),
+                    ),
+                )
+                .unwrap();
+                sqlx::query("UPDATE workflow_runs SET input_text = ? WHERE id = ?")
+                    .bind(serde_json::to_string(&other).unwrap())
+                    .bind(run_id)
+                    .execute(&f.pool)
+                    .await
+                    .unwrap();
             }
             _ => {
                 sqlx::query("UPDATE workflow_runs SET input_text = 'not json' WHERE id = ?")

@@ -2078,6 +2078,7 @@ async fn insert_workspace_link(
     project_id: Uuid,
     issue_id: Uuid,
 ) -> Result<(), ApiError> {
+    db::models::workspace_usage::require_interactive(pool, workspace_id).await?;
     sqlx::query(
         r#"INSERT INTO local_workspace_links
                (workspace_id, project_id, issue_id)
@@ -2236,6 +2237,7 @@ async fn start_arena_workspace(
     prompt: String,
 ) -> Result<(), ApiError> {
     let pool = &deployment.db().pool;
+    db::models::workspace_usage::require_interactive(pool, workspace.id).await?;
     deployment.container().create(workspace).await?;
 
     let workspace = DbWorkspace::find_by_id(pool, workspace.id)
@@ -3594,6 +3596,8 @@ mod tests {
             container_ref: None,
             workspace_kind: db::models::workspace::WorkspaceKind::Worktree,
             container_ownership: db::models::workspace::ContainerOwnership::Managed,
+            usage: Default::default(),
+            execution_owner: None,
             branch: "arena-test".to_string(),
             setup_completed_at: None,
             created_at: now,

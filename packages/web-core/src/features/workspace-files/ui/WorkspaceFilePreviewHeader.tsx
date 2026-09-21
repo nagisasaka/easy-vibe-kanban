@@ -15,6 +15,7 @@ import { getActualTheme } from '@/shared/lib/theme';
 import { useTheme } from '@/shared/hooks/useTheme';
 import { useOpenInEditor } from '@/shared/hooks/useOpenInEditor';
 import { useHostId } from '@/shared/providers/HostIdProvider';
+import { useWorkspaceRecord } from '@/shared/hooks/useWorkspaceRecord';
 import type { WorkspaceFileContent } from 'shared/types';
 import type {
   WorkspaceFileDisplayInfo,
@@ -44,6 +45,7 @@ export function WorkspaceFilePreviewHeader({
   const hostId = useHostId();
   const [copied, setCopied] = useState(false);
   const openInEditor = useOpenInEditor(target.workspaceId);
+  const { data: workspace } = useWorkspaceRecord(target.workspaceId);
   const fileName = content?.name || target.path.split('/').pop() || target.path;
   const repoName = content?.repo_name ?? target.repoId;
   const rawUrl = scopeWorkspaceFileRawUrl(content?.raw_url, hostId);
@@ -105,9 +107,11 @@ export function WorkspaceFilePreviewHeader({
           >
             <Copy className="size-4" />
           </HeaderIconButton>
-          <HeaderIconButton label="Open in editor" onClick={handleOpenEditor}>
-            <ExternalLink className="size-4" />
-          </HeaderIconButton>
+          {workspace?.usage === 'interactive' && (
+            <HeaderIconButton label="Open in editor" onClick={handleOpenEditor}>
+              <ExternalLink className="size-4" />
+            </HeaderIconButton>
+          )}
           <HeaderIconButton
             label="Refresh preview"
             onClick={onRefresh}

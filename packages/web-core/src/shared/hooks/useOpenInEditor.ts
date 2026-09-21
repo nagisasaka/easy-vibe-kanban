@@ -4,6 +4,7 @@ import { EditorSelectionDialog } from '@/shared/dialogs/command-bar/EditorSelect
 import type { EditorType } from 'shared/types';
 import { useAppRuntime } from '@/shared/hooks/useAppRuntime';
 import { useHostId } from '@/shared/providers/HostIdProvider';
+import { useWorkspaceRecord } from '@/shared/hooks/useWorkspaceRecord';
 
 type OpenEditorOptions = {
   editorType?: EditorType;
@@ -16,10 +17,11 @@ export function useOpenInEditor(
 ) {
   const appRuntime = useAppRuntime();
   const hostId = useHostId();
+  const { data: workspace } = useWorkspaceRecord(workspaceId);
 
   return useCallback(
     async (options?: OpenEditorOptions): Promise<void> => {
-      if (!workspaceId) return;
+      if (!workspaceId || workspace?.usage !== 'interactive') return;
 
       const { editorType, filePath } = options ?? {};
 
@@ -55,6 +57,6 @@ export function useOpenInEditor(
         }
       }
     },
-    [appRuntime, workspaceId, hostId, onShowEditorDialog]
+    [appRuntime, workspaceId, workspace?.usage, hostId, onShowEditorDialog]
   );
 }

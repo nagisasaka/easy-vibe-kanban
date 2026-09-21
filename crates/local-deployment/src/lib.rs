@@ -153,6 +153,7 @@ impl Deployment for LocalDeployment {
             DBService::new_with_after_connect(hook).await?
         };
 
+        services::services::workspace_usage::backfill(&db.pool).await?;
         let file = FileService::new(db.clone().pool)?;
         {
             let file_service = file.clone();

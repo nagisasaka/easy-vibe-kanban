@@ -95,6 +95,15 @@ pub(crate) async fn should_disable_default_commit_for_workspace(
     if db::models::integration::is_integration_workspace(pool, workspace_id).await? {
         return Ok(true);
     }
+    if sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM workspaces WHERE id=? AND usage='execution_only')",
+    )
+    .bind(workspace_id)
+    .fetch_one(pool)
+    .await?
+    {
+        return Ok(true);
+    }
 
     let group = Workspace::find_arena_group_for_workspace(pool, workspace_id).await?;
 
@@ -367,19 +376,17 @@ impl LocalContainerService {
         // Integration owns its result commit and follow-ups. Ordinary terminal
         // finalisation must not create an unvalidated R' or consume user queues.
         match Session::find_by_id(&self.db.pool, event.session_id).await {
-            Ok(Some(session)) => match db::models::integration::is_integration_workspace(
-                &self.db.pool,
-                session.workspace_id,
-            )
-            .await
-            {
-                Ok(true) => return,
-                Ok(false) => {}
-                Err(error) => {
-                    tracing::error!(%error,"Cannot resolve Integration finalisation owner");
-                    return;
+            Ok(Some(session)) => {
+                match Workspace::find_by_id(&self.db.pool, session.workspace_id).await {
+                    Ok(Some(workspace)) if workspace.is_execution_only() => return,
+                    Ok(Some(_)) => {}
+                    Ok(None) => return,
+                    Err(error) => {
+                        tracing::error!(%error,"Cannot resolve Integration finalisation owner");
+                        return;
+                    }
                 }
-            },
+            }
             Ok(None) => return,
             Err(error) => {
                 tracing::error!(%error,"Cannot resolve terminal Session");
@@ -559,6 +566,15 @@ impl LocalContainerService {
         let _admission = services::services::integration_admission::MUTATIONS
             .lock()
             .await;
+        match services::services::workspace_usage::cleanup_allowed(&self.db.pool, workspace.id)
+            .await
+        {
+            Ok(true) => {}
+            outcome => {
+                tracing::info!(workspace_id=%workspace.id, ?outcome, "Retaining execution-owned workspace");
+                return;
+            }
+        }
         if let Err(error) =
             db::models::integration::guard_workspace(&self.db.pool, workspace.id).await
         {
@@ -1513,6 +1529,15 @@ impl ContainerService for LocalContainerService {
         execution_process: &ExecutionProcess,
         executor_action: &ExecutorAction,
     ) -> Result<(), ContainerError> {
+        services::services::workspace_usage::validate_script_owner(
+            &self.db.pool,
+            workspace.id,
+            execution_process.session_id,
+            executor_action,
+            &execution_process.run_reason,
+        )
+        .await
+        .map_err(ContainerError::Other)?;
         if !matches!(
             executor_action.typ(),
             executors::actions::ExecutorActionType::ScriptRequest(_)
@@ -1780,7 +1805,7 @@ impl ContainerService for LocalContainerService {
 
         let mut streams = Vec::new();
 
-        let container_ref = self.ensure_container_exists(workspace).await?;
+        let container_ref = self.container_for_inspection(workspace).await?;
         let workspace_root = PathBuf::from(container_ref);
 
         for repo in repositories {
@@ -1971,6 +1996,7 @@ mod tests {
             r#"
             CREATE TABLE workspaces (
                 id BLOB PRIMARY KEY,
+                usage TEXT NOT NULL DEFAULT 'interactive',
                 arena_group_id BLOB
             )
             "#,
@@ -2026,6 +2052,8 @@ mod tests {
             container_ref: Some("C:\\runtime-workspace".to_string()),
             workspace_kind,
             container_ownership: ContainerOwnership::Managed,
+            usage: Default::default(),
+            execution_owner: None,
             branch: "main".to_string(),
             setup_completed_at: None,
             created_at: now,

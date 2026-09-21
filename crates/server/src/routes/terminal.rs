@@ -57,6 +57,7 @@ async fn terminal_ws(
     let attempt = Workspace::find_by_id(&deployment.db().pool, query.workspace_id)
         .await?
         .ok_or_else(|| ApiError::BadRequest("Attempt not found".to_string()))?;
+    attempt.require_interactive()?;
 
     let container_ref = attempt
         .container_ref

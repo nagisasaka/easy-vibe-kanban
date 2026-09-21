@@ -312,7 +312,7 @@ async fn resolve_session_base_path(
 
     let container_ref = deployment
         .container()
-        .ensure_container_exists(workspace)
+        .container_for_inspection(workspace)
         .await?;
     let workspace_path = std::path::PathBuf::from(container_ref);
     let base_path = match session.agent_working_dir.as_deref() {

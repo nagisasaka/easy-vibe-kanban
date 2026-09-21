@@ -5,6 +5,49 @@ description: "Archive, delete, and manage disk space for your workspaces"
 
 Learn how to organise your workspace list, free up disk space, and understand what happens to your code when you archive or delete workspaces.
 
+## Work and execution history
+
+The sidebar's **Work** scope contains your continuing development workspaces.
+Use **Executions / History** to inspect environments owned by a product execution,
+including OpenWiki Bootstrap, Wiki Sync and formal Integration. This view includes
+active executions and retained completed or failed results; it is not the archive.
+Opening history does not archive, delete or restore a worktree.
+
+An **Execution-only · Inspection** panel identifies the owner and its outcome.
+You can select saved sessions and inspect conversation logs, files, changes and
+Wiki pages. An agent finishing is not necessarily the owner finishing: validation,
+publication and cleanup can still be pending. Unconfirmed historical outcomes
+are shown as unknown, not inferred from the last agent response.
+
+Execution-only environments do not accept chat, new sessions, Goal resume,
+terminal commands, scripts, manual Git operations or workspace rebinding. Use
+**Stop execution** for the owning operation, or answer an outstanding owner
+approval/input request. Stop is unavailable once publication cannot safely be
+cancelled. A stop request is not confirmation that cleanup has finished.
+
+<Note>
+Read-only describes your inspection interface, not the owner's filesystem
+permissions. The owning agent can still write when its phase allows it; an
+independent Wiki Reviewer retains its stricter read-only sandbox. Completion or
+lease release never turns an execution-only environment into a development
+workspace. Return to **Work** or create a normal workspace to continue coding.
+</Note>
+
+Ordinary Workflow attempts, Arena workspaces, direct-folder workspaces and the
+source workspaces selected for Integration remain development workspaces.
+Migration uses persisted ownership evidence, not names or the absence of a card;
+ambiguous history stays non-editable when its internal purpose is established.
+Records with no internal evidence retain their previous behaviour.
+
+If execution files have been removed, the detail reports their absence while
+retaining available logs. Viewing files, diffs or Wiki never recreates that
+execution's worktree or starts scripts or sessions. Existing retention rules
+still apply; active owners, unconfirmed process exits and pending publication
+recovery are protected from normal expiry cleanup. History itself is not a new
+retention or deletion policy.
+
+The archive, deletion and other development actions below apply to **Work**.
+
 <Note>
 **Workspace Actions** are available from both the command bar and the workspace sidebar. These actions require an active workspace - they won't appear on the create workspace page.
 </Note>
@@ -139,7 +182,9 @@ Large directories like `node_modules`, `target/`, or `build/` are copied into ea
 
 ## Manual Worktree Deletion
 
-If you manually delete a worktree directory (e.g., using `rm -rf` in terminal), Vibe Kanban will **automatically recreate it** the next time you open that workspace. The worktree is recreated from the branch's last commit.
+For an ordinary development workspace, EVK can recreate a missing worktree from
+its branch's last commit when an operation requires it. This does not apply to
+execution-only history: inspection never recreates missing execution files.
 
 <Warning>
 **Uncommitted changes will be lost.** If you had staged or unstaged changes that weren't committed, they cannot be recovered. Always commit your work before manually deleting worktree directories.

@@ -107,6 +107,7 @@ pub async fn preview(
     Extension(workspace): Extension<Workspace>,
     Json(request): Json<CreatePreview>,
 ) -> Result<Json<ApiResponse<CombinationPreview>>, ApiError> {
+    workspace.require_interactive()?;
     let pool = &deployment.db().pool;
     db::models::integration::guard_workspace(pool, workspace.id).await?;
     let repo = Repo::find_by_id(pool, request.repository_id)

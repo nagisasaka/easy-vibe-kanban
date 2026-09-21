@@ -96,7 +96,7 @@ async fn resolve_wiki_repo(
     }
     let container_ref = deployment
         .container()
-        .ensure_container_exists(workspace)
+        .container_for_inspection(workspace)
         .await?;
     let root = tokio::fs::canonicalize(container_ref).await?;
     let name = root

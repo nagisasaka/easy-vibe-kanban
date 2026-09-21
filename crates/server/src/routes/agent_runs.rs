@@ -351,6 +351,37 @@ async fn dispatch_control(
     identity: AgentRunControlIdentity,
     command: AgentRunPortCommand,
 ) -> Result<ResponseJson<ApiResponse<RunState>>, ApiError> {
+    let run = db::models::agent_runtime::AgentRunRecord::find(&deployment.db().pool, agent_run_id)
+        .await?
+        .ok_or_else(|| ApiError::BadRequest("AgentRun not found".into()))?;
+    let workspace =
+        db::models::workspace::Workspace::find_by_id(&deployment.db().pool, run.workspace_id)
+            .await?
+            .ok_or_else(|| ApiError::BadRequest("Workspace not found".into()))?;
+    if workspace.is_execution_only() {
+        match &command {
+            AgentRunPortCommand::Cancel { .. } => {
+                super::workspaces::usage::stop(deployment, &workspace).await?;
+                let state = AgentRuntimeReadService::new(&deployment.db().pool)
+                    .state(agent_run_id)
+                    .await
+                    .map_err(read_api_error)?;
+                return Ok(ResponseJson(ApiResponse::success(state)));
+            }
+            AgentRunPortCommand::SubmitInput { .. }
+            | AgentRunPortCommand::ResolveApproval { .. } => {
+                services::services::workspace_usage::validate_agent_owner(
+                    &deployment.db().pool,
+                    &workspace,
+                    &run.request_envelope,
+                    true,
+                )
+                .await
+                .map_err(|error| ApiError::Conflict(error.to_string()))?;
+            }
+            _ => workspace.require_interactive()?,
+        }
+    }
     let envelope = AgentRunPortCommandEnvelope {
         schema_version: ORCHESTRATION_COMMAND_SCHEMA_VERSION,
         command_id: identity.command_id,

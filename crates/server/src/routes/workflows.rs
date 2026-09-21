@@ -15,7 +15,8 @@ use db::models::{
     scratch::DraftWorkspaceRepo,
     session::{CreateSession, Session},
     workflow::{NodeExecutionStatus, WorkflowAttemptStatus, WorkflowRunStatus, WorkflowSource},
-    workspace_repo::CreateWorkspaceRepo,
+    workspace::{Workspace, WorkspaceError},
+    workspace_repo::{CreateWorkspaceRepo, WorkspaceRepo},
 };
 use deployment::Deployment;
 use executors::runtime::ProjectionStatus;
@@ -740,6 +741,45 @@ fn workflow_workspace_repo_overrides(
 }
 
 pub async fn ensure_agent_node_sessions(
+    pool: &SqlitePool,
+    workspace_id: Uuid,
+    graph: &mut WorkflowGraph,
+) -> Result<bool, ApiError> {
+    db::models::workspace_usage::require_interactive(pool, workspace_id).await?;
+    create_agent_node_sessions(pool, workspace_id, graph).await
+}
+
+/// Internal repository reservation, not a client-selectable bypass. The owner
+/// must already be durably bound before this may create any child Sessions.
+pub(crate) async fn ensure_repository_owner_sessions(
+    pool: &SqlitePool,
+    workspace_id: Uuid,
+    repository_id: Uuid,
+    run_id: Uuid,
+    graph: &mut WorkflowGraph,
+) -> Result<bool, ApiError> {
+    let workspace = Workspace::find_by_id(pool, workspace_id)
+        .await?
+        .ok_or(WorkspaceError::WorkspaceNotFound)?;
+    let owned = workspace.is_execution_only()
+        && workspace.execution_owner.as_ref().is_some_and(|owner| {
+            owner.kind == db::models::workspace_usage::OPENWIKI_BOOTSTRAP
+                && owner.repository_id == Some(repository_id)
+                && owner.run_id == Some(run_id)
+                && owner.result.is_none()
+        })
+        && WorkspaceRepo::find_by_workspace_and_repo_id(pool, workspace_id, repository_id)
+            .await?
+            .is_some();
+    if !owned {
+        return Err(ApiError::Conflict(
+            "Repository Workflow ownership mismatch".into(),
+        ));
+    }
+    create_agent_node_sessions(pool, workspace_id, graph).await
+}
+
+async fn create_agent_node_sessions(
     pool: &SqlitePool,
     workspace_id: Uuid,
     graph: &mut WorkflowGraph,
