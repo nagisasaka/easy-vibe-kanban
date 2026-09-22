@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowClockwiseIcon,
   CopyIcon,
+  CodeIcon,
   FolderOpenIcon,
   PencilSimpleIcon,
   PlusIcon,
@@ -11,21 +12,26 @@ import {
 import { PrimaryButton } from '@vibe/ui/components/PrimaryButton';
 import { Switch } from '@vibe/ui/components/Switch';
 import type {
-  AgentTool,
+  AgentToolView as AgentTool,
   AgentToolDefinition,
-  AgentToolInventory,
+  AgentToolWriteDefinition,
+  AgentToolInventoryView as AgentToolInventory,
   AgentToolKind,
   AgentToolLocator,
   AgentToolOperationError,
   AgentToolProvider,
   AgentToolScope,
-  McpServerDefinition,
+  McpServerWriteDefinition,
+  McpTransport,
   SkillDefinition,
 } from 'shared/types';
 import { ApiError } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
 import { SettingsCard, SettingsInput } from './SettingsComponents';
-import { useSettingsMachineClient } from './SettingsHostContext';
+import {
+  useSettingsHost,
+  useSettingsMachineClient,
+} from './SettingsHostContext';
 
 const PROVIDERS: AgentToolProvider[] = [
   'codex',
@@ -78,22 +84,26 @@ function operationMessage(error: unknown): string {
 }
 
 function promptMcpDefinition(
-  current?: McpServerDefinition
-): McpServerDefinition | null {
-  const initial: McpServerDefinition = current ?? {
-    transport: 'stdio',
-    command: '',
-    args: [],
-    env: {},
-    headers: {},
-    source_metadata: null,
+  transport?: McpTransport
+): McpServerWriteDefinition | null {
+  const action = transport ? ('preserve' as const) : ('clear' as const);
+  const initial: McpServerWriteDefinition = {
+    transport: transport ?? 'stdio',
+    command: transport
+      ? { type: action }
+      : { type: 'replace', data: { value: '' } },
+    args: { type: action },
+    cwd: { type: action },
+    url: { type: action },
+    env: { type: action },
+    headers: { type: action },
   };
   const value = window.prompt(
-    'Edit the portable MCP definition as JSON.',
+    'MCP JSON: preserve keeps the current native value; clear removes it; replace uses {"type":"replace","data":{"value":...}}. Existing values are not loaded here. Unknown native fields are preserved by the server.',
     JSON.stringify(initial, null, 2)
   );
   if (value === null) return null;
-  return JSON.parse(value) as McpServerDefinition;
+  return JSON.parse(value) as McpServerWriteDefinition;
 }
 
 function promptSkillDefinition(
@@ -114,20 +124,57 @@ function promptSkillDefinition(
   };
 }
 
-export function AgentToolsSettingsSection({
+export function AgentToolsSettingsSection(
+  props: { provider?: AgentToolProvider } = {}
+) {
+  const { selectedHostId } = useSettingsHost();
+  return (
+    <AgentToolsSettingsContent
+      key={`${selectedHostId}:${props.provider ?? 'all'}`}
+      {...props}
+    />
+  );
+}
+
+function AgentToolsSettingsContent({
   provider,
 }: {
   provider?: AgentToolProvider;
 } = {}) {
   const machineClient = useSettingsMachineClient();
+  const { canEdit } = useSettingsHost();
   const [inventory, setInventory] = useState<AgentToolInventory | null>(null);
   const [kind, setKind] = useState<AgentToolKind>('mcp_server');
   const [projectPath, setProjectPath] = useState('');
+  const [loadedProjectPath, setLoadedProjectPath] = useState<string | null>(
+    null
+  );
+  const [loadFailed, setLoadFailed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [viewedDefinition, setViewedDefinition] = useState<{
+    name: string;
+    revision: string;
+    definition: AgentToolDefinition;
+  } | null>(null);
   const refreshSequence = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      ++refreshSequence.current;
+    };
+  }, []);
+  const writeBlocked =
+    !canEdit ||
+    loading ||
+    loadFailed ||
+    !inventory ||
+    loadedProjectPath !== projectPath.trim();
+  const actionDisabled = writeBlocked || busyKey !== null;
 
   const loadInventory = useCallback(
     async (nextProjectPath?: string) => {
@@ -140,10 +187,15 @@ export function AgentToolsSettingsSection({
           await machineClient.listAgentTools(nextProjectPath);
         if (sequence === refreshSequence.current) {
           setInventory(nextInventory);
+          setLoadedProjectPath(nextProjectPath?.trim() ?? '');
+          // A malformed installation in another provider must not disable an
+          // independently verified provider. Its own actions are gated below.
+          setLoadFailed(false);
         }
       } catch (nextError) {
         if (sequence === refreshSequence.current) {
           setError(operationMessage(nextError));
+          setLoadFailed(true);
         }
       } finally {
         if (sequence === refreshSequence.current) {
@@ -180,17 +232,22 @@ export function AgentToolsSettingsSection({
   const installedProviders = useMemo(
     () =>
       inventories
-        .filter((providerInventory) => providerInventory.installed)
+        .filter(
+          (providerInventory) =>
+            providerInventory.installed && providerInventory.errors.length === 0
+        )
         .map((providerInventory) => providerInventory.provider),
     [inventories]
   );
 
   const run = async (key: string, operation: () => Promise<unknown>) => {
+    if (actionDisabled) return;
     setBusyKey(key);
     setError(null);
     setNotice(null);
     try {
       await operation();
+      if (!mounted.current) return;
       await refresh();
     } catch (nextError) {
       setError(operationMessage(nextError));
@@ -224,7 +281,7 @@ export function AgentToolsSettingsSection({
     }
     const name = window.prompt('Installation name');
     if (!name) return;
-    let definition: AgentToolDefinition | null;
+    let definition: AgentToolWriteDefinition | null;
     try {
       definition =
         kind === 'mcp_server'
@@ -234,7 +291,12 @@ export function AgentToolsSettingsSection({
             })()
           : (() => {
               const data = promptSkillDefinition();
-              return data ? { type: 'skill', data } : null;
+              return data
+                ? {
+                    type: 'skill',
+                    data: { type: 'replace', data: { value: data } },
+                  }
+                : null;
             })();
     } catch (nextError) {
       setNotice(null);
@@ -255,29 +317,56 @@ export function AgentToolsSettingsSection({
         },
         definition,
         replace: false,
+        expected_revision: null,
       })
     );
   };
 
   const handleEdit = async (item: AgentTool) => {
-    if (!machineClient) return;
-    let definition: AgentToolDefinition | null;
+    if (!machineClient || actionDisabled) return;
+    let definition: AgentToolWriteDefinition | null;
     try {
       definition =
         item.definition.type === 'mcp_server'
           ? (() => {
-              const data = promptMcpDefinition(item.definition.data);
+              const data = promptMcpDefinition(item.definition.data.transport);
               return data ? { type: 'mcp_server', data } : null;
             })()
-          : (() => {
-              const data = promptSkillDefinition(item.definition.data);
-              return data ? { type: 'skill', data } : null;
-            })();
+          : null;
+      if (item.definition.type === 'skill') {
+        if (
+          !window.confirm(
+            'Read this native Skill for editing? Its contents may contain private information. Assets not edited here will be preserved.'
+          )
+        )
+          return;
+        setBusyKey(`read:${item.provider}:${item.name}`);
+        const current = await machineClient.readAgentToolDefinition({
+          target: locatorFor(item, projectPath.trim()),
+          expected_revision: item.revision,
+          confirmed_sensitive_read: true,
+        });
+        if (!mounted.current) return;
+        if (current.type !== 'skill') throw new Error('Unexpected tool kind');
+        const data = promptSkillDefinition(current.data);
+        const contract = data?.files.find((file) => file.path === 'SKILL.md');
+        definition = contract
+          ? {
+              type: 'skill',
+              data: {
+                type: 'replace_contract',
+                data: { value: decodeUtf8(contract.content_base64) },
+              },
+            }
+          : null;
+        setBusyKey(null);
+      }
     } catch (nextError) {
       setNotice(null);
       setError(
         `${item.kind === 'mcp_server' ? 'Invalid MCP JSON' : 'Invalid Skill definition'}: ${operationMessage(nextError)}`
       );
+      setBusyKey(null);
       return;
     }
     if (!definition) return;
@@ -341,8 +430,32 @@ export function AgentToolsSettingsSection({
       const result = await machineClient.revealAgentTool(
         locatorFor(item, projectPath.trim())
       );
+      if (!mounted.current) return;
       await navigator.clipboard.writeText(result.native_path);
       setNotice(`Native path copied: ${result.native_path}`);
+    });
+  };
+
+  const readDefinition = async (item: AgentTool) => {
+    if (
+      !machineClient ||
+      !window.confirm(
+        'Read the full native definition? Credentials and private Skill contents will become visible in this browser.'
+      )
+    )
+      return;
+    await run(`read:${item.provider}:${item.name}`, async () => {
+      const definition = await machineClient.readAgentToolDefinition({
+        target: locatorFor(item, projectPath.trim()),
+        expected_revision: item.revision,
+        confirmed_sensitive_read: true,
+      });
+      if (mounted.current)
+        setViewedDefinition({
+          name: item.name,
+          revision: item.revision,
+          definition,
+        });
     });
   };
 
@@ -356,7 +469,7 @@ export function AgentToolsSettingsSection({
             variant="tertiary"
             value="Refresh"
             onClick={() => void refresh()}
-            disabled={loading || !machineClient}
+            disabled={loading || busyKey !== null || !machineClient}
             actionIcon={loading ? 'spinner' : undefined}
           />
           <PrimaryButton
@@ -364,7 +477,7 @@ export function AgentToolsSettingsSection({
             onClick={() => void handleAdd()}
             disabled={
               !machineClient ||
-              busyKey !== null ||
+              actionDisabled ||
               installedProviders.length === 0
             }
           />
@@ -382,13 +495,17 @@ export function AgentToolsSettingsSection({
           <SettingsInput
             id="agent-tools-project-path"
             value={projectPath}
-            onChange={setProjectPath}
+            onChange={(path) => {
+              setProjectPath(path);
+              setViewedDefinition(null);
+            }}
+            disabled={loading || busyKey !== null}
             placeholder="Absolute path for project-scoped tools"
           />
           <button
             type="button"
             onClick={() => void refresh()}
-            disabled={loading || !machineClient}
+            disabled={loading || busyKey !== null || !machineClient}
             className="rounded-sm border border-border px-3 text-low hover:text-normal disabled:cursor-not-allowed disabled:opacity-40"
             title="Discover project tools"
             aria-label="Discover project tools"
@@ -397,6 +514,34 @@ export function AgentToolsSettingsSection({
           </button>
         </div>
       </div>
+
+      {inventory && writeBlocked && (
+        <p role="status" className="text-sm text-warning">
+          Verify the selected Host and refresh this project before changing
+          tools. Cached entries are read-only.
+        </p>
+      )}
+      {viewedDefinition && (
+        <section className="space-y-2 rounded-sm border border-warning p-3">
+          <p className="text-sm text-warning">
+            Sensitive native contents: {viewedDefinition.name} (
+            {viewedDefinition.revision.slice(0, 12)})
+          </p>
+          <button
+            type="button"
+            className="underline text-sm"
+            onClick={() => setViewedDefinition(null)}
+          >
+            Hide contents
+          </button>
+          <pre
+            tabIndex={0}
+            className="max-h-72 overflow-auto whitespace-pre-wrap text-xs"
+          >
+            {JSON.stringify(viewedDefinition.definition, null, 2)}
+          </pre>
+        </section>
+      )}
 
       <div className="flex border-b border-border" role="tablist">
         {(['mcp_server', 'skill'] as AgentToolKind[]).map((tab) => (
@@ -459,6 +604,8 @@ export function AgentToolsSettingsSection({
           role="tabpanel"
         >
           {inventories.map((providerInventory) => {
+            const providerBlocked =
+              actionDisabled || providerInventory.errors.length > 0;
             const items = providerInventory.items.filter(
               (item) => item.kind === kind
             );
@@ -564,7 +711,7 @@ export function AgentToolsSettingsSection({
                             ['enabled', 'disabled'].includes(item.state) && (
                               <Switch
                                 checked={item.state === 'enabled'}
-                                disabled={busyKey !== null}
+                                disabled={providerBlocked}
                                 aria-label={`Toggle ${item.name}`}
                                 onCheckedChange={(enabled) =>
                                   void run(
@@ -586,12 +733,18 @@ export function AgentToolsSettingsSection({
                         </div>
                         <div className="flex flex-wrap gap-1">
                           <ToolButton
+                            label="Read definition"
+                            icon={CodeIcon}
+                            disabled={providerBlocked}
+                            onClick={() => void readDefinition(item)}
+                          />
+                          <ToolButton
                             label="Edit"
                             icon={PencilSimpleIcon}
                             disabled={
                               !item.capabilities.editable ||
                               item.state !== 'enabled' ||
-                              busyKey !== null
+                              providerBlocked
                             }
                             onClick={() => void handleEdit(item)}
                           />
@@ -602,14 +755,14 @@ export function AgentToolsSettingsSection({
                               !item.capabilities.exportable ||
                               item.state !== 'enabled' ||
                               !hasCopyTarget ||
-                              busyKey !== null
+                              providerBlocked
                             }
                             onClick={() => void handleCopy(item)}
                           />
                           <ToolButton
                             label="Reveal"
                             icon={FolderOpenIcon}
-                            disabled={busyKey !== null}
+                            disabled={providerBlocked}
                             onClick={() => void handleReveal(item)}
                           />
                           <ToolButton
@@ -617,7 +770,7 @@ export function AgentToolsSettingsSection({
                             icon={TrashIcon}
                             danger
                             disabled={
-                              !item.capabilities.removable || busyKey !== null
+                              !item.capabilities.removable || providerBlocked
                             }
                             onClick={() => {
                               if (

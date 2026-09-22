@@ -6,7 +6,7 @@ use axum::{
     response::{IntoResponse, Json as ResponseJson},
     routing::{get, post},
 };
-use db::models::agent_runtime::AgentEventRecord;
+use db::models::agent_runtime::{AgentEventRecord, subscribe_agent_event_changes};
 use deployment::Deployment;
 use executors::runtime::{
     AgentEventEnvelope, AgentLiveEvent, AgentRunPortCommand, AgentRunPortCommandEnvelope,
@@ -447,7 +447,8 @@ async fn handle_agent_run_events_ws(
         }
     };
 
-    loop {
+    let mut changes = subscribe_agent_event_changes();
+    let mut last_state = loop {
         let page = match reader
             .history_page(agent_run_id, cursor, STREAM_PAGE_SIZE)
             .await
@@ -489,20 +490,23 @@ async fn handle_agent_run_events_ws(
             send_stream_message(
                 &mut socket,
                 &AgentRunStreamMessage::Ready {
-                    state: page.state,
+                    state: page.state.clone(),
                     cursor,
                 },
             )
             .await?;
-            break;
+            break page.state;
         }
-    }
+        tokio::task::yield_now().await;
+    };
 
     let mut interval = tokio::time::interval(LIVE_POLL_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut draining_history = false;
+    let mut live_open = true;
     loop {
         tokio::select! {
-            live = live_events.recv() => {
+            live = live_events.recv(), if live_open => {
                 match live {
                     Ok(event) => {
                         send_stream_message(
@@ -514,13 +518,28 @@ async fn handle_agent_run_events_ws(
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                         tracing::debug!(%agent_run_id, skipped, "AgentRun live stream lagged; durable completion will repair the view");
                     }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => live_open = false,
                 }
             }
-            _ = interval.tick() => {
+            _ = async {
+                if !draining_history {
+                    loop {
+                        tokio::select! {
+                            _ = interval.tick() => break,
+                            change = changes.recv() => match change {
+                                Ok(id) if id != agent_run_id => continue,
+                                _ => break,
+                            }
+                        }
+                    }
+                }
+            } => {
                 let page = reader
                     .history_page(agent_run_id, cursor, STREAM_PAGE_SIZE)
                     .await?;
+                // Drain one bounded page per select iteration, allowing live
+                // updates and disconnects to interleave with a large backlog.
+                draining_history = page.has_more;
                 let had_events = !page.events.is_empty();
                 for event in page.events {
                     cursor = Some(AgentEventCursor {
@@ -536,7 +555,11 @@ async fn handle_agent_run_events_ws(
                     )
                     .await?;
                 }
-                if had_events {
+                // Separate State/event reads may straddle a commit. An empty
+                // page must still correct State; a partial page must not put a
+                // terminal state ahead of the remaining history.
+                if should_send_stream_state(had_events, page.has_more, page.state != last_state) {
+                    last_state = page.state.clone();
                     send_stream_message(
                         &mut socket,
                         &AgentRunStreamMessage::State {
@@ -559,13 +582,20 @@ async fn handle_agent_run_events_ws(
     Ok(())
 }
 
+fn should_send_stream_state(had_events: bool, has_more: bool, state_changed: bool) -> bool {
+    !has_more && (had_events || state_changed)
+}
+
 async fn send_stream_message(
     socket: &mut MaybeSignedWebSocket,
     message: &AgentRunStreamMessage,
 ) -> anyhow::Result<()> {
-    socket
-        .send(Message::Text(serde_json::to_string(message)?.into()))
-        .await
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        socket.send(Message::Text(serde_json::to_string(message)?.into())),
+    )
+    .await??;
+    Ok(())
 }
 
 fn read_api_error(error: AgentRuntimeReadError) -> ApiError {
@@ -642,7 +672,16 @@ pub(super) fn router(_: &DeploymentImpl) -> Router<DeploymentImpl> {
 
 #[cfg(test)]
 mod tests {
-    use super::AgentEventQuery;
+    use super::{AgentEventQuery, should_send_stream_state};
+
+    #[test]
+    fn empty_poll_repairs_state_without_claiming_partial_history_is_complete() {
+        assert!(should_send_stream_state(false, false, true));
+        assert!(should_send_stream_state(true, false, false));
+        assert!(!should_send_stream_state(false, false, false));
+        assert!(!should_send_stream_state(true, true, true));
+        assert!(!should_send_stream_state(false, true, true));
+    }
 
     #[test]
     fn cursor_requires_both_parts() {

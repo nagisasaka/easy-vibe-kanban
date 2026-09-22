@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckIcon } from '@phosphor-icons/react';
 import { Loader2, X } from 'lucide-react';
@@ -48,6 +48,7 @@ export interface WorkflowAgentStepEditPanelProps {
   error?: string | null;
   onClose: () => void;
   onExecutorConfigChange?: (executorConfig: ExecutorConfig) => void;
+  onDraftChange: (patch: Partial<WorkflowNode['data']>) => void;
   onSave: (value: WorkflowAgentStepEditValue) => void;
 }
 
@@ -60,39 +61,20 @@ export function WorkflowAgentStepEditPanel({
   error,
   onClose,
   onExecutorConfigChange,
+  onDraftChange,
   onSave,
 }: WorkflowAgentStepEditPanelProps) {
   const { t } = useTranslation('common');
   const { profiles, config } = useUserSystem();
-  const [displayName, setDisplayName] = useState('');
-  const [prompt, setPrompt] = useState('');
-  const [selectedSkills, setSelectedSkills] = useState<SelectedSkill[]>([]);
-  const [includeWorkflowContext, setIncludeWorkflowContext] = useState(true);
+  const displayName = node?.data.display_name ?? '';
+  const prompt = node?.data.prompt_template ?? '';
+  const selectedSkills = node?.data.selected_skills ?? [];
+  const includeWorkflowContext = node?.data.include_workflow_context !== false;
 
   const storedExecutorConfig = useMemo(
     () => coerceWorkflowNodeExecutorConfig(node?.data.executor_config),
     [node?.data.executor_config]
   );
-
-  useEffect(() => {
-    if (!node) {
-      setDisplayName('');
-      setPrompt('');
-      setSelectedSkills([]);
-      setIncludeWorkflowContext(true);
-      return;
-    }
-    setDisplayName(
-      typeof node.data.display_name === 'string' ? node.data.display_name : ''
-    );
-    setPrompt(
-      typeof node.data.prompt_template === 'string'
-        ? node.data.prompt_template
-        : ''
-    );
-    setSelectedSkills(node.data.selected_skills ?? []);
-    setIncludeWorkflowContext(node.data.include_workflow_context !== false);
-  }, [node]);
 
   const {
     executorConfig,
@@ -111,6 +93,7 @@ export function WorkflowAgentStepEditPanel({
     configExecutorProfile: config?.executor_profile,
     hiddenAgents: config?.hidden_agents,
     onPersist: onExecutorConfigChange,
+    controlled: true,
   });
 
   const policyExecutorSource = useMemo(() => {
@@ -198,7 +181,9 @@ export function WorkflowAgentStepEditPanel({
           </span>
           <input
             value={displayName}
-            onChange={(event) => setDisplayName(event.target.value)}
+            onChange={(event) =>
+              onDraftChange({ display_name: event.target.value })
+            }
             disabled={isTitleDisabled}
             className="h-10 rounded border border-secondary bg-primary px-3 text-sm text-high outline-none transition-colors placeholder:text-low focus:border-brand focus:ring-1 focus:ring-brand disabled:opacity-50"
             placeholder={t('workflow.agentEdit.defaultTitle')}
@@ -213,13 +198,15 @@ export function WorkflowAgentStepEditPanel({
             <WYSIWYGEditor
               placeholder={t('workflow.agentEdit.promptPlaceholder')}
               value={prompt}
-              onChange={setPrompt}
+              onChange={(value) => onDraftChange({ prompt_template: value })}
               onCmdEnter={handleSave}
               disabled={isConfigDisabled}
               className="max-h-[42vh] min-h-[180px] overflow-y-auto px-3 py-2"
               executor={effectiveExecutor}
               selectedSkills={selectedSkills}
-              onSelectedSkillsChange={setSelectedSkills}
+              onSelectedSkillsChange={(value) =>
+                onDraftChange({ selected_skills: value })
+              }
               sendShortcut={config?.send_message_shortcut}
             />
           </div>
@@ -228,7 +215,9 @@ export function WorkflowAgentStepEditPanel({
               type="checkbox"
               checked={includeWorkflowContext}
               onChange={(event) =>
-                setIncludeWorkflowContext(event.target.checked)
+                onDraftChange({
+                  include_workflow_context: event.target.checked,
+                })
               }
               disabled={isConfigDisabled}
               className="mt-0.5 h-4 w-4 rounded border-secondary text-brand focus:ring-brand disabled:opacity-50"
@@ -318,14 +307,17 @@ export function WorkflowAgentStepEditPanel({
       </div>
 
       {error ? (
-        <div className="shrink-0 border-t border-error/30 bg-error/10 px-base py-half text-xs text-error">
+        <div
+          role="alert"
+          className="shrink-0 border-t border-error/30 bg-error/10 px-base py-half text-xs text-error"
+        >
           {error}
         </div>
       ) : null}
 
       <div className="flex shrink-0 justify-end gap-half border-t border-secondary p-base">
         <Button variant="outline" disabled={isSaving} onClick={onClose}>
-          {t('buttons.cancel')}
+          {t('buttons.close')}
         </Button>
         <Button disabled={!canSave} onClick={handleSave}>
           {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

@@ -518,11 +518,8 @@ mod tests {
             .await;
             f.attempt(Some(f.operations(&["update", "update"], true)))
                 .await;
-            assert_eq!(
-                f.proof(WriterPhase::Sync).await.is_ok(),
-                earlier == "empty",
-                "{earlier}"
-            );
+            let result = f.proof(WriterPhase::Sync).await;
+            assert_eq!(result.is_ok(), earlier == "empty", "{earlier}: {result:?}");
         }
         let mut f = Fixture::new().await;
         f.attempt(Some(vec![])).await;

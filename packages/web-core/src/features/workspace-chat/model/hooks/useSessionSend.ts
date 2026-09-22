@@ -1,8 +1,10 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { ExecutorConfig, SelectedSkill } from 'shared/types';
 import { sessionsApi } from '@/shared/lib/api';
 import { useCreateSession } from './useCreateSession';
 import { goalPromptError } from '../goalValidation';
+import { useHostId } from '@/shared/providers/HostIdProvider';
 
 interface UseSessionSendOptions {
   /** Session ID for existing sessions */
@@ -18,7 +20,7 @@ interface UseSessionSendOptions {
 }
 
 interface UseSessionSendResult {
-  /** Send a message. Returns true on success, false on failure. */
+  /** Send a message; the caller decides whether to select a newly created Session. */
   send: (
     message: string,
     selectedSkills?: SelectedSkill[],
@@ -27,7 +29,7 @@ interface UseSessionSendResult {
       resumeScopePath?: string | null;
       executorConfig?: ExecutorConfig;
     }
-  ) => Promise<boolean>;
+  ) => Promise<{ createdSessionId?: string } | null>;
   /** Whether a send operation is in progress */
   isSending: boolean;
   /** Error message if send failed */
@@ -42,20 +44,32 @@ interface UseSessionSendResult {
  *
  * Unlike useFollowUpSend, this hook:
  * - Takes message/variant as parameters to send() (not captured in closure)
- * - Returns boolean for success/failure (caller handles cleanup)
+ * - Returns the created identity on success (caller handles scoped cleanup)
  * - Has no prompt composition (no conflict/review/clicked markdown)
  */
 export function useSessionSend({
   sessionId,
   workspaceId,
   isNewSessionMode,
-  onSelectSession,
   executorConfig,
 }: UseSessionSendOptions): UseSessionSendResult {
+  const hostId = useHostId();
+  const queryClient = useQueryClient();
+  const scope = JSON.stringify([
+    hostId,
+    workspaceId,
+    sessionId,
+    isNewSessionMode,
+  ]);
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
   const { mutateAsync: createSession, isPending: isCreatingSession } =
     useCreateSession();
   const [isSendingFollowUp, setIsSendingFollowUp] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setError(null);
+  }, [scope]);
 
   const send = useCallback(
     async (
@@ -66,30 +80,31 @@ export function useSessionSend({
         resumeScopePath?: string | null;
         executorConfig?: ExecutorConfig;
       } = {}
-    ): Promise<boolean> => {
+    ): Promise<{ createdSessionId?: string } | null> => {
       const trimmed = message.trim();
       const effectiveConfig = options.executorConfig ?? executorConfig;
-      if (!trimmed) return false;
+      if (!trimmed) return null;
       if (!effectiveConfig) {
         setError('No executor selected');
-        return false;
+        return null;
       }
 
       setError(null);
       const validationError = goalPromptError(trimmed, effectiveConfig);
       if (validationError) {
         setError(validationError);
-        return false;
+        return null;
       }
 
       if (isNewSessionMode) {
         // New session flow
         if (!workspaceId) {
           setError('No workspace selected');
-          return false;
+          return null;
         }
         try {
           const session = await createSession({
+            hostId,
             workspaceId,
             prompt: trimmed,
             selectedSkills,
@@ -97,32 +112,40 @@ export function useSessionSend({
             resumeSessionId: options.resumeSessionId,
             resumeScopePath: options.resumeScopePath,
           });
-          onSelectSession?.(session.id);
-          return true;
+          return { createdSessionId: session.id };
         } catch (e: unknown) {
           const err = e as { message?: string };
-          setError(
-            `Failed to create session: ${err.message ?? 'Unknown error'}`
-          );
-          return false;
+          if (currentScope.current === scope)
+            setError(
+              `Failed to create session: ${err.message ?? 'Unknown error'}`
+            );
+          return null;
         }
       } else {
         // Existing session flow
-        if (!sessionId) return false;
+        if (!sessionId) return null;
         setIsSendingFollowUp(true);
         try {
-          await sessionsApi.followUp(sessionId, {
-            prompt: trimmed,
-            selected_skills: selectedSkills,
-            executor_config: effectiveConfig,
-            resume_session_id: options.resumeSessionId || undefined,
-            resume_scope_path: options.resumeScopePath || undefined,
+          await sessionsApi.followUp(
+            sessionId,
+            {
+              prompt: trimmed,
+              selected_skills: selectedSkills,
+              executor_config: effectiveConfig,
+              resume_session_id: options.resumeSessionId || undefined,
+              resume_scope_path: options.resumeScopePath || undefined,
+            },
+            hostId
+          );
+          void queryClient.invalidateQueries({
+            queryKey: ['session-executor-config', hostId, sessionId],
           });
-          return true;
+          return {};
         } catch (e: unknown) {
           const err = e as { message?: string };
-          setError(`Failed to send: ${err.message ?? 'Unknown error'}`);
-          return false;
+          if (currentScope.current === scope)
+            setError(`Failed to send: ${err.message ?? 'Unknown error'}`);
+          return null;
         } finally {
           setIsSendingFollowUp(false);
         }
@@ -133,7 +156,9 @@ export function useSessionSend({
       workspaceId,
       isNewSessionMode,
       createSession,
-      onSelectSession,
+      scope,
+      hostId,
+      queryClient,
       executorConfig,
     ]
   );

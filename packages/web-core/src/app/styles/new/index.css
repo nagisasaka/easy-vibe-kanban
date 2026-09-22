@@ -794,11 +794,9 @@ html {
   }
 
   .workflow-canvas-product .react-flow__node-stage_group {
+    /* Decorative stages must stay behind execution nodes even when selected;
+       elevating the filled group steals pointer events from its contents. */
     z-index: -1 !important;
-  }
-
-  .workflow-canvas-product .react-flow__node-stage_group.selected {
-    z-index: 1 !important;
   }
 
   .workflow-popover-surface {

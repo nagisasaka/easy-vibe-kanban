@@ -716,6 +716,12 @@ impl StandardCodingAgentExecutor for ClaudeCode {
     }
 
     fn get_availability_info(&self) -> AvailabilityInfo {
+        if !crate::command::is_command_installed(
+            &base_command(self.claude_code_router.unwrap_or(false)),
+            &self.cmd,
+        ) {
+            return AvailabilityInfo::NotFound;
+        }
         let auth_file_path = dirs::home_dir().map(|home| home.join(".claude.json"));
 
         if let Some(path) = auth_file_path
@@ -729,7 +735,7 @@ impl StandardCodingAgentExecutor for ClaudeCode {
                 last_auth_timestamp: timestamp,
             };
         }
-        AvailabilityInfo::NotFound
+        AvailabilityInfo::InstallationFound
     }
 }
 

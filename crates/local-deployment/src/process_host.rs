@@ -40,11 +40,25 @@ use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
-    sync::{Mutex, Notify, RwLock, mpsc, oneshot},
+    sync::{Mutex, Notify, RwLock, Semaphore, mpsc, oneshot, watch},
 };
 use uuid::Uuid;
 
 use crate::transport::{TransportError, read_json_frame, write_json_frame};
+
+pub(crate) mod journal;
+use journal::HostJournal;
+
+pub(crate) const HOST_PROTOCOL_VERSION: u16 = 2;
+const HOST_FLUSH_INTERVAL: Duration = Duration::from_millis(50);
+const HOST_STREAM_HEARTBEAT: Duration = Duration::from_secs(10);
+
+pub(crate) fn host_journal_path(attempt: Uuid, host: Uuid) -> PathBuf {
+    utils::assets::asset_dir()
+        .join("runtime")
+        .join("host-events")
+        .join(format!("{attempt}-{host}.v1.jsonl"))
+}
 
 const HOST_ATTACH_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 const HOST_CONTROL_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
@@ -70,6 +84,8 @@ pub(crate) struct HostReady {
     pub endpoint: String,
     pub host_pid: u32,
     pub host_instance_id: Uuid,
+    #[serde(default)]
+    pub start_identity: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,6 +144,9 @@ impl HostExecutionEnv {
 pub(crate) enum HostCommand {
     Launch(Box<HostLaunchRequest>),
     Attach {
+        after_sequence: u64,
+    },
+    Subscribe {
         after_sequence: u64,
     },
     Control {
@@ -210,7 +229,6 @@ pub enum ProcessHostError {
 #[derive(Default)]
 struct HostRuntimeState {
     launched: bool,
-    events: Vec<HostEvent>,
     process_commands: Option<mpsc::Sender<ProcessCommand>>,
 }
 
@@ -219,6 +237,9 @@ struct SharedHost {
     host_instance_id: Uuid,
     auth_token: String,
     runtime: RwLock<HostRuntimeState>,
+    journal: Mutex<HostJournal>,
+    changes: watch::Sender<u64>,
+    journal_failed: Notify,
     launch_lock: Mutex<()>,
     terminal: AtomicBool,
     shutdown: Notify,
@@ -241,6 +262,9 @@ enum OutputNotice {
         durable_events: Vec<AgentEventEnvelope>,
         live_events: Vec<AgentLiveEvent>,
         native_ref: NativeAuditReference,
+        // Backpressure is in bytes as well as queue slots. Released only after
+        // the consumer has handed this projection to its bounded journal.
+        _byte_budget: tokio::sync::OwnedSemaphorePermit,
     },
     ProviderTerminal(AgentRunStatus),
     AuditFailure(String),
@@ -259,31 +283,38 @@ enum ExitCause {
 }
 
 impl SharedHost {
-    async fn response_after(&self, after_sequence: u64) -> HostResponse {
-        let runtime = self.runtime.read().await;
-        HostResponse {
+    async fn response_after(&self, after_sequence: u64) -> Result<HostResponse, ProcessHostError> {
+        let mut journal = self.journal.lock().await;
+        let events = journal.read_after(after_sequence).await?;
+        let through = events.last().map_or(after_sequence, |event| event.sequence);
+        Ok(HostResponse {
             host_instance_id: self.host_instance_id,
-            events: runtime
-                .events
-                .iter()
-                .filter(|event| event.sequence > after_sequence)
-                .cloned()
-                .collect(),
-            terminal: self.terminal.load(Ordering::Acquire),
+            events,
+            terminal: self.terminal.load(Ordering::Acquire)
+                && through >= journal.committed_sequence(),
             error: None,
-        }
+        })
     }
 
-    async fn append_event(&self, payload: HostEventPayload) -> HostEvent {
-        let mut runtime = self.runtime.write().await;
+    async fn append_event(&self, payload: HostEventPayload) -> Result<(), ProcessHostError> {
+        let mut journal = self.journal.lock().await;
         let event = HostEvent {
-            sequence: runtime.events.last().map_or(1, |event| event.sequence + 1),
+            sequence: journal.next_sequence(),
             event_id: Uuid::new_v4(),
             timestamp: Utc::now(),
             payload,
         };
-        runtime.events.push(event.clone());
-        event
+        journal.append(event).await?;
+        self.changes.send_if_modified(|sequence| {
+            let committed = journal.committed_sequence();
+            if *sequence == committed {
+                false
+            } else {
+                *sequence = committed;
+                true
+            }
+        });
+        Ok(())
     }
 
     async fn launch(self: &Arc<Self>, launch: HostLaunchRequest) -> Result<(), ProcessHostError> {
@@ -335,7 +366,7 @@ impl SharedHost {
                     AgentRuntimeError::from_executor_error(&error, Some(launch.provider.id()));
                 let manifest = close_writer_failed(&mut writer)?;
                 self.append_terminal(AgentRunStatus::Failed, Some(runtime_error), None, manifest)
-                    .await;
+                    .await?;
                 self.runtime.write().await.launched = true;
                 return Ok(());
             }
@@ -356,7 +387,7 @@ impl SharedHost {
                 None,
                 manifest,
             )
-            .await;
+            .await?;
             self.runtime.write().await.launched = true;
             return Ok(());
         };
@@ -377,7 +408,7 @@ impl SharedHost {
                     None,
                     manifest,
                 )
-                .await;
+                .await?;
                 self.runtime.write().await.launched = true;
                 return Ok(());
             }
@@ -399,7 +430,7 @@ impl SharedHost {
                     None,
                     manifest,
                 )
-                .await;
+                .await?;
                 self.runtime.write().await.launched = true;
                 return Ok(());
             }
@@ -407,17 +438,24 @@ impl SharedHost {
         let control = spawned.control;
         let stdin = spawned.child.inner().stdin.take();
         let writer = Arc::new(Mutex::new(writer));
+        let initial_manifest = writer.lock().await.manifest().clone();
 
-        self.append_event(HostEventPayload::Started {
-            provider_pid,
-            process_group_id: Some(provider_pid),
-            executable: launch.provider.versions().executable.to_string(),
-            canonical_input_ref,
-            audit_manifest: writer.lock().await.manifest().clone(),
-        })
-        .await;
+        if let Err(error) = self
+            .append_event(HostEventPayload::Started {
+                provider_pid,
+                process_group_id: Some(provider_pid),
+                executable: launch.provider.versions().executable.to_string(),
+                canonical_input_ref,
+                audit_manifest: initial_manifest,
+            })
+            .await
+        {
+            let _ = utils::process::kill_process_group(&mut spawned.child).await;
+            let _ = close_writer_failed(&mut *writer.lock().await);
+            return Err(error);
+        }
 
-        let (notices_tx, notices_rx) = mpsc::unbounded_channel();
+        let (notices_tx, notices_rx) = mpsc::channel(64);
         spawn_stdout_reader(
             launch.provider,
             launch.correlation_id,
@@ -458,7 +496,7 @@ impl SharedHost {
         error: Option<AgentRuntimeError>,
         exit_code: Option<i64>,
         audit_manifest: NativeAuditManifest,
-    ) {
+    ) -> Result<(), ProcessHostError> {
         let error_event_id = error.as_ref().map(|_| Uuid::new_v4());
         self.append_event(HostEventPayload::Terminal {
             status,
@@ -467,31 +505,42 @@ impl SharedHost {
             exit_code,
             audit_manifest,
         })
-        .await;
+        .await?;
         self.terminal.store(true, Ordering::Release);
+        self.changes.send_modify(|_| {});
         self.runtime.write().await.process_commands = None;
         let host = Arc::clone(self);
         tokio::spawn(async move {
             tokio::time::sleep(HOST_TERMINAL_ACK_GRACE_PERIOD).await;
             host.shutdown.notify_one();
         });
+        Ok(())
     }
 }
 
 pub async fn run_from_stdin() -> Result<(), ProcessHostError> {
     let mut stdin = tokio::io::stdin();
     let bootstrap: HostBootstrap = read_json_frame(&mut stdin).await?;
-    if bootstrap.protocol_version != 1 || bootstrap.auth_token.len() < 32 {
+    if bootstrap.protocol_version != HOST_PROTOCOL_VERSION || bootstrap.auth_token.len() < 32 {
         return Err(ProcessHostError::Protocol(
             "invalid process-host bootstrap".to_string(),
         ));
     }
     let listener = TcpListener::bind(&bootstrap.requested_endpoint).await?;
+    let journal = HostJournal::create(
+        &host_journal_path(bootstrap.run_attempt_id, bootstrap.host_instance_id),
+        bootstrap.run_attempt_id,
+        bootstrap.host_instance_id,
+    )
+    .await?;
     let ready = HostReady {
-        protocol_version: 1,
+        protocol_version: HOST_PROTOCOL_VERSION,
         endpoint: listener.local_addr()?.to_string(),
         host_pid: std::process::id(),
         host_instance_id: bootstrap.host_instance_id,
+        start_identity: crate::agent_process_registry::process_start_identity(std::process::id())
+            .ok()
+            .flatten(),
     };
     let mut stdout = tokio::io::stdout();
     write_json_frame(&mut stdout, &ready).await?;
@@ -502,6 +551,9 @@ pub async fn run_from_stdin() -> Result<(), ProcessHostError> {
         host_instance_id: bootstrap.host_instance_id,
         auth_token: bootstrap.auth_token,
         runtime: RwLock::new(HostRuntimeState::default()),
+        journal: Mutex::new(journal),
+        changes: watch::channel(0).0,
+        journal_failed: Notify::new(),
         launch_lock: Mutex::new(()),
         terminal: AtomicBool::new(false),
         shutdown: Notify::new(),
@@ -510,12 +562,29 @@ pub async fn run_from_stdin() -> Result<(), ProcessHostError> {
 }
 
 async fn serve(listener: TcpListener, host: Arc<SharedHost>) -> Result<(), ProcessHostError> {
+    let connections = Arc::new(Semaphore::new(32));
+    let mut flush = tokio::time::interval(HOST_FLUSH_INTERVAL);
+    flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {
+            _ = flush.tick() => {
+                let mut journal = host.journal.lock().await;
+                if let Err(error) = journal.flush().await {
+                    tracing::error!(%error, "process host journal failed closed");
+                    host.journal_failed.notify_one();
+                } else {
+                    host.changes.send_if_modified(|value| {
+                        let committed = journal.committed_sequence();
+                        if *value == committed { false } else { *value = committed; true }
+                    });
+                }
+            }
             accepted = listener.accept() => {
                 let (stream, _) = accepted?;
+                let Ok(permit) = connections.clone().try_acquire_owned() else { continue; };
                 let host = host.clone();
                 tokio::spawn(async move {
+                    let _permit = permit;
                     if let Err(error) = handle_connection(stream, host).await {
                         tracing::warn!(%error, "process-host client connection failed");
                     }
@@ -530,16 +599,22 @@ async fn handle_connection(
     mut stream: TcpStream,
     host: Arc<SharedHost>,
 ) -> Result<(), ProcessHostError> {
-    let request: AuthenticatedHostCommand = read_json_frame(&mut stream).await?;
+    let request: AuthenticatedHostCommand =
+        tokio::time::timeout(HOST_ATTACH_COMMAND_TIMEOUT, read_json_frame(&mut stream))
+            .await
+            .map_err(|_| ProcessHostError::Protocol("host handshake timed out".into()))??;
     if request.auth_token != host.auth_token {
         return Err(ProcessHostError::Protocol(
             "process-host authentication failed".to_string(),
         ));
     }
     let mut shutdown = false;
+    if let HostCommand::Subscribe { after_sequence } = request.command {
+        return stream_events(&mut stream, host, after_sequence).await;
+    }
     let response = match request.command {
         HostCommand::Launch(launch) => match host.launch(*launch).await {
-            Ok(()) => host.response_after(0).await,
+            Ok(()) => host.response_after(0).await?,
             Err(error) => HostResponse {
                 host_instance_id: host.host_instance_id,
                 events: Vec::new(),
@@ -547,7 +622,8 @@ async fn handle_connection(
                 error: Some(error.to_string()),
             },
         },
-        HostCommand::Attach { after_sequence } => host.response_after(after_sequence).await,
+        HostCommand::Attach { after_sequence } => host.response_after(after_sequence).await?,
+        HostCommand::Subscribe { .. } => unreachable!("handled above"),
         HostCommand::Control {
             bytes,
             control,
@@ -590,29 +666,57 @@ async fn handle_connection(
                 }
                 None => Some("provider process is not running".to_string()),
             };
-            let mut response = host.response_after(after_sequence).await;
+            let mut response = host.response_after(after_sequence).await?;
             response.error = error;
             response
         }
         HostCommand::AckTerminal { through_sequence } => {
-            let response = host.response_after(through_sequence).await;
-            let terminal_sequence = host
-                .runtime
-                .read()
-                .await
-                .events
-                .last()
-                .filter(|event| matches!(event.payload, HostEventPayload::Terminal { .. }))
-                .map(|event| event.sequence);
-            shutdown = terminal_sequence.is_some_and(|sequence| through_sequence >= sequence);
+            let response = host.response_after(through_sequence).await?;
+            shutdown = host.terminal.load(Ordering::Acquire)
+                && through_sequence >= host.journal.lock().await.committed_sequence();
             response
         }
     };
-    write_json_frame(&mut stream, &response).await?;
+    tokio::time::timeout(
+        HOST_STREAM_HEARTBEAT,
+        write_json_frame(&mut stream, &response),
+    )
+    .await
+    .map_err(|_| ProcessHostError::Protocol("slow process-host client".into()))??;
     if shutdown {
         host.shutdown.notify_one();
     }
     Ok(())
+}
+
+async fn stream_events(
+    stream: &mut TcpStream,
+    host: Arc<SharedHost>,
+    mut cursor: u64,
+) -> Result<(), ProcessHostError> {
+    let mut changes = host.changes.subscribe();
+    loop {
+        // Wake-up is only a hint; each heartbeat repairs from journal cursor.
+        changes.borrow_and_update();
+        let response = host.response_after(cursor).await?;
+        let had_events = !response.events.is_empty();
+        cursor = response
+            .events
+            .last()
+            .map_or(cursor, |event| event.sequence);
+        let terminal = response.terminal;
+        tokio::time::timeout(HOST_STREAM_HEARTBEAT, write_json_frame(stream, &response))
+            .await
+            .map_err(|_| ProcessHostError::Protocol("slow process-host subscriber".into()))??;
+        if terminal {
+            return Ok(());
+        }
+        if had_events {
+            tokio::task::yield_now().await;
+            continue;
+        }
+        let _ = tokio::time::timeout(HOST_STREAM_HEARTBEAT, changes.changed()).await;
+    }
 }
 
 fn spawn_stdout_reader(
@@ -620,12 +724,14 @@ fn spawn_stdout_reader(
     correlation_id: Uuid,
     stdout: tokio::process::ChildStdout,
     writer: Arc<Mutex<NativeAuditWriter>>,
-    notices: mpsc::UnboundedSender<OutputNotice>,
+    notices: mpsc::Sender<OutputNotice>,
 ) {
     tokio::spawn(async move {
         let mut agent_scope =
             executors::executors::provider_adapter::ProviderStreamScope::new(provider);
         let mut reader = BufReader::new(stdout);
+        const PROJECTION_QUEUE_BYTES: u32 = 8 * 1024 * 1024;
+        let byte_budget = Arc::new(Semaphore::new(PROJECTION_QUEUE_BYTES as usize));
         loop {
             let mut bytes = Vec::new();
             match reader.read_until(b'\n', &mut bytes).await {
@@ -645,7 +751,10 @@ fn spawn_stdout_reader(
                         match writer.append(frame.clone()) {
                             Ok(reference) => (frame, reference, writer.manifest().clone()),
                             Err(error) => {
-                                let _ = notices.send(OutputNotice::AuditFailure(error.to_string()));
+                                drop(writer);
+                                let _ = notices
+                                    .send(OutputNotice::AuditFailure(error.to_string()))
+                                    .await;
                                 break;
                             }
                         }
@@ -653,7 +762,9 @@ fn spawn_stdout_reader(
                     let mut decoded = match provider.classify_native_frame(&frame) {
                         ProviderFrameClassification::Event { event, .. } => *event,
                         ProviderFrameClassification::UnsupportedRequired { error } => {
-                            let _ = notices.send(OutputNotice::ProtocolFailure(error.to_string()));
+                            let _ = notices
+                                .send(OutputNotice::ProtocolFailure(error.to_string()))
+                                .await;
                             break;
                         }
                     };
@@ -661,7 +772,9 @@ fn spawn_stdout_reader(
                     let projection = match provider.project_provider_event(&decoded, &manifest) {
                         Ok(projection) => projection,
                         Err(error) => {
-                            let _ = notices.send(OutputNotice::ProtocolFailure(error.to_string()));
+                            let _ = notices
+                                .send(OutputNotice::ProtocolFailure(error.to_string()))
+                                .await;
                             break;
                         }
                     };
@@ -675,22 +788,45 @@ fn spawn_stdout_reader(
                                 } if status.is_terminal() => Some(*status),
                                 _ => None,
                             });
-                    let _ = notices.send(OutputNotice::Projected {
-                        durable_events: projection.durable_events,
-                        live_events: projection.live_events,
-                        native_ref,
-                    });
+                    let projected_bytes = serde_json::to_vec(&(
+                        &projection.durable_events,
+                        &projection.live_events,
+                        &native_ref,
+                    ))
+                    .map(|value| value.len())
+                    .unwrap_or(usize::MAX);
+                    if projected_bytes > PROJECTION_QUEUE_BYTES as usize {
+                        let _ = notices.send(OutputNotice::ProtocolFailure(
+                            "provider projection exceeds 8 MiB; original frame retained in Native Audit".into()
+                        )).await;
+                        break;
+                    }
+                    let permit = byte_budget
+                        .clone()
+                        .acquire_many_owned(projected_bytes.max(1) as u32)
+                        .await
+                        .expect("projection budget is never closed");
+                    let _ = notices
+                        .send(OutputNotice::Projected {
+                            durable_events: projection.durable_events,
+                            live_events: projection.live_events,
+                            native_ref,
+                            _byte_budget: permit,
+                        })
+                        .await;
                     if let Some(status) = terminal {
-                        let _ = notices.send(OutputNotice::ProviderTerminal(status));
+                        let _ = notices.send(OutputNotice::ProviderTerminal(status)).await;
                     }
                 }
                 Err(error) => {
-                    let _ = notices.send(OutputNotice::ProtocolFailure(error.to_string()));
+                    let _ = notices
+                        .send(OutputNotice::ProtocolFailure(error.to_string()))
+                        .await;
                     break;
                 }
             }
         }
-        let _ = notices.send(OutputNotice::StdoutClosed);
+        let _ = notices.send(OutputNotice::StdoutClosed).await;
     });
 }
 
@@ -698,7 +834,7 @@ fn spawn_stderr_reader(
     correlation_id: Uuid,
     stderr: tokio::process::ChildStderr,
     writer: Arc<Mutex<NativeAuditWriter>>,
-    notices: mpsc::UnboundedSender<OutputNotice>,
+    notices: mpsc::Sender<OutputNotice>,
 ) {
     tokio::spawn(async move {
         let mut reader = BufReader::new(stderr);
@@ -714,17 +850,22 @@ fn spawn_stderr_reader(
                         correlation_id,
                         &bytes,
                     ) {
-                        let _ = notices.send(OutputNotice::AuditFailure(error.to_string()));
+                        drop(writer);
+                        let _ = notices
+                            .send(OutputNotice::AuditFailure(error.to_string()))
+                            .await;
                         break;
                     }
                 }
                 Err(error) => {
-                    let _ = notices.send(OutputNotice::ProtocolFailure(error.to_string()));
+                    let _ = notices
+                        .send(OutputNotice::ProtocolFailure(error.to_string()))
+                        .await;
                     break;
                 }
             }
         }
-        let _ = notices.send(OutputNotice::StderrClosed);
+        let _ = notices.send(OutputNotice::StderrClosed).await;
     });
 }
 
@@ -739,7 +880,7 @@ async fn monitor_process(
     exit_signal: Option<executors::executors::ExecutorExitSignal>,
     control: Option<Arc<dyn ExecutorControl>>,
     writer: Arc<Mutex<NativeAuditWriter>>,
-    mut notices: mpsc::UnboundedReceiver<OutputNotice>,
+    mut notices: mpsc::Receiver<OutputNotice>,
     mut commands: mpsc::Receiver<ProcessCommand>,
 ) {
     let mut stdout_closed = false;
@@ -760,6 +901,7 @@ async fn monitor_process(
     };
     let mut cause = loop {
         tokio::select! {
+            _ = host.journal_failed.notified() => break ExitCause::AuditFailure("Host journal flush failed".into()),
             status = child.wait() => {
                 break match status {
                     Ok(status) => ExitCause::Process {
@@ -779,13 +921,13 @@ async fn monitor_process(
                 match notice {
                     Some(OutputNotice::StdoutClosed) => stdout_closed = true,
                     Some(OutputNotice::StderrClosed) => stderr_closed = true,
-                    Some(OutputNotice::Projected { durable_events, live_events, native_ref }) => {
+                    Some(OutputNotice::Projected { durable_events, live_events, native_ref, _byte_budget }) => {
                         remember_provider_error(&durable_events, &mut provider_error);
-                        host.append_event(HostEventPayload::Projected {
+                        if let Err(error) = host.append_event(HostEventPayload::Projected {
                             durable_events,
                             live_events,
                             native_ref,
-                        }).await;
+                        }).await { break ExitCause::AuditFailure(error.to_string()); }
                     }
                     Some(OutputNotice::ProviderTerminal(status)) => break ExitCause::ProviderTerminal(status),
                     Some(OutputNotice::AuditFailure(error)) => break ExitCause::AuditFailure(error),
@@ -920,14 +1062,19 @@ async fn monitor_process(
                     durable_events,
                     live_events,
                     native_ref,
+                    _byte_budget,
                 }) => {
                     remember_provider_error(&durable_events, &mut provider_error);
-                    host.append_event(HostEventPayload::Projected {
-                        durable_events,
-                        live_events,
-                        native_ref,
-                    })
-                    .await;
+                    if let Err(error) = host
+                        .append_event(HostEventPayload::Projected {
+                            durable_events,
+                            live_events,
+                            native_ref,
+                        })
+                        .await
+                    {
+                        return Some(ExitCause::AuditFailure(error.to_string()));
+                    }
                 }
                 Some(OutputNotice::AuditFailure(error)) => {
                     return Some(ExitCause::AuditFailure(error));
@@ -965,19 +1112,24 @@ async fn monitor_process(
             Ok(manifest) => manifest,
             Err(error) => match writer.fail_closed() {
                 Ok(manifest) => {
-                    host.append_terminal(
-                        AgentRunStatus::AuditFailed,
-                        Some(
-                            AgentRuntimeError::new(
-                                AgentRuntimeErrorKind::Unknown,
-                                error.to_string(),
-                            )
-                            .with_provider(Some(provider.id())),
-                        ),
-                        exit_code,
-                        manifest,
-                    )
-                    .await;
+                    if let Err(journal_error) = host
+                        .append_terminal(
+                            AgentRunStatus::AuditFailed,
+                            Some(
+                                AgentRuntimeError::new(
+                                    AgentRuntimeErrorKind::Unknown,
+                                    error.to_string(),
+                                )
+                                .with_provider(Some(provider.id())),
+                            ),
+                            exit_code,
+                            manifest,
+                        )
+                        .await
+                    {
+                        tracing::error!(%journal_error, "terminal journal commit failed");
+                        host.shutdown.notify_one();
+                    }
                     if let Some(result) = cancel_result {
                         let _ = result.send(Err(error.to_string()));
                     }
@@ -993,8 +1145,17 @@ async fn monitor_process(
             },
         }
     };
-    host.append_terminal(status, error, exit_code, manifest)
-        .await;
+    if let Err(error) = host
+        .append_terminal(status, error, exit_code, manifest)
+        .await
+    {
+        tracing::error!(%error, "terminal journal commit failed");
+        host.shutdown.notify_one();
+        if let Some(result) = cancel_result {
+            let _ = result.send(Err(error.to_string()));
+        }
+        return;
+    }
     if let Some(result) = cancel_result {
         let acknowledgement = if status == AgentRunStatus::Cancelled {
             Ok(())
@@ -1121,9 +1282,42 @@ pub(crate) async fn send_host_command(
         HostCommand::Launch(_) => HOST_LAUNCH_COMMAND_TIMEOUT,
         HostCommand::Control { cancel: true, .. } => HOST_CANCEL_COMMAND_TIMEOUT,
         HostCommand::Control { cancel: false, .. } => HOST_CONTROL_COMMAND_TIMEOUT,
-        HostCommand::Attach { .. } | HostCommand::AckTerminal { .. } => HOST_ATTACH_COMMAND_TIMEOUT,
+        HostCommand::Attach { .. }
+        | HostCommand::Subscribe { .. }
+        | HostCommand::AckTerminal { .. } => HOST_ATTACH_COMMAND_TIMEOUT,
     };
     send_host_command_with_timeout(endpoint, auth_token, command, timeout).await
+}
+
+pub(crate) async fn subscribe_host_events(
+    endpoint: &str,
+    token: &str,
+    after_sequence: u64,
+) -> Result<TcpStream, TransportError> {
+    tokio::time::timeout(HOST_ATTACH_COMMAND_TIMEOUT, async {
+        let mut stream = TcpStream::connect(endpoint)
+            .await
+            .map_err(|error| TransportError::TemporarilyUnavailable(error.to_string()))?;
+        write_json_frame(
+            &mut stream,
+            &AuthenticatedHostCommand {
+                auth_token: token.into(),
+                command: HostCommand::Subscribe { after_sequence },
+            },
+        )
+        .await?;
+        Ok(stream)
+    })
+    .await
+    .map_err(|_| TransportError::TemporarilyUnavailable("host subscription timed out".into()))?
+}
+
+pub(crate) async fn read_host_subscription(
+    stream: &mut TcpStream,
+) -> Result<HostResponse, TransportError> {
+    tokio::time::timeout(HOST_STREAM_HEARTBEAT * 3, read_json_frame(stream))
+        .await
+        .map_err(|_| TransportError::TemporarilyUnavailable("host heartbeat timed out".into()))?
 }
 
 async fn send_host_command_with_timeout(
@@ -1157,6 +1351,151 @@ async fn send_host_command_with_timeout(
 
 #[cfg(test)]
 mod tests {
+    async fn test_host(path: &std::path::Path) -> Arc<SharedHost> {
+        let attempt = Uuid::new_v4();
+        let instance = Uuid::new_v4();
+        Arc::new(SharedHost {
+            run_attempt_id: attempt,
+            host_instance_id: instance,
+            auth_token: "fixture-token".into(),
+            runtime: RwLock::new(HostRuntimeState::default()),
+            journal: Mutex::new(HostJournal::create(path, attempt, instance).await.unwrap()),
+            changes: watch::channel(0).0,
+            journal_failed: Notify::new(),
+            launch_lock: Mutex::new(()),
+            terminal: AtomicBool::new(false),
+            shutdown: Notify::new(),
+        })
+    }
+
+    fn test_payload(host: &SharedHost) -> HostEventPayload {
+        HostEventPayload::Projected {
+            durable_events: vec![],
+            live_events: vec![],
+            native_ref: NativeAuditReference {
+                stream_id: host.run_attempt_id,
+                sequence: 1,
+                checksum: Some("fixture".into()),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn subscribe_reconnect_repairs_and_does_not_starve_control_or_announce_terminal_early() {
+        let root = tempfile::tempdir().unwrap();
+        let host = test_host(&root.path().join("events")).await;
+        for _ in 0..300 {
+            host.append_event(test_payload(&host)).await.unwrap();
+        }
+        host.journal.lock().await.flush().await.unwrap();
+        host.terminal.store(true, Ordering::Release);
+        let first = host.response_after(0).await.unwrap();
+        assert_eq!(first.events.len(), 128);
+        assert!(!first.terminal);
+        assert!(host.response_after(299).await.unwrap().terminal);
+        host.terminal.store(false, Ordering::Release);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = listener.local_addr().unwrap().to_string();
+        let server = tokio::spawn(serve(listener, host.clone()));
+        let mut stream = subscribe_host_events(&endpoint, "fixture-token", 299)
+            .await
+            .unwrap();
+        assert_eq!(
+            read_host_subscription(&mut stream).await.unwrap().events[0].sequence,
+            300
+        );
+        assert!(
+            read_host_subscription(&mut stream)
+                .await
+                .unwrap()
+                .events
+                .is_empty()
+        );
+        host.append_event(test_payload(&host)).await.unwrap();
+        let page =
+            tokio::time::timeout(Duration::from_secs(1), read_host_subscription(&mut stream))
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(page.events[0].sequence, 301);
+        let control = send_host_command(
+            &endpoint,
+            "fixture-token",
+            HostCommand::Control {
+                bytes: vec![],
+                control: None,
+                cancel: true,
+                after_sequence: 300,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            control.error.as_deref(),
+            Some("provider process is not running")
+        );
+        drop(stream);
+        let mut stream = subscribe_host_events(&endpoint, "fixture-token", 300)
+            .await
+            .unwrap();
+        assert_eq!(
+            read_host_subscription(&mut stream).await.unwrap().events[0].sequence,
+            301
+        );
+        let mut bad = subscribe_host_events(&endpoint, "wrong-token", 0)
+            .await
+            .unwrap();
+        assert!(read_host_subscription(&mut bad).await.is_err());
+        host.shutdown.notify_one();
+        server.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn slow_subscriber_cannot_hold_the_control_connection_or_full_backlog() {
+        let root = tempfile::tempdir().unwrap();
+        let host = test_host(&root.path().join("events")).await;
+        for _ in 0..20 {
+            let mut payload = test_payload(&host);
+            if let HostEventPayload::Projected { native_ref, .. } = &mut payload {
+                native_ref.checksum = Some("x".repeat(1024 * 1024));
+            }
+            host.append_event(payload).await.unwrap();
+        }
+        host.journal.lock().await.flush().await.unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = listener.local_addr().unwrap().to_string();
+        let server = tokio::spawn(serve(listener, host.clone()));
+        let slow = subscribe_host_events(&endpoint, "fixture-token", 0)
+            .await
+            .unwrap();
+        // Deliberately never read: the socket fills while Control uses its own
+        // bounded connection; the journal lock is not held across send awaits.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let reply = send_host_command(
+            &endpoint,
+            "fixture-token",
+            HostCommand::Control {
+                bytes: vec![],
+                control: None,
+                cancel: false,
+                after_sequence: 20,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(reply.events.is_empty());
+        assert_eq!(
+            reply.error.as_deref(),
+            Some("provider process is not running")
+        );
+        let page = host.response_after(0).await.unwrap();
+        assert!(page.events.len() < 20);
+        assert!(serde_json::to_vec(&page.events).unwrap().len() < 4 * 1024 * 1024);
+        drop(slow);
+        host.shutdown.notify_one();
+        server.await.unwrap().unwrap();
+    }
+
     #[tokio::test]
     async fn native_interrupt_can_clean_up_before_transport_closes() {
         let cancellation = CancellationToken::new();

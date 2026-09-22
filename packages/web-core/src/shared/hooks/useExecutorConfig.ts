@@ -8,6 +8,7 @@ import type {
 import { getVariantOptions } from '@/shared/lib/executor';
 import { filterVisibleAgents } from '@/shared/lib/agentVisibility';
 import { usePresetOptions } from '@/shared/hooks/usePresetOptions';
+import { resolveExecutorOverride } from '@/shared/lib/executorOverrides';
 
 function getProfileKey(
   executor: BaseCodingAgent | null,
@@ -173,16 +174,15 @@ function useEffectiveOverrides(
       const lastUsedModelMatches =
         !modelMustMatch || lastUsedConfig?.model_id === resolved.model_id;
 
-      const value =
-        field in userSelections
-          ? userSelections[field]
-          : ((scratchMatches && scratchModelMatches
-              ? scratchConfig?.[field]
-              : undefined) ??
-            (lastUsedMatches && lastUsedModelMatches
-              ? lastUsedConfig?.[field]
-              : undefined) ??
-            presetOptions?.[field]);
+      const value = resolveExecutorOverride(
+        field,
+        userSelections,
+        scratchMatches && scratchModelMatches ? scratchConfig : null,
+        lastUsedMatches && lastUsedModelMatches ? lastUsedConfig : null,
+        !modelMustMatch || presetOptions?.model_id === resolved.model_id
+          ? presetOptions
+          : null
+      );
       if (value !== undefined) {
         (resolved as Record<string, unknown>)[field] = value;
       }
@@ -206,6 +206,8 @@ interface UseExecutorConfigOptions {
   configExecutorProfile?: ExecutorProfileId | null;
   hiddenAgents?: readonly BaseCodingAgent[] | null;
   onPersist?: (config: ExecutorConfig) => void;
+  /** The parent owns the draft (including undo); scratchConfig is authoritative. */
+  controlled?: boolean;
 }
 
 interface UseExecutorConfigResult {
@@ -228,6 +230,7 @@ export function useExecutorConfig({
   configExecutorProfile,
   hiddenAgents,
   onPersist,
+  controlled = false,
 }: UseExecutorConfigOptions): UseExecutorConfigResult {
   const [userSelections, setUserSelections] = useState<Partial<ExecutorConfig>>(
     {}
@@ -290,13 +293,13 @@ export function useExecutorConfig({
   // Clears variant + all override fields.
   const setExecutor = useCallback(
     (exec: BaseCodingAgent) => {
-      setUserSelections({ executor: exec });
+      if (!controlled) setUserSelections({ executor: exec });
       // Persist with auto-resolved variant (no overrides)
       const newVariants = getVariantOptions(exec, profiles);
       const newVariant = newVariants[0] ?? null;
       persist({ executor: exec, variant: newVariant });
     },
-    [profiles, persist]
+    [profiles, persist, controlled]
   );
 
   // Setting variant → keeps executor, sets variant, clears all override fields.
@@ -304,18 +307,27 @@ export function useExecutorConfig({
   // → override fields fall through to preset options for the new variant.
   const setVariant = useCallback(
     (v: string | null) => {
-      setUserSelections((prev) => ({ executor: prev.executor, variant: v }));
+      if (!controlled)
+        setUserSelections((prev) => ({ executor: prev.executor, variant: v }));
       if (executor.effective) {
         persist({ executor: executor.effective, variant: v });
       }
     },
-    [executor.effective, persist]
+    [executor.effective, persist, controlled]
   );
 
   // Model selector updates individual override fields (merge into existing).
   // Changing model clears reasoning selection; other overrides are independent.
   const setOverrides = useCallback(
     (partial: Partial<ExecutorConfig>) => {
+      if (controlled) {
+        if (!executorConfig) return;
+        const next = { ...executorConfig, ...partial };
+        if ('model_id' in partial && !('reasoning_id' in partial))
+          delete next.reasoning_id;
+        persist(next);
+        return;
+      }
       setUserSelections((prev) => {
         const next = { ...prev, ...partial };
         if ('model_id' in partial && !('reasoning_id' in partial)) {
@@ -335,7 +347,7 @@ export function useExecutorConfig({
         return next;
       });
     },
-    [executor.effective, variant.resolved, persist]
+    [executor.effective, variant.resolved, persist, controlled, executorConfig]
   );
 
   return {

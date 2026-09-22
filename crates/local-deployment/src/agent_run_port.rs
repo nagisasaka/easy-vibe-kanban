@@ -45,10 +45,13 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::{
-    agent_process_registry::{AgentProcessRegistry, RegisteredAgentProcess},
+    agent_process_registry::{
+        AgentProcessRegistry, RegisteredAgentProcess, RegisteredProcessPresence,
+    },
     process_host::{
-        HostBootstrap, HostCommand, HostEventPayload, HostExecutionEnv, HostLaunchRequest,
-        HostReady, send_host_command,
+        HOST_PROTOCOL_VERSION, HostBootstrap, HostCommand, HostEventPayload, HostExecutionEnv,
+        HostLaunchRequest, HostReady, journal::HostJournalReplay, read_host_subscription,
+        send_host_command, subscribe_host_events,
     },
     transport::{read_json_frame, write_json_frame},
 };
@@ -68,6 +71,20 @@ enum CancellationCleanupPreparation {
 
 type PersistedCancellationProcess = (String, Option<i64>, Option<i64>, Option<String>);
 
+#[derive(sqlx::FromRow)]
+struct HostObservation {
+    host_endpoint: Option<String>,
+    host_token: Option<String>,
+    host_instance_id: Option<String>,
+    last_host_event_sequence: i64,
+    registry_status: String,
+    host_pid: Option<i64>,
+    pid: Option<i64>,
+    process_group_id: Option<i64>,
+    host_protocol_version: Option<i64>,
+    host_start_identity: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AgentRunTerminalEvent {
     pub agent_run_id: Uuid,
@@ -81,6 +98,7 @@ pub struct LocalAgentRunPort {
     process_registry: AgentProcessRegistry,
     children: Arc<RwLock<HashMap<Uuid, SharedChild>>>,
     launching_attempts: Arc<Mutex<HashSet<Uuid>>>,
+    observing_attempts: Arc<Mutex<HashSet<Uuid>>>,
     audit_writers: Arc<Mutex<HashMap<Uuid, NativeAuditWriter>>>,
     event_senders: Arc<RwLock<HashMap<Uuid, broadcast::Sender<AgentEventEnvelope>>>>,
     live_event_senders: Arc<RwLock<HashMap<Uuid, broadcast::Sender<AgentLiveEvent>>>>,
@@ -215,6 +233,7 @@ impl LocalAgentRunPort {
             process_registry: AgentProcessRegistry::default(),
             children: Arc::new(RwLock::new(HashMap::new())),
             launching_attempts: Arc::new(Mutex::new(HashSet::new())),
+            observing_attempts: Arc::new(Mutex::new(HashSet::new())),
             audit_writers: Arc::new(Mutex::new(HashMap::new())),
             event_senders: Arc::new(RwLock::new(HashMap::new())),
             live_event_senders: Arc::new(RwLock::new(HashMap::new())),
@@ -270,20 +289,11 @@ impl LocalAgentRunPort {
                     tracing::error!(run_attempt_id = %run_attempt_id, %mark_error, "failed to preserve unreachable process host");
                 }
                 tracing::warn!(run_attempt_id = %run_attempt_id, %error, "process host unavailable during startup reconciliation");
-                if self
-                    .query(agent_run_id)
-                    .await
-                    .is_ok_and(|snapshot| snapshot.state.status == AgentRunStatus::Cancelling)
-                    && let Ok((request, attempt)) = self.load_request(agent_run_id).await
-                {
-                    let _ = self
-                        .reconcile_cancel_after_host_failure(
-                            &request,
-                            &attempt,
-                            &error.to_string(),
-                            None,
-                        )
-                        .await;
+                if let Ok((request, attempt)) = self.load_request(agent_run_id).await {
+                    let port = self.clone();
+                    tokio::spawn(async move {
+                        port.observe_process_host(request, attempt).await;
+                    });
                 }
             }
         }
@@ -365,12 +375,13 @@ impl LocalAgentRunPort {
             String,
             Option<String>,
             i64,
+            Option<i64>,
         );
         let row: Option<HostAttachmentRow> = sqlx::query_as(
             r#"
             SELECT ar.request_envelope, ara.request_envelope,
                    apr.host_endpoint, apr.host_token, apr.host_instance_id,
-                   apr.last_host_event_sequence
+                   apr.last_host_event_sequence, apr.host_protocol_version
             FROM agent_process_registry apr
             JOIN agent_run_attempts ara ON ara.id = apr.run_attempt_id
             JOIN agent_runs ar ON ar.id = ara.agent_run_id
@@ -382,9 +393,15 @@ impl LocalAgentRunPort {
         .fetch_optional(&self.db.pool)
         .await
         .map_err(port_database)?;
-        let Some((request, attempt, endpoint, token, host_instance_id, cursor)) = row else {
+        let Some((request, attempt, endpoint, token, host_instance_id, cursor, protocol)) = row
+        else {
             return Err(AgentRunPortError::NotFound(run_attempt_id));
         };
+        if !matches!(protocol, None | Some(1) | Some(2)) {
+            return Err(AgentRunPortError::Rejected(
+                "unsupported process host protocol".into(),
+            ));
+        }
         let after_sequence = u64::try_from(cursor).unwrap_or_default();
         let response = match send_host_command(
             &endpoint,
@@ -1138,7 +1155,7 @@ impl LocalAgentRunPort {
         if let Err(error) = write_json_frame(
             &mut child_stdin,
             &HostBootstrap {
-                protocol_version: 1,
+                protocol_version: HOST_PROTOCOL_VERSION,
                 run_attempt_id: attempt.run_attempt_id,
                 host_instance_id,
                 auth_token: auth_token.clone(),
@@ -1170,7 +1187,7 @@ impl LocalAgentRunPort {
                 return Err(AgentRunPortError::Unavailable(error.to_string()));
             }
         };
-        if ready.protocol_version != 1
+        if ready.protocol_version != HOST_PROTOCOL_VERSION
             || ready.host_instance_id != host_instance_id
             || ready.host_pid != host_pid
         {
@@ -1192,6 +1209,8 @@ impl LocalAgentRunPort {
             &self.db.pool,
             attempt.run_attempt_id,
             host_pid,
+            ready.protocol_version,
+            ready.start_identity.as_deref(),
         )
         .await
         {
@@ -1296,62 +1315,140 @@ impl LocalAgentRunPort {
         request: AgentRunRequestEnvelope,
         attempt: RunAttemptRequest,
     ) {
-        let mut consecutive_failures = 0usize;
-        loop {
-            let attachment: Option<(String, String, i64, String)> = sqlx::query_as(
-                r#"
-                SELECT host_endpoint, host_token, last_host_event_sequence, registry_status
-                FROM agent_process_registry
-                WHERE run_attempt_id = ? AND host_endpoint IS NOT NULL AND host_token IS NOT NULL
-                "#,
-            )
-            .bind(attempt.run_attempt_id)
-            .fetch_optional(&self.db.pool)
+        if !self
+            .observing_attempts
+            .lock()
             .await
-            .ok()
-            .flatten();
-            let Some((endpoint, token, cursor, registry_status)) = attachment else {
-                return;
+            .insert(attempt.run_attempt_id)
+        {
+            return;
+        }
+        self.observe_process_host_inner(&request, &attempt).await;
+        self.observing_attempts
+            .lock()
+            .await
+            .remove(&attempt.run_attempt_id);
+    }
+
+    async fn observe_process_host_inner(
+        &self,
+        request: &AgentRunRequestEnvelope,
+        attempt: &RunAttemptRequest,
+    ) {
+        let mut consecutive_failures = 0usize;
+        let mut subscription = None;
+        loop {
+            let attachment: HostObservation = match sqlx::query_as(
+                "SELECT host_endpoint, host_token, host_instance_id, last_host_event_sequence, registry_status, host_pid, pid, process_group_id, host_protocol_version, host_start_identity FROM agent_process_registry WHERE run_attempt_id = ?"
+            ).bind(attempt.run_attempt_id).fetch_optional(&self.db.pool).await {
+                Ok(Some(row)) => row,
+                Ok(None) => return,
+                Err(error) => {
+                    subscription = None;
+                    tracing::warn!(%error, "cannot read process host cursor; retrying");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
             };
-            if registry_status == "exited" {
+            if attachment.registry_status == "exited" {
                 return;
             }
-            let after_sequence = u64::try_from(cursor).unwrap_or_default();
-            match send_host_command(&endpoint, &token, HostCommand::Attach { after_sequence }).await
-            {
+            let (Some(endpoint), Some(token), Some(instance)) = (
+                &attachment.host_endpoint,
+                &attachment.host_token,
+                &attachment.host_instance_id,
+            ) else {
+                return;
+            };
+            let after_sequence = match u64::try_from(attachment.last_host_event_sequence) {
+                Ok(cursor) => cursor,
+                Err(_) => {
+                    tracing::error!("invalid persisted host cursor");
+                    return;
+                }
+            };
+            let streaming =
+                attachment.host_protocol_version == Some(i64::from(HOST_PROTOCOL_VERSION));
+            let response = async {
+                if !matches!(attachment.host_protocol_version, None | Some(1) | Some(2)) {
+                    return Err(crate::transport::TransportError::Protocol(
+                        "unsupported process host protocol".into(),
+                    ));
+                }
+                let response = if streaming {
+                    if subscription.is_none() {
+                        subscription =
+                            Some(subscribe_host_events(endpoint, token, after_sequence).await?);
+                    }
+                    read_host_subscription(subscription.as_mut().expect("subscription created"))
+                        .await?
+                } else {
+                    // Existing hosts have no new protocol metadata. Keep their
+                    // Attach path; never send an unsupported command optimistically.
+                    send_host_command(endpoint, token, HostCommand::Attach { after_sequence })
+                        .await?
+                };
+                if response.host_instance_id.to_string() != *instance {
+                    return Err(crate::transport::TransportError::Protocol(
+                        "host identity mismatch".into(),
+                    ));
+                }
+                if let Some(error) = &response.error {
+                    return Err(crate::transport::TransportError::Protocol(error.clone()));
+                }
+                Ok(response)
+            }
+            .await;
+            match response {
                 Ok(response) => {
                     consecutive_failures = 0;
-                    if let Some(error) = response.error {
-                        tracing::warn!(run_attempt_id = %attempt.run_attempt_id, %error, "process host rejected attach");
-                    } else if let Err(error) = self
-                        .apply_host_events(&request, &attempt, response.events)
+                    let had_events = !response.events.is_empty();
+                    let terminal = response.terminal;
+                    if let Err(error) = self
+                        .apply_host_events(request, attempt, response.events)
                         .await
                     {
-                        tracing::error!(run_attempt_id = %attempt.run_attempt_id, %error, "failed to project process-host observations");
-                    }
-                    let status: Option<String> = sqlx::query_scalar(
-                        "SELECT registry_status FROM agent_process_registry WHERE run_attempt_id = ?",
-                    )
-                    .bind(attempt.run_attempt_id)
-                    .fetch_optional(&self.db.pool)
-                    .await
-                    .ok()
-                    .flatten();
-                    if status.as_deref() == Some("exited") {
+                        // A failed DB transaction must replay from the durable
+                        // cursor, never continue the stream past that batch.
+                        subscription = None;
+                        tracing::warn!(%error, "host batch projection failed; replaying");
+                    } else if terminal {
                         return;
+                    } else if streaming || had_events {
+                        tokio::task::yield_now().await;
+                        continue;
                     }
                 }
                 Err(error) => {
+                    subscription = None;
                     consecutive_failures = consecutive_failures.saturating_add(1);
-                    if let Err(mark_error) = AgentRunRecord::mark_process_host_unreachable(
+                    let _ = AgentRunRecord::mark_process_host_unreachable(
                         &self.db.pool,
                         attempt.run_attempt_id,
                     )
-                    .await
-                    {
-                        tracing::error!(run_attempt_id = %attempt.run_attempt_id, %mark_error, "failed to persist unreachable process host");
+                    .await;
+                    let absent = self.host_is_confirmed_absent(&attachment).await;
+                    if consecutive_failures >= 3 && absent {
+                        match self
+                            .recover_dead_process_host(request, attempt, &attachment)
+                            .await
+                        {
+                            Ok(true) => return,
+                            Ok(false) => {}
+                            Err(recovery) => {
+                                tracing::error!(run_attempt_id = %attempt.run_attempt_id, %recovery, "dead host recovery failed closed");
+                                if matches!(recovery, AgentRunPortError::Rejected(_)) {
+                                    let _ = self
+                                        .record_host_recovery_failure(
+                                            request,
+                                            attempt,
+                                            &recovery.to_string(),
+                                        )
+                                        .await;
+                                }
+                            }
+                        }
                     }
-                    tracing::debug!(run_attempt_id = %attempt.run_attempt_id, %error, "process host is temporarily unreachable");
                     if consecutive_failures >= CANCELLING_OBSERVER_FAILURE_THRESHOLD
                         && self
                             .query(request.agent_run_id)
@@ -1362,8 +1459,8 @@ impl LocalAgentRunPort {
                     {
                         let _ = self
                             .reconcile_cancel_after_host_failure(
-                                &request,
-                                &attempt,
+                                request,
+                                attempt,
                                 &error.to_string(),
                                 None,
                             )
@@ -1372,7 +1469,230 @@ impl LocalAgentRunPort {
                     }
                 }
             }
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            let delay = 1u64 << consecutive_failures.min(3);
+            tokio::time::sleep(Duration::from_secs(delay)).await;
+        }
+    }
+
+    async fn host_is_confirmed_absent(&self, host: &HostObservation) -> bool {
+        let Some(pid) = host.host_pid.and_then(|value| u32::try_from(value).ok()) else {
+            return false;
+        };
+        self.process_registry
+            .observe_host(pid, host.host_start_identity.as_deref())
+            .await
+            .is_ok_and(|presence| presence == RegisteredProcessPresence::Exited)
+    }
+
+    async fn recover_dead_process_host(
+        &self,
+        request: &AgentRunRequestEnvelope,
+        attempt: &RunAttemptRequest,
+        host: &HostObservation,
+    ) -> Result<bool, AgentRunPortError> {
+        self.recover_dead_process_host_in(request, attempt, host, &utils::assets::asset_dir())
+            .await
+    }
+
+    async fn recover_dead_process_host_in(
+        &self,
+        request: &AgentRunRequestEnvelope,
+        attempt: &RunAttemptRequest,
+        host: &HostObservation,
+        asset_root: &Path,
+    ) -> Result<bool, AgentRunPortError> {
+        // Called from the observer only after repeated transport failures.
+        // Recheck just before disk replay, and never replace-spawn the provider.
+        if !self.host_is_confirmed_absent(host).await {
+            return Ok(false);
+        }
+        let lock = self
+            .cancellation_reconciliation_lock(attempt.run_attempt_id)
+            .await;
+        let _guard = lock.lock().await;
+        let mut provider_pid = host.pid.and_then(|pid| u32::try_from(pid).ok());
+        let mut provider_group = host
+            .process_group_id
+            .and_then(|pid| u32::try_from(pid).ok());
+        let mut verified_terminal = false;
+        let mut recovered_exit = (None, Utc::now());
+        if !matches!(host.host_protocol_version, None | Some(1) | Some(2)) {
+            return Err(AgentRunPortError::Rejected(
+                "unsupported process host protocol; cannot infer replay format".into(),
+            ));
+        }
+        if host.host_protocol_version == Some(i64::from(HOST_PROTOCOL_VERSION)) {
+            let instance = host
+                .host_instance_id
+                .as_deref()
+                .and_then(|s| Uuid::parse_str(s).ok())
+                .ok_or_else(|| {
+                    AgentRunPortError::Unavailable("missing host replay identity".into())
+                })?;
+            let mut replay = HostJournalReplay::open(
+                &asset_root
+                    .join("runtime/host-events")
+                    .join(format!("{}-{instance}.v1.jsonl", attempt.run_attempt_id)),
+                attempt.run_attempt_id,
+                instance,
+                self.load_host_cursor(attempt).await?,
+            )
+            .await
+            .map_err(|error| {
+                AgentRunPortError::Rejected(format!("host journal recovery: {error}"))
+            })?;
+            let directory = asset_root.join(utils::native_audit::attempt_relative_dir(
+                request.session_id,
+                request.agent_run_id,
+                attempt.run_attempt_id,
+            ));
+            if replay.last_sequence > 0 {
+                replay
+                    .verify_audit(&directory, request.session_id, request.agent_run_id)
+                    .await
+                    .map_err(|error| {
+                        AgentRunPortError::Rejected(format!("host journal audit proof: {error}"))
+                    })?;
+            }
+            verified_terminal = replay.terminal.is_some();
+            if let Some(event) = &replay.terminal
+                && let HostEventPayload::Terminal { exit_code, .. } = event.payload
+            {
+                recovered_exit = (exit_code, event.timestamp);
+            }
+            if let Some(started) = &replay.started {
+                let HostEventPayload::Started {
+                    provider_pid: recorded,
+                    process_group_id: recorded_group,
+                    ..
+                } = started.payload
+                else {
+                    unreachable!()
+                };
+                if provider_pid.is_some_and(|persisted| persisted != recorded)
+                    || provider_group.is_some_and(|persisted| Some(persisted) != recorded_group)
+                {
+                    return Err(AgentRunPortError::Unavailable(
+                        "journal provider identity differs from registry".into(),
+                    ));
+                }
+                provider_pid = Some(recorded);
+                provider_group = recorded_group;
+                if !self
+                    .provider_is_confirmed_absent(provider_pid, provider_group)
+                    .await
+                {
+                    // Make a started child observable/cancellable if server died
+                    // before receiving Started. Never publish a recovered terminal
+                    // fact while that child may still be running.
+                    if self.load_host_cursor(attempt).await? == 0 {
+                        self.apply_host_events(request, attempt, vec![started.clone()])
+                            .await?;
+                    }
+                    return Ok(false);
+                }
+            }
+            if replay.incomplete_tail {
+                tracing::warn!(run_attempt_id = %attempt.run_attempt_id, "discarding uncommitted final journal append; not claiming complete recovery");
+            }
+            loop {
+                let page = replay
+                    .next_page()
+                    .await
+                    .map_err(|error| AgentRunPortError::Unavailable(error.to_string()))?;
+                if page.is_empty() {
+                    break;
+                }
+                self.apply_host_events(request, attempt, page).await?;
+            }
+        }
+        // A dead host alone says nothing about its child's lifetime. Observe,
+        // do not kill. Normal audited Cancel remains the intervention path.
+        let provider_absent = self
+            .provider_is_confirmed_absent(provider_pid, provider_group)
+            .await;
+        if !provider_absent {
+            return Ok(false);
+        }
+        if provider_pid.is_some() {
+            AgentRunRecord::mark_process_exited(
+                &self.db.pool,
+                attempt.run_attempt_id,
+                recovered_exit.0,
+                recovered_exit.1,
+            )
+            .await
+            .map_err(|error| AgentRunPortError::Unavailable(error.to_string()))?;
+            self.process_registry
+                .remove_runtime(attempt.run_attempt_id)
+                .await
+                .map_err(|error| AgentRunPortError::Unavailable(error.to_string()))?;
+        }
+        if !verified_terminal
+            && self.current_terminal_status(request.agent_run_id).await
+                == Some(AgentRunStatus::Succeeded)
+        {
+            // Legacy providers could project success before the Host had
+            // closed Audit. Never reinterpret that display state as proof.
+            self.record_host_recovery_failure(
+                request,
+                attempt,
+                "Legacy terminal projection has no verified Host terminal/Audit completion proof",
+            )
+            .await?;
+        } else if self
+            .current_terminal_status(request.agent_run_id)
+            .await
+            .is_none()
+        {
+            self.terminalize_failure(request, attempt, AgentRunStatus::Crashed,
+                AgentRuntimeError::new(AgentRuntimeErrorKind::ProcessCrashed,
+                    "Process host and provider exited without a verified terminal observation; recovered committed evidence only")
+                    .with_provider(Some(request.provider_id.as_str()))).await;
+        }
+        Ok(true)
+    }
+
+    async fn record_host_recovery_failure(
+        &self,
+        request: &AgentRunRequestEnvelope,
+        attempt: &RunAttemptRequest,
+        reason: &str,
+    ) -> Result<(), AgentRunPortError> {
+        // No host cursor advancement. A single durable diagnostic remains
+        // visible; transient DB contention is not a permanent replay failure.
+        let snapshot = self.query(request.agent_run_id).await?;
+        if snapshot.state.projection_status == ProjectionStatus::ProjectionDegraded {
+            return Ok(());
+        }
+        self.append_event(
+            request,
+            attempt,
+            AgentEventPayload::ProjectionDegraded {
+                reason: reason.into(),
+            },
+            Vec::new(),
+            Utc::now(),
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn provider_is_confirmed_absent(
+        &self,
+        pid: Option<u32>,
+        process_group_id: Option<u32>,
+    ) -> bool {
+        match pid {
+            Some(pid) => self
+                .process_registry
+                .observe_provider(pid, process_group_id)
+                .await
+                .is_ok_and(|presence| presence == RegisteredProcessPresence::Exited),
+            // For v2 this is permitted only after validated journal shows no
+            // Started. Legacy/no-journal recovery never claims launch success.
+            None => true,
         }
     }
 
@@ -1382,17 +1702,65 @@ impl LocalAgentRunPort {
         attempt: &RunAttemptRequest,
         events: Vec<crate::process_host::HostEvent>,
     ) -> Result<(), AgentRunPortError> {
-        let Some(through_host_sequence) = events.last().map(|event| event.sequence) else {
-            return Ok(());
-        };
-        if events.first().is_some_and(|event| event.sequence == 0)
-            || events
-                .windows(2)
-                .any(|pair| pair[0].sequence >= pair[1].sequence)
+        let _guard = self.event_write_lock.lock().await;
+        let cursor = self.load_host_cursor(attempt).await?;
+        if events
+            .iter()
+            .any(|event| !crate::process_host::journal::identity(event, attempt.run_attempt_id))
         {
             return Err(AgentRunPortError::Rejected(
-                "process host observations must have a strictly increasing positive sequence"
-                    .to_string(),
+                "foreign attempt in host observations".into(),
+            ));
+        }
+        let replayed_terminal = events.iter().find_map(|event| match &event.payload {
+            HostEventPayload::Terminal { exit_code, .. } if event.sequence <= cursor => {
+                Some((event.sequence, *exit_code, event.timestamp))
+            }
+            _ => None,
+        });
+        let events: Vec<_> = events
+            .into_iter()
+            .filter(|event| event.sequence > cursor)
+            .collect();
+        let Some(through_host_sequence) = events.last().map(|event| event.sequence) else {
+            // The canonical transaction may have committed before a process
+            // registry write/ACK failed. Retrying must finish those idempotent
+            // side effects without re-inserting events or re-registering Started.
+            drop(_guard);
+            if let Some((sequence, exit_code, exited_at)) = replayed_terminal {
+                let pid: Option<i64> = sqlx::query_scalar(
+                    "SELECT pid FROM agent_process_registry WHERE run_attempt_id = ?",
+                )
+                .bind(attempt.run_attempt_id)
+                .fetch_one(&self.db.pool)
+                .await
+                .map_err(port_database)?;
+                self.finish_host_projection(
+                    attempt,
+                    pid.map(|_| (exit_code, exited_at)),
+                    Some(sequence),
+                )
+                .await?;
+            }
+            return Ok(());
+        };
+        if events
+            .first()
+            .is_some_and(|event| event.sequence != cursor + 1)
+            || events
+                .windows(2)
+                .any(|pair| pair[0].sequence + 1 != pair[1].sequence)
+        {
+            return Err(AgentRunPortError::Rejected(
+                "process host observations must be contiguous with the durable cursor".to_string(),
+            ));
+        }
+        if events
+            .iter()
+            .any(|event| !crate::process_host::journal::identity(event, attempt.run_attempt_id))
+        {
+            return Err(AgentRunPortError::Rejected(
+                "foreign attempt in host observations".into(),
             ));
         }
         let orchestration_identity: (Option<Uuid>, Option<Uuid>) = sqlx::query_as(
@@ -1598,7 +1966,6 @@ impl LocalAgentRunPort {
             ));
         }
 
-        let _guard = self.event_write_lock.lock().await;
         let mut retry = 0u8;
         let inserted = loop {
             match AgentEventRecord::append_and_project_host_batch(
@@ -1736,6 +2103,16 @@ impl LocalAgentRunPort {
         debug_assert!(inserted_by_id.is_empty());
         debug_assert!(live_by_id.is_empty());
 
+        self.finish_host_projection(attempt, exited_process, terminal_ack)
+            .await
+    }
+
+    async fn finish_host_projection(
+        &self,
+        attempt: &RunAttemptRequest,
+        exited_process: Option<(Option<i64>, chrono::DateTime<Utc>)>,
+        terminal_ack: Option<u64>,
+    ) -> Result<(), AgentRunPortError> {
         if let Some((exit_code, exited_at)) = exited_process {
             AgentRunRecord::mark_process_exited(
                 &self.db.pool,
@@ -2914,6 +3291,12 @@ fn should_stage_mapped_lifecycle(
     let AgentEventPayload::LifecycleChanged { status } = payload else {
         return true;
     };
+    // A provider's turn-complete notification is not process/Audit completion.
+    // Only HostEvent::Terminal may close the canonical run. In particular a
+    // dead host with an unfinished audit must never recover as succeeded.
+    if status.is_terminal() {
+        return false;
+    }
     current_status.is_none_or(|current| {
         !current.is_terminal()
             && (current != AgentRunStatus::Cancelling || *status == AgentRunStatus::Cancelled)
@@ -3006,6 +3389,12 @@ mod tests {
         .execute(&pool)
         .await
         .expect("create projection failure schema");
+        sqlx::raw_sql(include_str!(
+            "../../db/migrations/20260922010000_host_replay_identity.sql"
+        ))
+        .execute(&pool)
+        .await
+        .expect("host replay identity migration");
         DBService { pool }
     }
 
@@ -3034,7 +3423,7 @@ mod tests {
             schema_version: AGENT_REQUEST_SCHEMA_VERSION,
             payload_version: AGENT_REQUEST_PAYLOAD_VERSION,
             request_id: Uuid::new_v4(),
-            idempotency_key: "cancel-audit-failure".to_string(),
+            idempotency_key: format!("fixture-run:{session_id}"),
             session_id,
             agent_run_id: Uuid::new_v4(),
             turn_id: Uuid::new_v4(),
@@ -3054,7 +3443,7 @@ mod tests {
             schema_version: AGENT_REQUEST_SCHEMA_VERSION,
             payload_version: AGENT_REQUEST_PAYLOAD_VERSION,
             request_id: Uuid::new_v4(),
-            idempotency_key: "cancel-audit-failure:attempt:1".to_string(),
+            idempotency_key: format!("fixture-run:{session_id}:attempt:1"),
             session_id,
             agent_run_id: request.agent_run_id,
             turn_id: request.turn_id,
@@ -3100,6 +3489,406 @@ mod tests {
         );
         env.insert("VK_AGENT_RUN_ID", "frozen-run");
         env
+    }
+
+    async fn replay_fixture(
+        root: &Path,
+        request: &AgentRunRequestEnvelope,
+        attempt: &RunAttemptRequest,
+        provider_pid: u32,
+        deltas: usize,
+        terminal: bool,
+    ) -> (
+        HostObservation,
+        PathBuf,
+        Vec<crate::process_host::HostEvent>,
+    ) {
+        use executors::runtime::{NativeAuditChannel, NativeAuditDirection, NativeAuditFrame};
+
+        use crate::process_host::{HostEvent, journal::HostJournal};
+        let instance = Uuid::new_v4();
+        let path = root
+            .join("runtime/host-events")
+            .join(format!("{}-{instance}.v1.jsonl", attempt.run_attempt_id));
+        let mut journal = HostJournal::create(&path, attempt.run_attempt_id, instance)
+            .await
+            .unwrap();
+        let mut writer = NativeAuditWriter::create_in(
+            root,
+            NativeAuditMetadata {
+                session_id: request.session_id,
+                agent_run_id: request.agent_run_id,
+                turn_id: request.turn_id,
+                run_attempt_id: attempt.run_attempt_id,
+                run_attempt_number: 1,
+                provider_id: "codex".into(),
+                runtime_profile_id: request.runtime_profile_id.clone(),
+                workspace_path: attempt.workspace.path.clone(),
+                runtime_version: None,
+                protocol_version: None,
+                adapter_version: "1".into(),
+                mapper_version: "1".into(),
+                created_at: Utc::now(),
+            },
+        )
+        .unwrap();
+        let reference = writer
+            .append_canonical_input(&request.input, request.correlation_id)
+            .unwrap();
+        let mut events = vec![HostEvent {
+            sequence: 1,
+            event_id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            payload: HostEventPayload::Started {
+                provider_pid,
+                process_group_id: None,
+                executable: "fixture".into(),
+                canonical_input_ref: reference,
+                audit_manifest: writer.manifest().clone(),
+            },
+        }];
+        journal.append(events[0].clone()).await.unwrap();
+        for index in 0..=deltas {
+            let value = if index == deltas {
+                serde_json::json!({"method":"item/completed", "params":{"threadId":"fixture-root", "turnId":"fixture-turn", "item":{"id":"answer", "type":"agentMessage", "text":"completed semantic answer"}}})
+            } else {
+                serde_json::json!({"method":"item/agentMessage/delta", "params":{"threadId":"fixture-root", "turnId":"fixture-turn", "itemId":"answer", "delta":"streaming fragment"}})
+            };
+            let frame = NativeAuditFrame::from_bytes(
+                index as u64 + 2,
+                Utc::now(),
+                NativeAuditDirection::Output,
+                NativeAuditChannel::Stdout,
+                "application/json",
+                request.correlation_id,
+                &serde_json::to_vec(&value).unwrap(),
+            );
+            let native_ref = writer.append(frame.clone()).unwrap();
+            let executors::executors::provider_adapter::ProviderFrameClassification::Event {
+                event,
+                ..
+            } = DirectProvider::Codex.classify_native_frame(&frame)
+            else {
+                panic!("fixture must classify")
+            };
+            let projection = DirectProvider::Codex
+                .project_provider_event(&event, writer.manifest())
+                .unwrap();
+            let host_event = HostEvent {
+                sequence: index as u64 + 2,
+                event_id: Uuid::new_v4(),
+                timestamp: Utc::now(),
+                payload: HostEventPayload::Projected {
+                    durable_events: projection.durable_events,
+                    live_events: projection.live_events,
+                    native_ref,
+                },
+            };
+            journal.append(host_event.clone()).await.unwrap();
+            events.push(host_event);
+        }
+        if terminal {
+            let event = HostEvent {
+                sequence: deltas as u64 + 3,
+                event_id: Uuid::new_v4(),
+                timestamp: Utc::now(),
+                payload: HostEventPayload::Terminal {
+                    status: AgentRunStatus::Succeeded,
+                    error: None,
+                    error_event_id: None,
+                    exit_code: Some(0),
+                    audit_manifest: writer.close().unwrap(),
+                },
+            };
+            journal.append(event.clone()).await.unwrap();
+            events.push(event);
+        }
+        journal.flush().await.unwrap();
+        let host = HostObservation {
+            host_endpoint: Some("127.0.0.1:1".into()),
+            host_token: Some("fixture".into()),
+            host_instance_id: Some(instance.to_string()),
+            last_host_event_sequence: 0,
+            registry_status: "reserved".into(),
+            // A distinct start identity proves the original host exited without
+            // touching the process which now occupies this PID.
+            host_pid: Some(i64::from(std::process::id())),
+            host_start_identity: Some("different-boot-and-start".into()),
+            pid: None,
+            process_group_id: None,
+            host_protocol_version: Some(i64::from(HOST_PROTOCOL_VERSION)),
+        };
+        (host, path, events)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn dead_host_replay_preserves_audit_compacts_deltas_and_is_idempotent() {
+        use executors::runtime::AuditBundle;
+        let root = TempDir::new().unwrap();
+        let mut port = LocalAgentRunPort::new(setup_runtime_db().await);
+        port.process_registry = AgentProcessRegistry::new(root.path().join("registry.json"));
+        let (request, attempt) = persisted_codex_run(&port.db).await;
+        let (host, _, events) =
+            replay_fixture(root.path(), &request, &attempt, i32::MAX as u32, 1000, true).await;
+        let started = std::time::Instant::now();
+        assert!(
+            port.recover_dead_process_host_in(&request, &attempt, &host, root.path())
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            port.query(request.agent_run_id).await.unwrap().state.status,
+            AgentRunStatus::Succeeded
+        );
+        assert_eq!(port.load_host_cursor(&attempt).await.unwrap(), 1003);
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM agent_events WHERE agent_run_id = ?")
+                .bind(request.agent_run_id)
+                .fetch_one(&port.db.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            count, 4,
+            "initial user, running, completed assistant, terminal only"
+        );
+        let directory = root.path().join(utils::native_audit::attempt_relative_dir(
+            request.session_id,
+            request.agent_run_id,
+            attempt.run_attempt_id,
+        ));
+        let audit = AuditBundle::read(&directory).unwrap();
+        assert_eq!(audit.manifest().frame_count, 1002);
+        // A server restart creates new in-memory observers but retains cursor.
+        let mut restarted = LocalAgentRunPort::new(port.db.clone());
+        restarted.process_registry = port.process_registry.clone();
+        assert!(
+            restarted
+                .recover_dead_process_host_in(&request, &attempt, &host, root.path())
+                .await
+                .unwrap()
+        );
+        restarted
+            .apply_host_events(&request, &attempt, events)
+            .await
+            .unwrap();
+        let after: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM agent_events WHERE agent_run_id = ?")
+                .bind(request.agent_run_id)
+                .fetch_one(&port.db.pool)
+                .await
+                .unwrap();
+        assert_eq!(after, count);
+        eprintln!(
+            "host recovery fixture: raw=1002 canonical=4 replay_ms={}",
+            started.elapsed().as_millis()
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn dead_host_does_not_complete_with_a_live_provider_and_recovers_partial_tail_as_crashed()
+    {
+        let root = TempDir::new().unwrap();
+        let mut port = LocalAgentRunPort::new(setup_runtime_db().await);
+        port.process_registry = AgentProcessRegistry::new(root.path().join("registry.json"));
+        let (request, attempt) = persisted_codex_run(&port.db).await;
+        let (mut host, _, _) =
+            replay_fixture(root.path(), &request, &attempt, std::process::id(), 0, true).await;
+        assert!(
+            !port
+                .recover_dead_process_host_in(&request, &attempt, &host, root.path())
+                .await
+                .unwrap()
+        );
+        assert_eq!(port.load_host_cursor(&attempt).await.unwrap(), 1);
+        assert_eq!(
+            port.query(request.agent_run_id).await.unwrap().state.status,
+            AgentRunStatus::Running
+        );
+        host.host_pid = None;
+        assert!(!port.host_is_confirmed_absent(&host).await);
+        host.host_pid = Some(i64::from(std::process::id()));
+        host.host_start_identity =
+            crate::agent_process_registry::process_start_identity(std::process::id()).unwrap();
+        assert!(!port.host_is_confirmed_absent(&host).await);
+
+        let (request, attempt) = persisted_codex_run(&port.db).await;
+        let (host, path, _) =
+            replay_fixture(root.path(), &request, &attempt, i32::MAX as u32, 0, false).await;
+        use tokio::io::AsyncWriteExt;
+        tokio::fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .await
+            .unwrap()
+            .write_all(b"{unfinished")
+            .await
+            .unwrap();
+        assert!(
+            port.recover_dead_process_host_in(&request, &attempt, &host, root.path())
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            port.query(request.agent_run_id).await.unwrap().state.status,
+            AgentRunStatus::Crashed
+        );
+        assert_eq!(port.load_host_cursor(&attempt).await.unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn host_gaps_and_foreign_attempts_have_no_persistence_side_effects() {
+        let root = TempDir::new().unwrap();
+        let mut port = LocalAgentRunPort::new(setup_runtime_db().await);
+        port.process_registry = AgentProcessRegistry::new(root.path().join("registry.json"));
+        let (request, attempt) = persisted_codex_run(&port.db).await;
+        let (_, _, events) =
+            replay_fixture(root.path(), &request, &attempt, i32::MAX as u32, 0, true).await;
+        assert!(
+            port.apply_host_events(&request, &attempt, events[1..].to_vec())
+                .await
+                .is_err()
+        );
+        let mut foreign = events.clone();
+        if let HostEventPayload::Started { audit_manifest, .. } = &mut foreign[0].payload {
+            audit_manifest.run_attempt_id = Uuid::new_v4();
+        }
+        assert!(
+            port.apply_host_events(&request, &attempt, foreign)
+                .await
+                .is_err()
+        );
+        assert_eq!(port.load_host_cursor(&attempt).await.unwrap(), 0);
+        assert!(port.process_registry.entries().await.unwrap().is_empty());
+        assert!(!should_stage_mapped_lifecycle(
+            Some(AgentRunStatus::Running),
+            &AgentEventPayload::LifecycleChanged {
+                status: AgentRunStatus::Succeeded
+            }
+        ));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn replay_corruption_and_unknown_protocol_fail_closed_without_advancing_cursor() {
+        let root = TempDir::new().unwrap();
+        let mut port = LocalAgentRunPort::new(setup_runtime_db().await);
+        port.process_registry = AgentProcessRegistry::new(root.path().join("registry.json"));
+        let (request, attempt) = persisted_codex_run(&port.db).await;
+        let (mut host, path, _) =
+            replay_fixture(root.path(), &request, &attempt, i32::MAX as u32, 0, true).await;
+        host.host_protocol_version = Some(999);
+        assert!(matches!(
+            port.recover_dead_process_host_in(&request, &attempt, &host, root.path())
+                .await,
+            Err(AgentRunPortError::Rejected(_))
+        ));
+        host.host_protocol_version = Some(2);
+        let mut bytes = tokio::fs::read(&path).await.unwrap();
+        bytes[0] = b'!';
+        tokio::fs::write(&path, bytes).await.unwrap();
+        let error = port
+            .recover_dead_process_host_in(&request, &attempt, &host, root.path())
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AgentRunPortError::Rejected(_)));
+        port.record_host_recovery_failure(&request, &attempt, &error.to_string())
+            .await
+            .unwrap();
+        port.record_host_recovery_failure(&request, &attempt, &error.to_string())
+            .await
+            .unwrap();
+        assert_eq!(port.load_host_cursor(&attempt).await.unwrap(), 0);
+        let state = port.query(request.agent_run_id).await.unwrap().state;
+        assert_eq!(
+            state.projection_status,
+            ProjectionStatus::ProjectionDegraded
+        );
+        assert!(!state.status.is_terminal());
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM agent_events WHERE agent_run_id = ?")
+                .bind(request.agent_run_id)
+                .fetch_one(&port.db.pool)
+                .await
+                .unwrap();
+        assert_eq!(count, 1, "durable diagnostic is not spammed");
+        assert!(port.process_registry.entries().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn host_projection_failure_retries_the_identical_page_without_cursor_loss() {
+        let root = TempDir::new().unwrap();
+        let mut port = LocalAgentRunPort::new(setup_runtime_db().await);
+        port.process_registry = AgentProcessRegistry::new(root.path().join("registry.json"));
+        let (request, attempt) = persisted_codex_run(&port.db).await;
+        let (_, _, events) =
+            replay_fixture(root.path(), &request, &attempt, i32::MAX as u32, 0, true).await;
+        sqlx::raw_sql("CREATE TRIGGER reject_event BEFORE INSERT ON agent_events BEGIN SELECT RAISE(ABORT, 'fixture write failure'); END;")
+            .execute(&port.db.pool).await.unwrap();
+        assert!(
+            port.apply_host_events(&request, &attempt, events.clone())
+                .await
+                .is_err()
+        );
+        assert_eq!(port.load_host_cursor(&attempt).await.unwrap(), 0);
+        assert_eq!(
+            port.query(request.agent_run_id)
+                .await
+                .unwrap()
+                .state
+                .projection_status,
+            ProjectionStatus::Current
+        );
+        sqlx::raw_sql("DROP TRIGGER reject_event")
+            .execute(&port.db.pool)
+            .await
+            .unwrap();
+        port.apply_host_events(&request, &attempt, events.clone())
+            .await
+            .unwrap();
+        port.apply_host_events(&request, &attempt, events)
+            .await
+            .unwrap();
+        assert_eq!(port.load_host_cursor(&attempt).await.unwrap(), 3);
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM agent_events WHERE agent_run_id = ?")
+                .bind(request.agent_run_id)
+                .fetch_one(&port.db.pool)
+                .await
+                .unwrap();
+        assert_eq!(count, 4);
+        assert!(port.process_registry.entries().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn replay_finishes_exit_side_effects_after_canonical_commit() {
+        let root = TempDir::new().unwrap();
+        let mut port = LocalAgentRunPort::new(setup_runtime_db().await);
+        port.process_registry = AgentProcessRegistry::new(root.path().join("registry.json"));
+        let (request, attempt) = persisted_codex_run(&port.db).await;
+        let (_, _, events) =
+            replay_fixture(root.path(), &request, &attempt, i32::MAX as u32, 0, true).await;
+        sqlx::raw_sql("CREATE TRIGGER reject_exit BEFORE UPDATE ON agent_process_registry WHEN NEW.registry_status = 'exited' BEGIN SELECT RAISE(ABORT, 'fixture crash after canonical commit'); END;")
+            .execute(&port.db.pool).await.unwrap();
+        assert!(
+            port.apply_host_events(&request, &attempt, events.clone())
+                .await
+                .is_err()
+        );
+        assert_eq!(port.load_host_cursor(&attempt).await.unwrap(), 3);
+        sqlx::raw_sql("DROP TRIGGER reject_exit")
+            .execute(&port.db.pool)
+            .await
+            .unwrap();
+        port.apply_host_events(&request, &attempt, events)
+            .await
+            .unwrap();
+        let (status, exit_code): (String, Option<i64>) = sqlx::query_as("SELECT registry_status, exit_code FROM agent_process_registry WHERE run_attempt_id = ?")
+            .bind(attempt.run_attempt_id).fetch_one(&port.db.pool).await.unwrap();
+        assert_eq!(status, "exited");
+        assert_eq!(exit_code, Some(0));
+        assert!(port.process_registry.entries().await.unwrap().is_empty());
     }
 
     #[tokio::test]

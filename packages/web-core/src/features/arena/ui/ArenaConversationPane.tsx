@@ -80,6 +80,15 @@ function ChatBoxWithDiffSummary({
             })}
       sessions={sessions}
       filesChanged={diffSummary.fileCount}
+      diffStatsStatus={
+        diffSummary.error
+          ? diffSummary.isInitialized
+            ? 'degraded'
+            : 'error'
+          : diffSummary.isInitialized
+            ? 'ready'
+            : 'loading'
+      }
       linesAdded={diffSummary.added}
       linesRemoved={diffSummary.deleted}
       disableViewCode

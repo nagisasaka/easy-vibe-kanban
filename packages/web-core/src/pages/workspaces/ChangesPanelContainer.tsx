@@ -22,6 +22,8 @@ import { useScrollSyncStateMachine } from '@/shared/hooks/useScrollSyncStateMach
 import { useFileInViewStore } from '@/shared/stores/useFileInViewStore';
 import {
   useDiffs,
+  useDiffError,
+  useIsDiffInitialized,
   useShowGitHubComments,
   useGetGitHubCommentsForFile,
 } from '@/shared/stores/useWorkspaceDiffStore';
@@ -606,6 +608,9 @@ export const ChangesPanelContainer = memo(function ChangesPanelContainer({
   workspaceId,
 }: ChangesPanelContainerProps) {
   const diffs = useDiffs();
+  const error = useDiffError();
+  const isInitialized = useIsDiffInitialized();
+  const { t } = useTranslation('common');
   const { registerScrollToFile } = useChangesView();
   const [processedPaths] = useState(() => new Set<string>());
   const [mountedCount, setMountedCount] = useState(0);
@@ -870,6 +875,18 @@ export const ChangesPanelContainer = memo(function ChangesPanelContainer({
         contentClassName="flex flex-col gap-1"
         style={{ contain: 'layout style paint' }}
       >
+        {error ? (
+          <div role="alert" className="p-base text-error">
+            {t('arena.errors.diffStream', { message: error })}
+            {isInitialized && <p>{t('empty.cachedChanges')}</p>}
+          </div>
+        ) : !isInitialized ? (
+          <div role="status" className="p-base text-low">
+            {t('states.loading')}
+          </div>
+        ) : diffs.length === 0 ? (
+          <div className="p-base text-low">{t('empty.noChanges')}</div>
+        ) : null}
         {itemsToRender.map(({ diff, initialExpanded }) => {
           const path = diff.newPath || diff.oldPath || '';
           return (

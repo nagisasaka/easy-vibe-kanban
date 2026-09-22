@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ScratchType, Scratch, UpdateScratch } from 'shared/types';
 import type { UseScratchResult } from './useScratch';
 
@@ -19,19 +19,11 @@ function readFromStorage(key: string): Scratch | null {
 }
 
 function writeToStorage(key: string, scratch: Scratch): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(scratch));
-  } catch {
-    // Quota exceeded or unavailable — silently drop the write
-  }
+  localStorage.setItem(key, JSON.stringify(scratch));
 }
 
 function removeFromStorage(key: string): void {
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    // Ignore errors
-  }
+  localStorage.removeItem(key);
 }
 
 function buildScratchEntry(
@@ -101,6 +93,8 @@ export const useLocalStorageScratch = (
 ): UseScratchResult => {
   const enabled = (options?.enabled ?? true) && id.length > 0;
   const storageKey = buildStorageKey(scratchType, id);
+  const currentKey = useRef(storageKey);
+  currentKey.current = storageKey;
 
   const [scratch, setScratch] = useState<Scratch | null>(() =>
     enabled ? readFromStorage(storageKey) : null
@@ -145,18 +139,27 @@ export const useLocalStorageScratch = (
     async (update: UpdateScratch) => {
       const next = buildScratchEntry(id, update, readFromStorage(storageKey));
       writeToStorage(storageKey, next);
-      setScratch(next);
+      if (currentKey.current === storageKey) setScratch(next);
     },
     [storageKey, id]
   );
 
-  const deleteScratch = useCallback(async () => {
-    removeFromStorage(storageKey);
-    setScratch(null);
-  }, [storageKey]);
+  const deleteScratch = useCallback(
+    async (expectedPayload?: UpdateScratch['payload']) => {
+      if (
+        expectedPayload &&
+        JSON.stringify(readFromStorage(storageKey)?.payload) !==
+          JSON.stringify(expectedPayload)
+      )
+        return;
+      removeFromStorage(storageKey);
+      if (currentKey.current === storageKey) setScratch(null);
+    },
+    [storageKey]
+  );
 
   return {
-    scratch,
+    scratch: loadedKey === storageKey ? scratch : null,
     isLoading: enabled && loadedKey !== storageKey,
     isConnected: true,
     error: null,

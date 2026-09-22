@@ -18,7 +18,10 @@ test("context is collapsed, read-only and independent of the task description", 
   await expect(preview).not.toBeEditable();
   await expect(
     page.getByRole("checkbox", { name: "LLM Wiki", exact: true }),
-  ).toBeChecked();
+  ).not.toBeChecked();
+  // Repository Memory replaced automatic legacy Wiki injection. Explicitly
+  // select this fixture's optional Pipeline before testing independent toggles.
+  await page.getByRole("checkbox", { name: "LLM Wiki", exact: true }).check();
   const shared = page.getByRole("checkbox", {
     name: "Shared directories",
     exact: true,

@@ -5,7 +5,7 @@ description: easy-vibe-kanban の目的、主要概念の説明先、変更時�
 tags: [overview, onboarding, concepts, navigation]
 verified:
   - by: openwiki/0.5.1
-    at: 2026-09-21T08:52:18.882Z
+    at: 2026-09-22T02:14:43.589Z
 sources:
   - id: openwiki-source-0d0b05d2fac028aecd3be162
     resource: repo://.github/workflows/publish-easy-npx.yml
@@ -49,7 +49,7 @@ sources:
     resource: repo://packages/web-core/src/shared/lib/remoteApi.ts
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-generated: { by: "codex", at: "2026-09-21T08:52:18.882Z" }
+generated: { by: "codex", at: "2026-09-22T02:14:43.589Z" }
 ---
 
 # クイックスタートと調査案内
@@ -102,6 +102,15 @@ easy-vibe-kanban（EVK）は、Issue で仕事を整理し、Workspace 内で co
 | 統合・Wiki 実行のログを見る、所有者を止める | [Execution の閲覧と停止](operations/workspace-inspection.md#実行専用-workspace-の確認)。通常開発用 Workspace と操作入口を分ける |
 | local EVK を常駐サーバーへ置く | [単一サーバーコンテナー](operations/server-container.md)。HTTPS/Basic 認証、preview origin、volume、停止と rollback |
 | モバイル・Cloud・relay の self-hosting | [Remote の接続境界](integrations/remote-access.md) → [運用文書の使い分け](operations/development.md) |
+
+## 編集・接続の不調から調べる
+
+- 未送信本文が戻らない、前回の実行設定が違う場合は [Session の設定復元](concepts/session-and-agent-run.md#実行設定の復元と-default-identity)と [Scratch の ACK・pending backup](concepts/session-and-agent-run.md#未送信ドラフトと-scratch)を分けて確認する。
+- Workflow の保存競合、再読込後の draft、Undo/Redo は [編集契約](concepts/workflow-attempt.md#編集保存競合undoredo)へ進む。Undo は実行や Git を戻す操作ではない。
+- 設定値が非表示なのは未設定と同義ではない。[機密設定の明示読取・保持/置換/削除](integrations/agent-providers.md#設定の公開と変更の安全境界)と、現在選択している Host を確認する。
+- Agent 表示が止まっても、接続断を死亡と即断しない。[Host の再送と終了証拠](architecture/agent-runtime.md#接続断と確認済み終了を分ける)を確認する。差分の取得失敗も [正常な変更ゼロとは別](operations/workspace-inspection.md#差分の未取得エラー空を区別する)である。
+
+選別移植で追加した契約の検証範囲と上流からの採否は [開発・検証案内](operations/development.md#版番号の検証と選別移植の追跡)から実装記録へ辿れる。元の Project / Issue / Workspace / Session の説明を、新しい Task モデルや新UIへ読み替えない。
 
 ## 小さな用語の境界
 

@@ -284,7 +284,11 @@ export function ModelSelectorContainer({
     if (nextProfiles !== profiles) {
       setProfiles(nextProfiles);
       void profilesApi
-        .save(JSON.stringify({ executors: nextProfiles }, null, 2))
+        .updateRecent({
+          executor: agent,
+          recently_used_models:
+            nextProfiles[agent]?.recently_used_models ?? null,
+        })
         .catch((error) => {
           console.error('Failed to save recent models', error);
           void reloadSystem();

@@ -19,15 +19,15 @@ import {
   SettingScope,
 } from 'shared/types';
 import type {
-  ConfigProfile,
+  ConfigProfileView as ConfigProfile,
   JsonValue,
   NativeConfigFile,
-  ProfileApplyPreviewRequest,
-  ProfileCopyPreview,
+  ProfileApplyRequest as ProfileApplyPreviewRequest,
+  ProfileCopyPreviewView as ProfileCopyPreview,
   SettingDescriptor,
   SettingsDiff,
   SettingsPatch,
-  SettingsSnapshot,
+  SettingsSnapshotView as SettingsSnapshot,
 } from 'shared/types';
 import {
   buildAgentSettingsPatch,
@@ -54,7 +54,10 @@ import {
   SettingsTextarea,
 } from './SettingsComponents';
 import { useSettingsDirty } from './SettingsDirtyContext';
-import { useSettingsMachineClient } from './SettingsHostContext';
+import {
+  useSettingsHost,
+  useSettingsMachineClient,
+} from './SettingsHostContext';
 
 type PendingAction =
   | { kind: 'settings'; patch: SettingsPatch }
@@ -69,13 +72,6 @@ type PendingAction =
       };
     }
   | { kind: 'profile'; preview: ProfileApplyPreviewRequest };
-
-function newProfileId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-  return `profile-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
 
 function executorForProvider(provider: AgentSettingsProvider): BaseCodingAgent {
   switch (provider) {
@@ -120,7 +116,20 @@ function parseDraftChange(
   return parseSettingInput(descriptor, raw);
 }
 
-export function AgentConfigurationSettingsPanel({
+export function AgentConfigurationSettingsPanel(props: {
+  executor: BaseCodingAgent;
+  variant: string | null;
+}) {
+  const { selectedHostId } = useSettingsHost();
+  return (
+    <AgentConfigurationSettingsContent
+      key={`${selectedHostId}:${props.executor}:${props.variant}`}
+      {...props}
+    />
+  );
+}
+
+function AgentConfigurationSettingsContent({
   executor,
   variant,
 }: {
@@ -128,6 +137,7 @@ export function AgentConfigurationSettingsPanel({
   variant: string | null;
 }) {
   const machineClient = useSettingsMachineClient();
+  const { canEdit } = useSettingsHost();
   const { setDirty: setContextDirty } = useSettingsDirty();
   const provider =
     PROVIDER_BY_EXECUTOR[executor] ?? AgentSettingsProvider.codex;
@@ -137,6 +147,10 @@ export function AgentConfigurationSettingsPanel({
   const [activeSection, setActiveSection] = useState<string>('overview');
   const [scope, setScope] = useState<SettingScope>(SettingScope.user);
   const [projectPath, setProjectPath] = useState('');
+  const [loadedProjectPath, setLoadedProjectPath] = useState<string | null>(
+    null
+  );
+  const [loadFailed, setLoadFailed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [profilesLoading, setProfilesLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -151,6 +165,20 @@ export function AgentConfigurationSettingsPanel({
   const [rawContent, setRawContent] = useState('');
   const [rawOriginal, setRawOriginal] = useState('');
   const requestSequence = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      requestSequence.current += 1;
+    };
+  }, []);
+  const writeBlocked =
+    !canEdit ||
+    loading ||
+    loadFailed ||
+    !snapshot ||
+    loadedProjectPath !== projectPath.trim();
 
   const loadSettings = useCallback(
     async (nextProjectPath?: string) => {
@@ -169,6 +197,8 @@ export function AgentConfigurationSettingsPanel({
             (candidate) => candidate.provider === provider
           ) ?? null;
         setSnapshot(next);
+        setLoadedProjectPath(nextProjectPath?.trim() ?? '');
+        setLoadFailed(inventory.errors.length > 0);
         setDraft(next ? createAgentSettingsDraft(next) : {});
         setDiff(null);
         setPending(null);
@@ -179,8 +209,7 @@ export function AgentConfigurationSettingsPanel({
       } catch (nextError) {
         if (sequence === requestSequence.current) {
           setError(formatAgentSettingOperationError(nextError));
-          setSnapshot(null);
-          setDraft({});
+          setLoadFailed(true);
         }
       } finally {
         if (sequence === requestSequence.current) setLoading(false);
@@ -274,7 +303,7 @@ export function AgentConfigurationSettingsPanel({
   );
 
   const previewSettings = async () => {
-    if (!machineClient || !patch || !snapshot) return;
+    if (!machineClient || !patch || !snapshot || writeBlocked) return;
     if (hasDraftErrors(draft)) {
       setError('Fix the invalid setting values before previewing the diff.');
       return;
@@ -298,7 +327,7 @@ export function AgentConfigurationSettingsPanel({
   };
 
   const confirmPending = async () => {
-    if (!machineClient || !pending) return;
+    if (!machineClient || !pending || writeBlocked) return;
     setBusy(true);
     setError(null);
     try {
@@ -380,7 +409,7 @@ export function AgentConfigurationSettingsPanel({
   };
 
   const previewNativeFile = async () => {
-    if (!machineClient || !snapshot || !rawFile) return;
+    if (!machineClient || !snapshot || !rawFile || writeBlocked) return;
     const nextPatch = {
       provider,
       project_path: projectPath.trim() || null,
@@ -391,8 +420,10 @@ export function AgentConfigurationSettingsPanel({
     setBusy(true);
     setError(null);
     try {
-      const nextDiff =
-        await machineClient.diffAgentSettingsNativeFile(nextPatch);
+      const nextDiff = await machineClient.diffAgentSettingsNativeFile({
+        patch: nextPatch,
+        confirmed_sensitive_read: true,
+      });
       setDiff(nextDiff);
       setPending({ kind: 'native', patch: nextPatch });
     } catch (nextError) {
@@ -402,54 +433,66 @@ export function AgentConfigurationSettingsPanel({
     }
   };
 
+  const openNativeFile = async (file: NativeConfigFile) => {
+    if (
+      !machineClient ||
+      busy ||
+      loading ||
+      !canEdit ||
+      loadedProjectPath !== projectPath.trim()
+    )
+      return;
+    if (
+      !window.confirm(
+        'Read this native file? It may contain credentials and private configuration. Its full contents will be displayed for advanced editing.'
+      )
+    )
+      return;
+    setBusy(true);
+    setError(null);
+    try {
+      const read = await machineClient.readAgentSettingsNativeFile({
+        provider,
+        project_path: projectPath.trim() || null,
+        file_id: file.id,
+        expected_revision: nativeFileRevision(file),
+        confirmed_sensitive_read: true,
+      });
+      if (!mounted.current) return;
+      setRawFile(read);
+      setRawOriginal(read.raw_content ?? '');
+      setRawContent(read.raw_content ?? '');
+      setDiff(null);
+      setPending(null);
+    } catch (nextError) {
+      if (mounted.current)
+        setError(formatAgentSettingOperationError(nextError));
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  };
+
   const saveProfile = async () => {
-    if (!machineClient || !snapshot) return;
+    if (!machineClient || !snapshot || writeBlocked) return;
     const name = window.prompt('Profile name');
     if (!name?.trim()) return;
-    const settingOverrides: Record<string, JsonValue> = {};
-    for (const descriptor of snapshot.descriptors) {
-      if (!descriptor.capabilities.profile_storable) continue;
-      const entry = draft[settingKeyId(descriptor)];
-      if (entry?.action === 'unset') continue;
-      const effectiveValue = snapshot.effective_settings.find(
-        (candidate) => settingKeyId(candidate) === settingKeyId(descriptor)
-      )?.effective_value;
-      const value =
-        entry?.action === 'set' && entry.value !== undefined
-          ? entry.value
-          : effectiveValue;
-      if (value !== undefined)
-        settingOverrides[settingKeyId(descriptor)] = value;
-    }
-    const environmentValue = settingOverrides['common.environment'];
-    const environment =
-      environmentValue &&
-      typeof environmentValue === 'object' &&
-      !Array.isArray(environmentValue)
-        ? (Object.fromEntries(
-            Object.entries(environmentValue).filter(
-              ([, value]) => typeof value === 'string'
-            )
-          ) as Record<string, string>)
-        : {};
     setBusy(true);
     setError(null);
     try {
       await machineClient.saveAgentSettingsProfile({
-        profile: {
-          id: newProfileId(),
-          provider,
+        type: 'capture',
+        data: {
+          patch: buildAgentSettingsPatch(
+            snapshot,
+            draft,
+            scope,
+            projectPath.trim() || undefined
+          ),
           executor_profile: {
             executor,
             variant: variant === 'DEFAULT' ? null : variant,
           },
           name: name.trim(),
-          schema_version: 1,
-          setting_overrides: settingOverrides,
-          provider_extensions: {},
-          environment,
-          custom_args: [],
-          updated_at: new Date().toISOString(),
         },
       });
       await loadProfiles();
@@ -469,9 +512,12 @@ export function AgentConfigurationSettingsPanel({
     if (!name?.trim()) return;
     setBusy(true);
     try {
-      await machineClient.duplicateAgentSettingsProfile({
-        id: profile.id,
-        name: name.trim(),
+      await machineClient.saveAgentSettingsProfile({
+        type: 'duplicate',
+        data: {
+          source: { id: profile.id, expected_revision: profile.revision },
+          name: name.trim(),
+        },
       });
       await loadProfiles();
       setNotice('Profile duplicated.');
@@ -489,7 +535,11 @@ export function AgentConfigurationSettingsPanel({
     setBusy(true);
     try {
       await machineClient.saveAgentSettingsProfile({
-        profile: { ...profile, name: name.trim() },
+        type: 'rename',
+        data: {
+          source: { id: profile.id, expected_revision: profile.revision },
+          name: name.trim(),
+        },
       });
       await loadProfiles();
       setNotice('Profile renamed.');
@@ -505,7 +555,12 @@ export function AgentConfigurationSettingsPanel({
       return;
     setBusy(true);
     try {
-      await machineClient.deleteAgentSettingsProfile({ id: profile.id });
+      await machineClient.saveAgentSettingsProfile({
+        type: 'delete',
+        data: {
+          source: { id: profile.id, expected_revision: profile.revision },
+        },
+      });
       await loadProfiles();
       setNotice('Profile deleted.');
     } catch (nextError) {
@@ -516,12 +571,12 @@ export function AgentConfigurationSettingsPanel({
   };
 
   const previewProfileApply = async (profile: ConfigProfile) => {
-    if (!machineClient || !snapshot) return;
+    if (!machineClient || !snapshot || writeBlocked) return;
     const expected_file_revisions = Object.fromEntries(
       snapshot.native_files.map((file) => [file.id, nativeFileRevision(file)])
     );
     const request: ProfileApplyPreviewRequest = {
-      id: profile.id,
+      reference: { id: profile.id, expected_revision: profile.revision },
       project_path: projectPath.trim() || null,
       scope,
       expected_file_revisions,
@@ -560,7 +615,7 @@ export function AgentConfigurationSettingsPanel({
     setError(null);
     try {
       const preview = await machineClient.previewAgentSettingsProfileCopy({
-        id: profile.id,
+        source: { id: profile.id, expected_revision: profile.revision },
         target_provider: target as AgentSettingsProvider,
         target_executor_profile: {
           executor: executorForProvider(target as AgentSettingsProvider),
@@ -581,7 +636,8 @@ export function AgentConfigurationSettingsPanel({
     setBusy(true);
     try {
       await machineClient.saveAgentSettingsProfile({
-        profile: copyPreview.profile,
+        type: 'copy',
+        data: { request: copyPreview.request },
       });
       setCopyPreview(null);
       await loadProfiles();
@@ -604,7 +660,7 @@ export function AgentConfigurationSettingsPanel({
           variant="tertiary"
           value="Refresh"
           onClick={() => void loadSettings(projectPath.trim() || undefined)}
-          disabled={loading || !machineClient}
+          disabled={loading || busy || !machineClient}
           actionIcon={loading ? 'spinner' : undefined}
         />
       }
@@ -631,9 +687,17 @@ export function AgentConfigurationSettingsPanel({
         <div className="flex gap-2">
           <SettingsInput
             value={projectPath}
-            onChange={setProjectPath}
+            onChange={(value) => {
+              setProjectPath(value);
+              setPending(null);
+              setDiff(null);
+              setRawFile(null);
+              setRawContent('');
+              setRawOriginal('');
+              setCopyPreview(null);
+            }}
             placeholder="/absolute/path/to/project"
-            disabled={busy}
+            disabled={busy || loading}
           />
           <button
             type="button"
@@ -652,7 +716,11 @@ export function AgentConfigurationSettingsPanel({
       >
         <select
           value={scope}
-          onChange={(event) => setScope(event.target.value as SettingScope)}
+          onChange={(event) => {
+            setScope(event.target.value as SettingScope);
+            setPending(null);
+            setDiff(null);
+          }}
           disabled={busy}
           className="w-full rounded-sm border border-border bg-secondary px-base py-half text-sm text-high focus:outline-none focus:ring-1 focus:ring-brand"
         >
@@ -722,7 +790,10 @@ export function AgentConfigurationSettingsPanel({
           const resettable = descriptor.capabilities.resettable;
           const scopeSupported = descriptor.supported_scopes.includes(scope);
           const disabled =
-            !descriptor.capabilities.writable || busy || !scopeSupported;
+            !descriptor.capabilities.writable ||
+            busy ||
+            !scopeSupported ||
+            writeBlocked;
           const selectValue =
             entry.value === undefined ? '' : JSON.stringify(entry.value);
           const update = (raw: string, nextValue?: JsonValue) => {
@@ -761,6 +832,14 @@ export function AgentConfigurationSettingsPanel({
                   This setting is not available in the {scope} scope.
                 </div>
               )}
+              {snapshot?.withheld_setting_keys.includes(id) &&
+                entry.action === 'unchanged' && (
+                  <p className="text-xs text-low">
+                    Value withheld. Leave unchanged to preserve it, enter a
+                    replacement, or explicitly restore inheritance to clear it.
+                    Use Native Files for a confirmed sensitive read.
+                  </p>
+                )}
               {descriptor.control === 'toggle' ? (
                 <div className="flex items-center gap-3">
                   <Switch
@@ -830,7 +909,9 @@ export function AgentConfigurationSettingsPanel({
         show={draftDirty}
         saving={busy}
         saveDisabled={
-          hasDraftErrors(draft) || !snapshot?.capabilities.native_writable
+          writeBlocked ||
+          hasDraftErrors(draft) ||
+          !snapshot?.capabilities.native_writable
         }
         onSave={() => void previewSettings()}
         onDiscard={discardDraft}
@@ -849,13 +930,7 @@ export function AgentConfigurationSettingsPanel({
             key={file.id}
             file={file}
             selected={rawFile?.id === file.id}
-            onEdit={() => {
-              setRawFile(file);
-              setRawOriginal(file.raw_content ?? '');
-              setRawContent(file.raw_content ?? '');
-              setError(null);
-              setNotice(null);
-            }}
+            onEdit={() => void openNativeFile(file)}
           />
         ))}
       </div>
@@ -929,7 +1004,11 @@ export function AgentConfigurationSettingsPanel({
                   {settingKeyId(setting)}
                 </td>
                 <td className="max-w-[18rem] whitespace-pre-wrap px-3 py-2 font-mono text-normal">
-                  {displayJson(setting.effective_value)}
+                  {snapshot?.withheld_setting_keys.includes(
+                    settingKeyId(setting)
+                  )
+                    ? 'Withheld — preserved unless explicitly changed'
+                    : displayJson(setting.effective_value)}
                 </td>
                 <td className="px-3 py-2 text-low">
                   {setting.effective_source ?? 'Default'}
@@ -982,7 +1061,8 @@ export function AgentConfigurationSettingsPanel({
       {copyPreview && (
         <div className="space-y-2 rounded-sm border border-border bg-secondary/20 p-3">
           <div className="text-sm font-medium text-high">
-            Copy preview → {PROVIDER_LABELS[copyPreview.profile.provider]}
+            Copy preview →{' '}
+            {PROVIDER_LABELS[copyPreview.request.target_provider]}
           </div>
           <div className="text-xs text-low">
             Compatible:{' '}
@@ -1042,10 +1122,7 @@ export function AgentConfigurationSettingsPanel({
                   {profile.name}
                 </div>
                 <div className="text-xs text-low">
-                  {profile.setting_overrides
-                    ? Object.keys(profile.setting_overrides).length
-                    : 0}{' '}
-                  managed settings · updated{' '}
+                  {profile.setting_keys.length} managed settings · updated{' '}
                   {new Date(profile.updated_at).toLocaleString()}
                 </div>
               </div>
@@ -1137,9 +1214,21 @@ export function AgentConfigurationSettingsPanel({
           {notice}
         </div>
       )}
+      {snapshot && writeBlocked && (
+        <p role="status" className="text-sm text-warning">
+          {loadedProjectPath !== projectPath.trim()
+            ? 'Discover the selected project before applying changes. The displayed snapshot belongs to the previously loaded scope.'
+            : 'Showing cached settings. Changes are disabled until this Host and scope can be verified.'}
+        </p>
+      )}
       {!snapshot ? (
         <div className="rounded-sm border border-border p-4 text-sm text-low">
           No settings snapshot available.
+          <PrimaryButton
+            value="Retry discovery"
+            onClick={() => void loadSettings(projectPath.trim() || undefined)}
+            disabled={busy || loading || !machineClient}
+          />
         </div>
       ) : (
         <>
@@ -1182,7 +1271,7 @@ export function AgentConfigurationSettingsPanel({
         <DiffConfirmation
           diff={diff}
           pending={pending}
-          busy={busy}
+          busy={busy || writeBlocked}
           onCancel={() => {
             setDiff(null);
             setPending(null);
@@ -1193,6 +1282,7 @@ export function AgentConfigurationSettingsPanel({
       <SettingsSaveBar
         show={draftDirty && active?.descriptors.length === 0}
         saving={busy}
+        saveDisabled={writeBlocked}
         onSave={() => void previewSettings()}
         onDiscard={discardDraft}
       />

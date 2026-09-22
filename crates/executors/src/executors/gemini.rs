@@ -256,6 +256,12 @@ impl StandardCodingAgentExecutor for Gemini {
     }
 
     fn get_availability_info(&self) -> AvailabilityInfo {
+        if !crate::command::is_command_installed(
+            crate::command::GEMINI_DEFAULT_BASE_COMMAND,
+            &self.cmd,
+        ) {
+            return AvailabilityInfo::NotFound;
+        }
         if let Some(timestamp) = dirs::home_dir()
             .and_then(|home| std::fs::metadata(home.join(".gemini").join("oauth_creds.json")).ok())
             .and_then(|m| m.modified().ok())
@@ -267,20 +273,7 @@ impl StandardCodingAgentExecutor for Gemini {
             };
         }
 
-        let mcp_config_found = self
-            .default_mcp_config_path()
-            .map(|p| p.exists())
-            .unwrap_or(false);
-
-        let installation_indicator_found = dirs::home_dir()
-            .map(|home| home.join(".gemini").join("installation_id").exists())
-            .unwrap_or(false);
-
-        if mcp_config_found || installation_indicator_found {
-            AvailabilityInfo::InstallationFound
-        } else {
-            AvailabilityInfo::NotFound
-        }
+        AvailabilityInfo::InstallationFound
     }
 
     fn get_preset_options(&self) -> ExecutorConfig {

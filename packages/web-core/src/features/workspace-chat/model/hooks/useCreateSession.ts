@@ -1,6 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { sessionsApi } from '@/shared/lib/api';
-import { useHostId } from '@/shared/providers/HostIdProvider';
 import { workspaceSessionKeys } from '@/shared/hooks/workspaceSessionKeys';
 import type {
   Session,
@@ -10,6 +9,7 @@ import type {
 } from 'shared/types';
 
 interface CreateSessionParams {
+  hostId: string | null;
   workspaceId: string;
   prompt: string;
   selectedSkills?: SelectedSkill[];
@@ -24,10 +24,10 @@ interface CreateSessionParams {
  */
 export function useCreateSession() {
   const queryClient = useQueryClient();
-  const hostId = useHostId();
 
   return useMutation({
     mutationFn: async ({
+      hostId,
       workspaceId,
       prompt,
       selectedSkills = [],
@@ -35,9 +35,12 @@ export function useCreateSession() {
       resumeSessionId,
       resumeScopePath,
     }: CreateSessionParams): Promise<Session> => {
-      const session = await sessionsApi.create({
-        workspace_id: workspaceId,
-      });
+      const session = await sessionsApi.create(
+        {
+          workspace_id: workspaceId,
+        },
+        hostId
+      );
 
       const body: CreateFollowUpAttempt = {
         prompt,
@@ -46,11 +49,11 @@ export function useCreateSession() {
         resume_session_id: resumeSessionId || undefined,
         resume_scope_path: resumeScopePath || undefined,
       };
-      await sessionsApi.followUp(session.id, body);
+      await sessionsApi.followUp(session.id, body, hostId);
 
       return session;
     },
-    onSuccess: (session) => {
+    onSuccess: (session, { hostId }) => {
       // Invalidate session queries to refresh the list
       queryClient.invalidateQueries({
         queryKey: workspaceSessionKeys.byWorkspace(

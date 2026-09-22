@@ -32,10 +32,10 @@ sources:
     resource: repo://packages/web-core/src/shared/hooks/useUiPreferencesScratch.ts
   - id: openwiki-source-5ef837b2bc54d286b3dedd8f
     resource: repo://packages/web-core/src/shared/stores/useUiPreferencesStore.ts
-generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
+generated: { by: "codex", at: "2026-09-22T01:26:32.834Z" }
 verified:
   - by: openwiki/0.5.1
-    at: 2026-09-21T08:16:36.701Z
+    at: 2026-09-22T01:26:32.834Z
 ---
 
 # Project・Issue と実施の関係
@@ -97,7 +97,7 @@ Cloud の Attachment は Issue / Comment と Blob の関連を持ち、Session �
 - [Arena](arena.md) により同じ Issue の候補を並べ、設計または実装を比較する。
 - [WorkflowAttempt](workflow-attempt.md) により Issue 専用の編集可能なグラフと実施環境を持つ。
 
-WorkflowAttempt は Project と Issue の所属を検証し、通常のテンプレート一覧から隠す専用 Workflow を作って draft として保存する。Issue のタイトル・本文から起動入力を作る処理は、グラフの定義とは分離されている。[作成契約](../../crates/server/src/routes/workflows.rs#L627-L669)、[入力構築とテスト](../../packages/web-core/src/features/workflow/model/issueWorkflow.test.ts#L8-L25)。実際の操作の順序は [依頼から統合まで](../workflows/task-to-integration.md) にまとめる。
+WorkflowAttempt は Project と Issue の所属を検証し、通常のテンプレート一覧から隠す専用 Workflow を作って draft として保存する。Issue のタイトル・本文から起動入力を作る処理は、グラフの定義とは分離されている。[作成契約](../../crates/server/src/routes/workflows.rs#L632-L677)、[入力構築とテスト](../../packages/web-core/src/features/workflow/model/issueWorkflow.test.ts#L8-L25)。編集内容の競合や下書き保全は [WorkflowAttempt の保存契約](workflow-attempt.md)を、実際の操作の順序は [依頼から統合まで](../workflows/task-to-integration.md)を参照する。
 
 ### 正式統合と Card の完了
 

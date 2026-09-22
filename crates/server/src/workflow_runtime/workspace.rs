@@ -11,6 +11,27 @@ use uuid::Uuid;
 use super::runner::{WorkflowWorkspaceRequest, WorkflowWorkspaceResolver};
 use crate::{DeploymentImpl, error::ApiError};
 
+/// Resolve the filesystem only at Agent dispatch, never while viewing/editing
+/// an attempt. Internal executions are prepared by their owner and must not
+/// silently recreate a missing worktree or repeat OpenWiki setup.
+pub(super) async fn agent_workspace_path<F, Fut>(
+    pool: &SqlitePool,
+    workspace: &Workspace,
+    ensure_interactive: F,
+) -> Result<String, ApiError>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<String, ApiError>>,
+{
+    if workspace.is_execution_only() {
+        return services::services::workspace_usage::inspection_root(workspace)
+            .map(|path| path.to_string_lossy().into_owned())
+            .map_err(|error| ApiError::BadRequest(format!("{error:#}")));
+    }
+    db::models::integration::guard_workspace(pool, workspace.id).await?;
+    ensure_interactive().await
+}
+
 pub fn main_workflow_branch_name(issue_id: Uuid, run_id: Uuid) -> String {
     format!("vk/{issue_id}-wf-{}", short_run_id(run_id))
 }
@@ -238,6 +259,140 @@ mod tests {
     use uuid::Uuid;
 
     use super::{project_workspace_repos_from_db, upsert_workflow_workspace_link};
+
+    #[tokio::test]
+    async fn agent_dispatch_materializes_a_lazy_workflow_workspace() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("../db/migrations").run(&pool).await.unwrap();
+        let workspace = db::models::workspace::Workspace::create(
+            &pool,
+            &db::models::workspace::CreateWorkspace {
+                branch: "fixture/workflow".into(),
+                name: None,
+            },
+            Uuid::new_v4(),
+        )
+        .await
+        .unwrap();
+        assert!(workspace.container_ref.is_none());
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("prepared-workspace");
+        let result = super::agent_workspace_path(&pool, &workspace, || async {
+            std::fs::create_dir(&root).unwrap();
+            let path = root.to_string_lossy().into_owned();
+            db::models::workspace::Workspace::update_container_ref(&pool, workspace.id, &path)
+                .await?;
+            Ok(path)
+        })
+        .await
+        .unwrap();
+        assert_eq!(std::path::Path::new(&result), root);
+        assert!(root.is_dir());
+        assert_eq!(
+            db::models::workspace::Workspace::find_by_id(&pool, workspace.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .container_ref
+                .as_deref(),
+            Some(result.as_str())
+        );
+
+        // A subsequent dispatch delegates to the same idempotent container
+        // service (including direct-folder validation), not a cached path.
+        let loaded = db::models::workspace::Workspace::find_by_id(&pool, workspace.id)
+            .await
+            .unwrap()
+            .unwrap();
+        let called = std::cell::Cell::new(false);
+        super::agent_workspace_path(&pool, &loaded, || async {
+            called.set(true);
+            Ok(result.clone())
+        })
+        .await
+        .unwrap();
+        assert!(called.get());
+    }
+
+    #[tokio::test]
+    async fn agent_workspace_rejects_reserved_and_never_recreates_internal_execution() {
+        use db::models::workspace::{CreateWorkspace, Workspace};
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("../db/migrations").run(&pool).await.unwrap();
+        let mut workspace = Workspace::create(
+            &pool,
+            &CreateWorkspace {
+                branch: "fixture/reserved".into(),
+                name: None,
+            },
+            Uuid::new_v4(),
+        )
+        .await
+        .unwrap();
+        // The reservation's foreign-key owner is immaterial to this admission
+        // check; keep this fixture focused on the actual guard query.
+        sqlx::query("PRAGMA foreign_keys=OFF")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO integration_reservations(resource_kind,resource_key,run_id) VALUES ('workspace',?,?)")
+            .bind(db::models::integration::resource_key(workspace.id)).bind(Uuid::new_v4())
+            .execute(&pool).await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        workspace.container_ref = Some(temp.path().to_string_lossy().into_owned());
+        let called = std::cell::Cell::new(false);
+        assert!(
+            super::agent_workspace_path(&pool, &workspace, || async {
+                called.set(true);
+                Ok("must-not-be-created".into())
+            })
+            .await
+            .is_err()
+        );
+        assert!(!called.get());
+
+        let mut internal = workspace.clone();
+        internal.usage = db::models::workspace_usage::WorkspaceUsage::ExecutionOnly;
+        internal.container_ref = None;
+        assert!(
+            super::agent_workspace_path(&pool, &internal, || async {
+                called.set(true);
+                Ok("must-not-be-recreated".into())
+            })
+            .await
+            .is_err()
+        );
+        assert!(!called.get());
+        internal.container_ref = Some(temp.path().to_string_lossy().into_owned());
+        assert_eq!(
+            super::agent_workspace_path(&pool, &internal, || async {
+                called.set(true);
+                Ok("must-not-run-setup".into())
+            })
+            .await
+            .unwrap(),
+            internal.container_ref.clone().unwrap()
+        );
+        assert!(!called.get());
+        internal.worktree_deleted = true;
+        assert!(
+            super::agent_workspace_path(&pool, &internal, || async {
+                called.set(true);
+                Ok("must-not-revive".into())
+            })
+            .await
+            .is_err()
+        );
+        assert!(!called.get());
+    }
 
     async fn setup_repo_defaults_pool() -> SqlitePool {
         let pool = SqlitePoolOptions::new()

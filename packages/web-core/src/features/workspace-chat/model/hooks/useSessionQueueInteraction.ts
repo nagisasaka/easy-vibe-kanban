@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { queueApi } from '@/shared/lib/api';
 import type { ExecutorConfig, QueueStatus, SelectedSkill } from 'shared/types';
+import { useHostId } from '@/shared/providers/HostIdProvider';
 
 interface UseSessionQueueInteractionOptions {
   /** Session ID for queue operations */
@@ -39,12 +40,13 @@ export function useSessionQueueInteraction({
   sessionId,
 }: UseSessionQueueInteractionOptions): UseSessionQueueInteractionResult {
   const queryClient = useQueryClient();
+  const hostId = useHostId();
 
   // Query for queue status
   const { data: queueStatus = { status: 'empty' as const }, refetch } =
     useQuery<QueueStatus>({
-      queryKey: [QUEUE_STATUS_KEY, sessionId],
-      queryFn: () => queueApi.getStatus(sessionId!),
+      queryKey: [QUEUE_STATUS_KEY, hostId, sessionId],
+      queryFn: () => queueApi.getStatus(sessionId!, hostId),
       enabled: !!sessionId,
     });
 
@@ -59,29 +61,43 @@ export function useSessionQueueInteraction({
   // Mutation for queueing a message
   const queueMutation = useMutation({
     mutationFn: ({
+      hostId,
+      sessionId,
       message,
       executorConfig,
       selectedSkills,
     }: {
+      hostId: string | null;
+      sessionId: string;
       message: string;
       executorConfig: ExecutorConfig;
       selectedSkills?: SelectedSkill[];
     }) =>
-      queueApi.queue(sessionId!, {
-        message,
-        executor_config: executorConfig,
-        selected_skills: selectedSkills,
-      }),
-    onSuccess: (status) => {
-      queryClient.setQueryData([QUEUE_STATUS_KEY, sessionId], status);
+      queueApi.queue(
+        sessionId,
+        {
+          message,
+          executor_config: executorConfig,
+          selected_skills: selectedSkills,
+        },
+        hostId
+      ),
+    onSuccess: (status, { hostId, sessionId }) => {
+      queryClient.setQueryData([QUEUE_STATUS_KEY, hostId, sessionId], status);
     },
   });
 
   // Mutation for cancelling the queue
   const cancelMutation = useMutation({
-    mutationFn: () => queueApi.cancel(sessionId!),
-    onSuccess: (status) => {
-      queryClient.setQueryData([QUEUE_STATUS_KEY, sessionId], status);
+    mutationFn: ({
+      hostId,
+      sessionId,
+    }: {
+      hostId: string | null;
+      sessionId: string;
+    }) => queueApi.cancel(sessionId, hostId),
+    onSuccess: (status, { hostId, sessionId }) => {
+      queryClient.setQueryData([QUEUE_STATUS_KEY, hostId, sessionId], status);
     },
   });
 
@@ -93,18 +109,20 @@ export function useSessionQueueInteraction({
     ) => {
       if (!sessionId) return;
       await queueMutation.mutateAsync({
+        hostId,
+        sessionId,
         message,
         executorConfig,
         selectedSkills,
       });
     },
-    [sessionId, queueMutation]
+    [sessionId, hostId, queueMutation]
   );
 
   const cancelQueue = useCallback(async () => {
     if (!sessionId) return;
-    await cancelMutation.mutateAsync();
-  }, [sessionId, cancelMutation]);
+    await cancelMutation.mutateAsync({ hostId, sessionId });
+  }, [sessionId, hostId, cancelMutation]);
 
   const refreshQueueStatus = useCallback(async () => {
     if (!sessionId) return;

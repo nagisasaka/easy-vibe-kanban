@@ -31,6 +31,8 @@ const DISABLED_STORE_VERSION: u32 = 1;
 const MAX_SKILL_FILES: usize = 256;
 const MAX_SKILL_BYTES: usize = 10 * 1024 * 1024;
 
+pub mod public_api;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentToolProvider {
@@ -445,6 +447,9 @@ impl AgentToolService {
     }
 
     pub fn create(&self, request: CreateAgentToolRequest) -> Result<AgentTool, AgentToolError> {
+        let _guard = crate::config_write::NATIVE_SETTINGS_WRITE_LOCK
+            .lock()
+            .map_err(|_| AgentToolError::VerificationFailed("native write lock".into()))?;
         validate_locator(&request.target)?;
         if request.target.kind != request.definition.kind() {
             return Err(AgentToolError::InvalidRequest(
@@ -455,6 +460,9 @@ impl AgentToolService {
     }
 
     pub fn update(&self, request: UpdateAgentToolRequest) -> Result<AgentTool, AgentToolError> {
+        let _guard = crate::config_write::NATIVE_SETTINGS_WRITE_LOCK
+            .lock()
+            .map_err(|_| AgentToolError::VerificationFailed("native write lock".into()))?;
         validate_locator(&request.target)?;
         if request.target.kind != request.definition.kind() {
             return Err(AgentToolError::InvalidRequest(
@@ -465,6 +473,9 @@ impl AgentToolService {
     }
 
     pub fn remove(&self, request: RemoveAgentToolRequest) -> Result<(), AgentToolError> {
+        let _guard = crate::config_write::NATIVE_SETTINGS_WRITE_LOCK
+            .lock()
+            .map_err(|_| AgentToolError::VerificationFailed("native write lock".into()))?;
         validate_locator(&request.target)?;
         self.manager_for_locator(&request.target).remove(request)
     }
@@ -473,6 +484,9 @@ impl AgentToolService {
         &self,
         request: ToggleAgentToolRequest,
     ) -> Result<AgentTool, AgentToolError> {
+        let _guard = crate::config_write::NATIVE_SETTINGS_WRITE_LOCK
+            .lock()
+            .map_err(|_| AgentToolError::VerificationFailed("native write lock".into()))?;
         validate_locator(&request.target)?;
         self.manager_for_locator(&request.target)
             .set_enabled(request)
@@ -522,7 +536,7 @@ impl AgentToolService {
             expected_revision: request.target_expected_revision,
         })?;
         let warnings = if source.provider != request.target_provider && !source_metadata.is_null() {
-            vec!["Provider-specific source fields were retained as copy metadata and were not written to the target provider.".into()]
+            vec!["Provider-specific fields remain at the source and were not written to the target provider.".into()]
         } else {
             Vec::new()
         };
@@ -668,7 +682,7 @@ impl ProviderToolManager {
             AgentToolDefinition::McpServer(definition) => {
                 validate_mcp_definition(definition)?;
                 let path = self.resolve_mcp_path(&request.target, false)?;
-                self.write_mcp_entry(&path, &request.target.name, Some(definition))?;
+                self.write_mcp_entry(&path, &request.target.name, Some(definition), None)?;
             }
             AgentToolDefinition::Skill(definition) => {
                 let root = self.skill_root(request.target.scope)?;
@@ -696,6 +710,7 @@ impl ProviderToolManager {
                     Path::new(&current.native_path),
                     &request.target.name,
                     Some(definition),
+                    Some(&current.revision),
                 )?;
             }
             AgentToolDefinition::Skill(definition) => {
@@ -715,9 +730,12 @@ impl ProviderToolManager {
             return Ok(());
         }
         match current.kind {
-            AgentToolKind::McpServer => {
-                self.write_mcp_entry(Path::new(&current.native_path), &request.target.name, None)?
-            }
+            AgentToolKind::McpServer => self.write_mcp_entry(
+                Path::new(&current.native_path),
+                &request.target.name,
+                None,
+                Some(&current.revision),
+            )?,
             AgentToolKind::Skill => {
                 validate_skill_tree(Path::new(&current.native_path))?;
                 fs::remove_dir_all(&current.native_path)?;
@@ -757,6 +775,7 @@ impl ProviderToolManager {
                 Path::new(&current.native_path),
                 &request.target.name,
                 Some(&definition),
+                Some(&current.revision),
             )?;
             return self.find(&request.target);
         }
@@ -910,9 +929,14 @@ impl ProviderToolManager {
             .into_iter()
             .filter(|path| path.is_file())
         {
-            match read_native_config(&path, self.provider) {
-                Ok(config) => {
-                    let revision = hash_file(&path)?;
+            match fs::read_to_string(&path)
+                .map_err(AgentToolError::Io)
+                .and_then(|content| {
+                    let revision = format!("{:x}", Sha256::digest(content.as_bytes()));
+                    parse_native_config(&content, &path, self.provider)
+                        .map(|config| (config, revision))
+                }) {
+                Ok((config, revision)) => {
                     let config = config.as_object().ok_or_else(|| {
                         AgentToolError::InvalidConfiguration(format!(
                             "{} root must be an object",
@@ -1113,6 +1137,7 @@ impl ProviderToolManager {
         path: &Path,
         name: &str,
         definition: Option<&McpServerDefinition>,
+        expected_revision: Option<&str>,
     ) -> Result<(), AgentToolError> {
         validate_name(name)?;
         let parent = path.parent().ok_or_else(|| {
@@ -1124,6 +1149,18 @@ impl ProviderToolManager {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
             Err(error) => return Err(AgentToolError::Io(error)),
         };
+        if let Some(expected) = expected_revision {
+            ensure_revision(
+                &format!("{:x}", Sha256::digest(current.as_bytes())),
+                expected,
+            )?;
+        } else if parse_native_config(&current, path, self.provider)?
+            .get(mcp_servers_key(self.provider))
+            .and_then(Value::as_object)
+            .is_some_and(|servers| servers.contains_key(name))
+        {
+            return Err(AgentToolError::Collision(name.into()));
+        }
         let output = if self.provider == AgentToolProvider::Codex {
             let mut document = if current.trim().is_empty() {
                 toml_edit::DocumentMut::new()
@@ -1189,6 +1226,16 @@ impl ProviderToolManager {
                     .map_err(|error| AgentToolError::InvalidConfiguration(error.to_string()))?
             }
         };
+        // Cooperating writers share NATIVE_SETTINGS_WRITE_LOCK. An external
+        // edit observed during rendering must not be overwritten either.
+        let observed = match fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(error) => return Err(AgentToolError::Io(error)),
+        };
+        if observed != current {
+            return Err(AgentToolError::StaleRevision);
+        }
         atomic_write(path, output.as_bytes())?;
 
         let observed = read_native_config(path, self.provider)?;
@@ -1226,9 +1273,12 @@ impl ProviderToolManager {
                     return Err(AgentToolError::Collision(locator.name.clone()));
                 }
                 atomic_write_json(&record_path, &record)?;
-                if let Err(error) =
-                    self.write_mcp_entry(Path::new(&current.native_path), &locator.name, None)
-                {
+                if let Err(error) = self.write_mcp_entry(
+                    Path::new(&current.native_path),
+                    &locator.name,
+                    None,
+                    Some(&current.revision),
+                ) {
                     let _ = fs::remove_file(record_path);
                     return Err(error);
                 }
@@ -1277,7 +1327,7 @@ impl ProviderToolManager {
                         "disabled MCP record contains the wrong kind".into(),
                     ));
                 };
-                self.write_mcp_entry(&target_path, &locator.name, Some(&definition))?;
+                self.write_mcp_entry(&target_path, &locator.name, Some(&definition), None)?;
                 fs::remove_file(record_path)?;
             }
             AgentToolKind::Skill => {
@@ -1394,20 +1444,28 @@ fn is_jsonc(path: &Path) -> bool {
 
 fn read_native_config(path: &Path, provider: AgentToolProvider) -> Result<Value, AgentToolError> {
     let content = fs::read_to_string(path)?;
+    parse_native_config(&content, path, provider)
+}
+
+fn parse_native_config(
+    content: &str,
+    path: &Path,
+    provider: AgentToolProvider,
+) -> Result<Value, AgentToolError> {
     if content.trim().is_empty() {
         return Ok(Value::Object(Map::new()));
     }
     if provider == AgentToolProvider::Codex {
-        let value: toml::Value = toml::from_str(&content)
+        let value: toml::Value = toml::from_str(content)
             .map_err(|error| AgentToolError::InvalidConfiguration(error.to_string()))?;
         serde_json::to_value(value)
             .map_err(|error| AgentToolError::InvalidConfiguration(error.to_string()))
     } else if is_jsonc(path) {
-        jsonc_parser::parse_to_serde_value(&content, &ParseOptions::default())
+        jsonc_parser::parse_to_serde_value(content, &ParseOptions::default())
             .map_err(|error| AgentToolError::InvalidConfiguration(error.to_string()))?
             .ok_or_else(|| AgentToolError::InvalidConfiguration("empty JSONC document".into()))
     } else {
-        serde_json::from_str(&content)
+        serde_json::from_str(content)
             .map_err(|error| AgentToolError::InvalidConfiguration(error.to_string()))
     }
 }
@@ -2151,13 +2209,22 @@ mod tests {
             unreachable!()
         };
         manager
-            .write_mcp_entry(&path, "added", Some(&definition))
+            .write_mcp_entry(&path, "added", Some(&definition), None)
             .unwrap();
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("// keep me"));
         assert!(content.contains("\"theme\": \"dark\""));
         assert!(content.contains("\"existing\""));
         assert!(content.contains("\"added\""));
+        assert!(matches!(
+            manager.write_mcp_entry(&path, "added", None, Some("stale")),
+            Err(AgentToolError::StaleRevision)
+        ));
+        assert!(matches!(
+            manager.write_mcp_entry(&path, "added", Some(&definition), None),
+            Err(AgentToolError::Collision(_))
+        ));
+        assert_eq!(fs::read_to_string(&path).unwrap(), content);
     }
 
     #[test]

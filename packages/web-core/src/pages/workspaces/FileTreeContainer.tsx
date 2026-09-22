@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { FileTree } from '@vibe/ui/components/FileTree';
 import {
@@ -17,6 +18,8 @@ import {
   useGetFilesWithGitHubComments,
   useGetFirstCommentLineForFile,
   useIsGitHubCommentsLoading,
+  useDiffError,
+  useIsDiffInitialized,
 } from '@/shared/stores/useWorkspaceDiffStore';
 import { useChangesView } from '@/shared/hooks/useChangesView';
 import { getFileIcon } from '@/shared/lib/fileTypeIcon';
@@ -35,6 +38,9 @@ export function FileTreeContainer({
   diffs,
   className,
 }: FileTreeContainerProps) {
+  const { t } = useTranslation('common');
+  const error = useDiffError();
+  const isInitialized = useIsDiffInitialized();
   const { theme } = useTheme();
   const actualTheme = getActualTheme(theme);
 
@@ -193,7 +199,7 @@ export function FileTreeContainer({
     [actualTheme]
   );
 
-  return (
+  const tree = (
     <FileTree
       nodes={filteredTree}
       collapsedPaths={collapsedPaths}
@@ -215,4 +221,26 @@ export function FileTreeContainer({
       hasFilesWithComments={filesWithComments.length > 0}
     />
   );
+
+  // An empty fallback array is not a successful empty snapshot. Keep cached
+  // files usable after a failed refresh, but label their possibly stale state.
+  if (error) {
+    return (
+      <>
+        <div role="alert" className="p-base text-error text-sm">
+          {t('arena.errors.diffStream', { message: error })}
+          {isInitialized && <p>{t('empty.cachedChanges')}</p>}
+        </div>
+        {isInitialized && diffs.length > 0 ? tree : null}
+      </>
+    );
+  }
+  if (!isInitialized) {
+    return (
+      <div role="status" className="p-base text-low text-sm">
+        {t('states.loading')}
+      </div>
+    );
+  }
+  return tree;
 }

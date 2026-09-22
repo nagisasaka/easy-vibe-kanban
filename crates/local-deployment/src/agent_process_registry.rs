@@ -139,6 +139,47 @@ pub(crate) struct AgentProcessRegistry {
 }
 
 impl AgentProcessRegistry {
+    pub(crate) async fn observe_provider(
+        &self,
+        pid: u32,
+        process_group_id: Option<u32>,
+    ) -> io::Result<RegisteredProcessPresence> {
+        observe_os_process(&RegisteredAgentProcess::new(
+            Uuid::nil(),
+            None,
+            None,
+            None,
+            pid,
+            process_group_id,
+            None,
+        ))
+        .await
+    }
+
+    /// Observation only, never signals or removes a process. Where supported,
+    /// a different boot/start identity proves the original host has exited,
+    /// without treating its reused PID as permission to kill the new process.
+    pub(crate) async fn observe_host(
+        &self,
+        pid: u32,
+        expected_start: Option<&str>,
+    ) -> io::Result<RegisteredProcessPresence> {
+        if let Some(expected) = expected_start {
+            match process_start_identity(pid) {
+                Ok(Some(current)) if current != expected => {
+                    return Ok(RegisteredProcessPresence::Exited);
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    return Ok(RegisteredProcessPresence::Exited);
+                }
+                Err(error) => return Err(error),
+                _ => {}
+            }
+        }
+        let process = RegisteredAgentProcess::new(Uuid::nil(), None, None, None, pid, None, None);
+        observe_os_process(&process).await
+    }
+
     pub(crate) fn default() -> Self {
         Self::new(default_registry_path())
     }
@@ -713,6 +754,27 @@ fn default_registry_path() -> PathBuf {
     utils::assets::asset_dir()
         .join("runtime")
         .join(REGISTRY_FILE_NAME)
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn process_start_identity(pid: u32) -> io::Result<Option<String>> {
+    let boot = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")?;
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
+    let (_, fields) = stat
+        .rsplit_once(')')
+        .ok_or_else(|| io::Error::other("invalid process stat"))?;
+    // fields starts at field 3 (state), starttime is field 22. comm may contain
+    // spaces and parentheses, hence split after the last closing parenthesis.
+    let start = fields
+        .split_whitespace()
+        .nth(19)
+        .ok_or_else(|| io::Error::other("missing process start time"))?;
+    Ok(Some(format!("{}:{start}", boot.trim())))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn process_start_identity(_pid: u32) -> io::Result<Option<String>> {
+    Ok(None)
 }
 
 fn temp_registry_path(path: &Path) -> PathBuf {

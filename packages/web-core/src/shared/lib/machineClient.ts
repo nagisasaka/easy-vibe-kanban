@@ -1,43 +1,47 @@
 import type {
   AgentSettingOperationError,
   AgentSettingsDiscoveryQuery,
-  AgentSettingsInventory,
+  AgentSettingsInventoryView as AgentSettingsInventory,
   AgentSettingsProfilesQuery,
-  ApplyConfigProfileRequest,
+  ConfirmProfileApplyRequest as ApplyConfigProfileRequest,
   ApplyNativeFileRequest,
   ApplySettingsRequest,
-  AgentToolInventory,
+  AgentToolInventoryView as AgentToolInventory,
   AgentToolLocator,
   AgentToolOperationError,
   AgentToolRevealResponse,
-  AgentTool,
+  AgentToolView as AgentTool,
+  AgentToolDefinition,
+  ReadAgentToolDefinitionRequest,
   CopyAgentToolRequest,
-  CopyAgentToolResponse,
-  CopyProfilePreviewRequest,
-  ConfigProfile,
-  CreateAgentToolRequest,
-  DeleteConfigProfileRequest,
-  DuplicateConfigProfileRequest,
+  CopyAgentToolView as CopyAgentToolResponse,
+  CopyProfileWriteRequest as CopyProfilePreviewRequest,
+  ConfigProfileView as ConfigProfile,
+  CreateAgentToolWriteRequest as CreateAgentToolRequest,
   Config,
   GetMcpServerResponse,
   GitBranch,
   McpServerQuery,
-  NativeFilePatch,
-  ProfileApplyPreviewRequest,
-  ProfileCopyPreview,
+  NativeSettingsEditRequest,
+  ReadNativeSettingsRequest,
+  NativeConfigFile,
+  ProfileApplyRequest as ProfileApplyPreviewRequest,
+  ProfileCopyPreviewView as ProfileCopyPreview,
   Repo,
   RepositoryMemoryState,
   ConfigureRepositoryMemory,
-  SaveConfigProfileRequest,
+  WriteConfigProfileRequest as SaveConfigProfileRequest,
   SettingsDiff,
   SettingsPatch,
-  SettingsSnapshot,
+  SettingsSnapshotView as SettingsSnapshot,
   UpdateMcpServersBody,
-  UpdateAgentToolRequest,
+  UpdateAgentToolWriteRequest as UpdateAgentToolRequest,
   RemoveAgentToolRequest,
   ToggleAgentToolRequest,
   UpdateRepo,
   UserSystemInfo,
+  ProfilesContent,
+  ReplaceProfilesRequest,
 } from 'shared/types';
 import type { AppRuntime } from '@/shared/hooks/useAppRuntime';
 import { handleApiResponse } from './api';
@@ -79,8 +83,8 @@ export interface MachineClient {
     display_name?: string;
   }) => Promise<Repo>;
   getRepoBranches: (repoId: string) => Promise<GitBranch[]>;
-  loadProfiles: () => Promise<{ content: string; path: string }>;
-  saveProfiles: (content: string) => Promise<string>;
+  loadProfiles: (confirmedSensitiveRead?: boolean) => Promise<ProfilesContent>;
+  saveProfiles: (request: ReplaceProfilesRequest) => Promise<ProfilesContent>;
   loadMcpServers: (query: McpServerQuery) => Promise<GetMcpServerResponse>;
   saveMcpServers: (
     query: McpServerQuery,
@@ -93,12 +97,20 @@ export interface MachineClient {
   toggleAgentTool: (data: ToggleAgentToolRequest) => Promise<AgentTool>;
   copyAgentTool: (data: CopyAgentToolRequest) => Promise<CopyAgentToolResponse>;
   revealAgentTool: (data: AgentToolLocator) => Promise<AgentToolRevealResponse>;
+  readAgentToolDefinition: (
+    data: ReadAgentToolDefinitionRequest
+  ) => Promise<AgentToolDefinition>;
   discoverAgentSettings: (
     query?: Partial<AgentSettingsDiscoveryQuery>
   ) => Promise<AgentSettingsInventory>;
   diffAgentSettings: (data: SettingsPatch) => Promise<SettingsDiff>;
   applyAgentSettings: (data: ApplySettingsRequest) => Promise<SettingsSnapshot>;
-  diffAgentSettingsNativeFile: (data: NativeFilePatch) => Promise<SettingsDiff>;
+  diffAgentSettingsNativeFile: (
+    data: NativeSettingsEditRequest
+  ) => Promise<SettingsDiff>;
+  readAgentSettingsNativeFile: (
+    data: ReadNativeSettingsRequest
+  ) => Promise<NativeConfigFile>;
   applyAgentSettingsNativeFile: (
     data: ApplyNativeFileRequest
   ) => Promise<SettingsSnapshot>;
@@ -107,13 +119,7 @@ export interface MachineClient {
   ) => Promise<ConfigProfile[]>;
   saveAgentSettingsProfile: (
     data: SaveConfigProfileRequest
-  ) => Promise<ConfigProfile>;
-  deleteAgentSettingsProfile: (
-    data: DeleteConfigProfileRequest
-  ) => Promise<void>;
-  duplicateAgentSettingsProfile: (
-    data: DuplicateConfigProfileRequest
-  ) => Promise<ConfigProfile>;
+  ) => Promise<ConfigProfile | null>;
   previewAgentSettingsProfileCopy: (
     data: CopyProfilePreviewRequest
   ) => Promise<ProfileCopyPreview>;
@@ -172,7 +178,7 @@ function getMachineRequestOptions(
   };
 }
 
-async function makeMachineRequest(
+async function sendMachineRequest(
   runtime: AppRuntime,
   target: MachineTarget,
   path: string,
@@ -192,9 +198,25 @@ async function makeMachineRequest(
 
 export function createMachineClient(
   runtime: AppRuntime,
-  target: MachineTarget
+  target: MachineTarget,
+  canMutate: () => boolean = () => true
 ): MachineClient {
   const queryScopeKey = ['machine', target.id] as const;
+  const makeMachineRequest = (
+    requestRuntime: AppRuntime,
+    requestTarget: MachineTarget,
+    path: string,
+    options: RequestInit = {}
+  ) => {
+    if ((options.method ?? 'GET') !== 'GET' && !canMutate()) {
+      return Promise.reject(
+        new Error(
+          'The selected Host is unavailable or changed. No settings were written.'
+        )
+      );
+    }
+    return sendMachineRequest(requestRuntime, requestTarget, path, options);
+  };
 
   return {
     target,
@@ -266,22 +288,29 @@ export function createMachineClient(
           `/api/repos/${repoId}/branches`
         )
       ),
-    loadProfiles: async () =>
-      handleApiResponse<{ content: string; path: string }>(
-        await makeMachineRequest(runtime, target, '/api/profiles')
+    loadProfiles: async (confirmedSensitiveRead = false) =>
+      handleApiResponse<ProfilesContent>(
+        await makeMachineRequest(
+          runtime,
+          target,
+          `/api/profiles?confirmed_sensitive_read=${confirmedSensitiveRead}`
+        )
       ),
-    saveProfiles: async (content) =>
-      handleApiResponse<string>(
+    saveProfiles: async (request) =>
+      handleApiResponse<ProfilesContent>(
         await makeMachineRequest(runtime, target, '/api/profiles', {
           method: 'PUT',
-          body: content,
+          body: JSON.stringify(request),
           headers: {
             'Content-Type': 'application/json',
           },
         })
       ),
     loadMcpServers: async (query) => {
-      const params = new URLSearchParams(query);
+      const params = new URLSearchParams({
+        executor: query.executor,
+        confirmed_sensitive_read: String(query.confirmed_sensitive_read),
+      });
       return handleApiResponse<GetMcpServerResponse>(
         await makeMachineRequest(
           runtime,
@@ -291,7 +320,10 @@ export function createMachineClient(
       );
     },
     saveMcpServers: async (query, data) => {
-      const params = new URLSearchParams(query);
+      const params = new URLSearchParams({
+        executor: query.executor,
+        confirmed_sensitive_read: String(query.confirmed_sensitive_read),
+      });
       await handleApiResponse<void>(
         await makeMachineRequest(
           runtime,
@@ -354,6 +386,18 @@ export function createMachineClient(
           body: JSON.stringify(data),
         })
       ),
+    readAgentToolDefinition: async (data) =>
+      handleApiResponse<AgentToolDefinition, AgentToolOperationError>(
+        await makeMachineRequest(
+          runtime,
+          target,
+          '/api/agent-tools/read-definition',
+          {
+            method: 'POST',
+            body: JSON.stringify(data),
+          }
+        )
+      ),
     discoverAgentSettings: async (query = {}) => {
       const params = new URLSearchParams();
       if (query.provider) params.set('provider', query.provider);
@@ -397,6 +441,18 @@ export function createMachineClient(
           }
         )
       ),
+    readAgentSettingsNativeFile: async (data) =>
+      handleApiResponse<NativeConfigFile, AgentSettingOperationError>(
+        await makeMachineRequest(
+          runtime,
+          target,
+          '/api/agent-settings/native-file/read',
+          {
+            method: 'POST',
+            body: JSON.stringify(data),
+          }
+        )
+      ),
     applyAgentSettingsNativeFile: async (data) =>
       handleApiResponse<SettingsSnapshot, AgentSettingOperationError>(
         await makeMachineRequest(
@@ -423,35 +479,11 @@ export function createMachineClient(
       );
     },
     saveAgentSettingsProfile: async (data) =>
-      handleApiResponse<ConfigProfile, AgentSettingOperationError>(
+      handleApiResponse<ConfigProfile | null, AgentSettingOperationError>(
         await makeMachineRequest(
           runtime,
           target,
           '/api/agent-settings/profiles',
-          {
-            method: 'POST',
-            body: JSON.stringify(data),
-          }
-        )
-      ),
-    deleteAgentSettingsProfile: async (data) =>
-      handleApiResponse<void, AgentSettingOperationError>(
-        await makeMachineRequest(
-          runtime,
-          target,
-          '/api/agent-settings/profiles/delete',
-          {
-            method: 'POST',
-            body: JSON.stringify(data),
-          }
-        )
-      ),
-    duplicateAgentSettingsProfile: async (data) =>
-      handleApiResponse<ConfigProfile, AgentSettingOperationError>(
-        await makeMachineRequest(
-          runtime,
-          target,
-          '/api/agent-settings/profiles/duplicate',
           {
             method: 'POST',
             body: JSON.stringify(data),

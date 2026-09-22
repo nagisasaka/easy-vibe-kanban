@@ -384,6 +384,7 @@
     "chooseExistingRepo": "ファイルシステムから既存のリポジトリを選択してください"
   },
   "empty": {
+    "cachedChanges": "最後に取得した差分を表示しています。最新の状態とは異なる可能性があります。",
     "noChanges": "表示する変更がありません"
   },
   "commandBar": {
@@ -753,7 +754,25 @@
     },
     "draft": {
       "name": "Workflow attempt for {{title}}",
-      "untitledTask": "Untitled task"
+      "untitledTask": "Untitled task",
+      "undo": "Workflowの編集を元に戻す (Ctrl/Cmd+Z)",
+      "redo": "Workflowの編集をやり直す (Ctrl/Cmd+Shift+Z)",
+      "leaveTitle": "未保存のWorkflowから離れますか？",
+      "leaveDescription": "下書きを保存するか、破棄するか、編集を続けてください。保存に失敗しても編集内容は失われません。",
+      "keepEditing": "編集を続ける",
+      "discardLeave": "破棄して離れる",
+      "saveLeave": "保存して離れる",
+      "saveUnavailable": "保存中、または読み取り専用のため保存できません。",
+      "saveFailed": "保存できなかったか、その後の編集が未保存です。下書きは保持しています。",
+      "retry": "再取得する",
+      "newerChanges": "送信した版は保存されました。その後の編集は未保存です。実行や画面移動の前に再度保存してください。",
+      "conflict": "別の編集画面で新しい版が保存されました。下書きは保持しています。必要な変更をコピーしてから下書きを破棄すると、最新の版を読み込めます。",
+      "unsaved": "Workflowに未保存の変更があります",
+      "storageFailed": "このタブに下書きを保存できませんでした。画面を閉じず、変更を保存またはコピーしてください。",
+      "cachedReadOnly": "Workflowの再取得に失敗しました。保持している下書きは閲覧できますが、編集・実行はできません。",
+      "discardTitle": "この下書きを破棄しますか？",
+      "discardDescription": "下書きとUndo履歴を、最後に取得したサーバー上の版に置き換えます。残したい変更は先にコピーしてください。",
+      "discard": "下書きを破棄"
     },
     "defaultGraph": {
       "familiarizeLabel": "Understand project",

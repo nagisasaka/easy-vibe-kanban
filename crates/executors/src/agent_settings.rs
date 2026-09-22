@@ -29,6 +29,8 @@ use crate::{
 
 pub const SETTINGS_PROFILE_STORE_VERSION: u16 = 1;
 
+pub mod public_api;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(use_ts_enum)]
@@ -779,16 +781,20 @@ impl AgentSettingsService {
             .find(|profile| profile.id == request.id)
             .ok_or_else(|| AgentSettingError::NotFound(request.id.to_string()))?;
         let target_descriptors = self.manager(request.target_provider, None).descriptors();
-        let target_keys: BTreeSet<_> = target_descriptors
+        let target_keys: BTreeMap<_, _> = target_descriptors
             .iter()
             .filter(|descriptor| descriptor.capabilities.profile_storable)
-            .map(|descriptor| descriptor.key.id())
+            .map(|descriptor| (descriptor.key.id(), descriptor))
             .collect();
         let mut setting_overrides = BTreeMap::new();
         let mut compatible_keys = Vec::new();
         let mut skipped_keys = Vec::new();
         for (key, value) in source.setting_overrides {
-            if key.starts_with("common.") && target_keys.contains(&key) {
+            if key.starts_with("common.")
+                && target_keys
+                    .get(&key)
+                    .is_some_and(|descriptor| validate_setting_value(descriptor, &value).is_ok())
+            {
                 compatible_keys.push(key.clone());
                 setting_overrides.insert(key, value);
             } else {
@@ -1234,6 +1240,9 @@ impl ProviderSettingsManager {
     }
 
     pub fn apply(&self, patch: &SettingsPatch) -> Result<SettingsSnapshot, AgentSettingError> {
+        let _guard = crate::config_write::NATIVE_SETTINGS_WRITE_LOCK
+            .lock()
+            .map_err(|_| AgentSettingError::VerificationFailed("native write lock".into()))?;
         let rendered = self.render_patch(patch)?;
         write_all_or_restore(&rendered)?;
         match self.discover().and_then(|snapshot| {
@@ -1280,6 +1289,9 @@ impl ProviderSettingsManager {
         &self,
         patch: &NativeFilePatch,
     ) -> Result<SettingsSnapshot, AgentSettingError> {
+        let _guard = crate::config_write::NATIVE_SETTINGS_WRITE_LOCK
+            .lock()
+            .map_err(|_| AgentSettingError::VerificationFailed("native write lock".into()))?;
         let rendered = self.render_native_file(patch)?;
         write_all_or_restore(std::slice::from_ref(&rendered))?;
         let result = (|| {
@@ -1578,6 +1590,8 @@ fn codex_descriptors() -> Vec<SettingDescriptor> {
                 ("medium", "Medium"),
                 ("high", "High"),
                 ("xhigh", "Extra high"),
+                ("max", "Max"),
+                ("ultra", "Ultra"),
             ],
         ),
         select_options(
@@ -2055,14 +2069,14 @@ fn render_toml(
             ));
         }
         let (parents, leaf) = path.split_at(path.len() - 1);
-        let mut table = document.as_table_mut();
+        let mut table: &mut dyn toml_edit::TableLike = document.as_table_mut();
         for segment in parents {
             if !table.contains_key(segment) {
                 table.insert(segment, Item::Table(toml_edit::Table::new()));
             }
             table = table
                 .get_mut(segment)
-                .and_then(Item::as_table_mut)
+                .and_then(Item::as_table_like_mut)
                 .ok_or_else(|| {
                     AgentSettingError::InvalidConfiguration(format!(
                         "{} must be a TOML table",
@@ -2080,17 +2094,21 @@ fn render_toml(
                     ))
                 })?;
             if let Some(existing) = table.get_mut(&leaf[0]) {
-                let existing_value = existing.as_value_mut().ok_or_else(|| {
-                    AgentSettingError::InvalidConfiguration(format!(
-                        "{} has a TOML table where a value is required",
+                if let Some(existing_value) = existing.as_value_mut() {
+                    // Preserve key/value decoration for scalar and inline edits.
+                    *value.decor_mut() = existing_value.decor().clone();
+                    *existing_value = value;
+                } else if existing.is_table() && replacement.is_object() {
+                    // A map such as shell_environment_policy.set may be a
+                    // regular TOML table, not only an inline value. Replace
+                    // exactly this managed field, never its parent/siblings.
+                    *existing = Item::Value(value);
+                } else {
+                    return Err(AgentSettingError::InvalidConfiguration(format!(
+                        "{} has an incompatible TOML shape",
                         path.join(".")
-                    ))
-                })?;
-                // Mutate the Item in place so comments attached to its TOML
-                // key remain intact. Re-inserting the key discards that CST
-                // decoration even if the value decoration is copied.
-                *value.decor_mut() = existing_value.decor().clone();
-                *existing_value = value;
+                    )));
+                }
             } else {
                 table.insert(&leaf[0], Item::Value(value));
             }
@@ -2403,7 +2421,20 @@ fn write_all_or_restore(files: &[RenderedFile]) -> Result<(), AgentSettingError>
         if file.before.as_deref() == Some(file.after.as_slice()) {
             continue;
         }
-        if let Err(error) = atomic_write(&file.spec.path, &file.after) {
+        let write = match fs::read(&file.spec.path) {
+            Ok(bytes) if file.before.as_deref() == Some(bytes.as_slice()) => {
+                atomic_write(&file.spec.path, &file.after)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound && file.before.is_none() => {
+                atomic_write(&file.spec.path, &file.after)
+            }
+            Ok(_) => Err(AgentSettingError::StaleRevision),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                Err(AgentSettingError::StaleRevision)
+            }
+            Err(error) => Err(error.into()),
+        };
+        if let Err(error) = write {
             if let Err(rollback_error) = rollback_files(&written) {
                 return Err(AgentSettingError::RollbackFailed(format!(
                     "write failed: {error}; {rollback_error}"
@@ -2419,6 +2450,24 @@ fn write_all_or_restore(files: &[RenderedFile]) -> Result<(), AgentSettingError>
 fn rollback_files(files: &[RenderedFile]) -> Result<(), AgentSettingError> {
     let mut errors = Vec::new();
     for file in files.iter().rev() {
+        let observed = match fs::read(&file.spec.path) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => {
+                errors.push(error.to_string());
+                continue;
+            }
+        };
+        if observed == file.before {
+            continue;
+        }
+        if observed.as_deref() != Some(file.after.as_slice()) {
+            errors.push(format!(
+                "{} changed externally; refusing to roll back over it",
+                file.spec.id
+            ));
+            continue;
+        }
         let result = if let Some(before) = &file.before {
             atomic_write(&file.spec.path, before)
         } else {

@@ -14,7 +14,6 @@ import { useProjectContext } from '@/shared/hooks/useProjectContext';
 import {
   createWorkflowCanvasStageGroup,
   createWorkflowCanvasStickyNote,
-  createDefaultWorkflowGraph,
   createWorkflowEdge,
   createWorkflowNode,
   DEFAULT_SOURCE_HANDLE,
@@ -48,6 +47,13 @@ import {
   type IssueWorkflowAttemptDraft,
 } from '../model/workflowAttemptDraftStorage';
 import { consumeWorkflowTemplateNodeFocus } from '../model/workflowTemplateNodeFocus';
+import { useWorkflowEditorDraft } from '../model/useWorkflowEditorDraft';
+import {
+  parseWorkflowEditorDocument,
+  workflowEditorScope,
+} from '../model/workflowEditorDraft';
+import { WorkflowDraftGuard } from './WorkflowDraftGuard';
+import { WorkflowHistoryControls } from './WorkflowHistoryControls';
 import { useAppNavigation } from '@/shared/hooks/useAppNavigation';
 import { WorkflowCanvas } from './WorkflowCanvas';
 import { WorkflowNodePalette } from './WorkflowNodePalette';
@@ -62,10 +68,7 @@ import { WorkflowNodeInspector } from './WorkflowNodeInspector';
 import { WorkflowRouterConfigPanel } from './WorkflowRouterConfigPanel';
 import { ScheduledTaskDialog } from './ScheduledTaskDialog';
 import { useWorkflowRepositorySelection } from './useWorkflowRepositorySelection';
-import {
-  getWorkflowDefaultGraphLabels,
-  getWorkflowDefaultNodeData,
-} from './workflowI18n';
+import { getWorkflowDefaultNodeData } from './workflowI18n';
 import {
   applyWorkflowNodeDataPatch,
   getNextAgentEditPanelNodeIdForSelection,
@@ -277,10 +280,20 @@ export interface WorkflowTemplateEditorPageProps {
   workflowId: string;
 }
 
-export function WorkflowTemplateEditorPage({
+export function WorkflowTemplateEditorPage(
+  props: WorkflowTemplateEditorPageProps
+) {
+  // workflowApi is explicitly local (hostScope: none), not the currently
+  // selected relay Host. Remount all panel state when its real target changes.
+  const scope = workflowEditorScope('local', props.projectId, props.workflowId);
+  return <WorkflowTemplateEditor key={scope} {...props} scope={scope} />;
+}
+
+function WorkflowTemplateEditor({
   projectId,
   workflowId,
-}: WorkflowTemplateEditorPageProps) {
+  scope,
+}: WorkflowTemplateEditorPageProps & { scope: string }) {
   const { t } = useTranslation('common');
   const localDraftId = parseIssueWorkflowAttemptDraftRouteId(workflowId);
   const isLocalDraft = localDraftId !== null;
@@ -292,6 +305,7 @@ export function WorkflowTemplateEditorPage({
     data: loadedTemplate,
     isLoading,
     error,
+    refetch,
   } = useWorkflowTemplate(workflowId, { enabled: !isLocalDraft });
   const { data: workflowAttempt, isLoading: isWorkflowAttemptLoading } =
     useWorkflowAttemptForWorkflow(workflowId, { enabled: !isLocalDraft });
@@ -310,7 +324,6 @@ export function WorkflowTemplateEditorPage({
   const navigation = useAppNavigation();
   const { getIssue } = useProjectContext();
 
-  const [graph, setGraph] = useState<WorkflowGraph | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [sessionPanelNodeId, setSessionPanelNodeId] = useState<string | null>(
@@ -327,11 +340,9 @@ export function WorkflowTemplateEditorPage({
   const [edgeReconnectFocus, setEdgeReconnectFocus] = useState<
     'source' | 'target' | null
   >(null);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [graphParseError, setGraphParseError] = useState<string | null>(null);
   const [runStartError, setRunStartError] = useState<string | null>(null);
   const [isStartingRun, setIsStartingRun] = useState(false);
+  const [isPreparingAttempt, setIsPreparingAttempt] = useState(false);
   const [validationTouched, setValidationTouched] = useState(false);
   const [staleNodeIds, setStaleNodeIds] = useState<Set<string>>(
     () => new Set()
@@ -347,12 +358,29 @@ export function WorkflowTemplateEditorPage({
             name: localDraft.name,
             description: localDraft.issueDescription ?? null,
             graph_json: localDraft.graphJson,
+            revision: 0,
             created_at: localDraft.createdAt,
             updated_at: localDraft.createdAt,
           }
         : loadedTemplate,
     [loadedTemplate, localDraft, projectId, workflowId]
   );
+  const isSystem = template?.source === 'system';
+  const readOnly =
+    isSystem || !!error || isCreatingAttempt || isPreparingAttempt;
+  const editor = useWorkflowEditorDraft(scope, template, readOnly);
+  const graph = editor.state?.value.graph ?? null;
+  const name = editor.state?.value.name ?? '';
+  const description = editor.state?.value.description ?? '';
+  const graphParseError = editor.parseError
+    ? t('workflow.errors.parseGraphFailed')
+    : null;
+  const setGraph = (next: WorkflowGraph) =>
+    editor.edit((value) => ({ ...value, graph: next }));
+  const setName = (next: string) =>
+    editor.edit((value) => ({ ...value, name: next }));
+  const setDescription = (next: string) =>
+    editor.edit((value) => ({ ...value, description: next }));
   const draftIssue = localDraft ? getIssue(localDraft.issueId) : null;
   const issue = workflowAttempt
     ? getIssue(workflowAttempt.issue_id)
@@ -367,40 +395,12 @@ export function WorkflowTemplateEditorPage({
       repositoryMessage: t('workflow.errors.repositoryRequired'),
       fallbackMessage: t('workflow.errors.startFailed'),
     });
-  const defaultGraphLabels = useMemo(
-    () => getWorkflowDefaultGraphLabels(t),
-    [t]
-  );
 
   useEffect(() => {
     setLocalDraft(
       localDraftId ? readIssueWorkflowAttemptDraft(localDraftId) : null
     );
   }, [localDraftId]);
-
-  const isSystem = template?.source === 'system';
-  const readOnly = isSystem;
-
-  // Initialize graph from template
-  useEffect(() => {
-    if (template) {
-      setName(template.name || '');
-      setDescription(template.description || '');
-      try {
-        const parsed = JSON.parse(template.graph_json) as WorkflowGraph;
-        if (parsed && typeof parsed === 'object' && parsed.version) {
-          setGraph(migrateWorkflowGraph(parsed));
-          setGraphParseError(null);
-        } else {
-          setGraph(createDefaultWorkflowGraph(defaultGraphLabels));
-          setGraphParseError(t('workflow.errors.invalidGraph'));
-        }
-      } catch {
-        setGraph(createDefaultWorkflowGraph(defaultGraphLabels));
-        setGraphParseError(t('workflow.errors.parseGraphFailed'));
-      }
-    }
-  }, [defaultGraphLabels, t, template]);
 
   useEffect(() => {
     setStaleNodeIds(new Set());
@@ -443,70 +443,106 @@ export function WorkflowTemplateEditorPage({
   }, [graph, workflowId]);
 
   const persistWorkflowGraph = async (nextGraph: WorkflowGraph) => {
-    if (isLocalDraft && localDraft) {
-      const nextDraft = {
-        ...localDraft,
-        name,
-        graphJson: JSON.stringify(nextGraph),
-      };
-      saveIssueWorkflowAttemptDraft(nextDraft);
-      setLocalDraft(nextDraft);
-      setGraph(nextGraph);
-      return nextGraph;
+    setGraph(nextGraph);
+    const snapshot = editor.beginSave();
+    if (!snapshot) throw new Error(t('workflow.draft.saveUnavailable'));
+    try {
+      if (isLocalDraft && localDraft) {
+        const nextDraft = {
+          ...localDraft,
+          name: snapshot.value.name,
+          issueDescription: snapshot.value.description,
+          graphJson: JSON.stringify(snapshot.value.graph),
+        };
+        saveIssueWorkflowAttemptDraft(nextDraft);
+        setLocalDraft(nextDraft);
+        editor.acknowledge(snapshot, snapshot.value, snapshot.revision);
+        return snapshot.value.graph;
+      }
+      const updatedTemplate = await updateTemplate({
+        workflowId,
+        payload: {
+          expected_revision: snapshot.revision,
+          name: snapshot.value.name,
+          description: snapshot.value.description,
+          graph_json: JSON.stringify(snapshot.value.graph),
+        },
+      });
+      const persisted = parseWorkflowEditorDocument(
+        updatedTemplate.name,
+        updatedTemplate.description,
+        updatedTemplate.graph_json
+      );
+      editor.acknowledge(snapshot, persisted, updatedTemplate.revision);
+      return persisted.graph;
+    } finally {
+      editor.finishSave(snapshot);
     }
-
-    const updatedTemplate = await updateTemplate({
-      workflowId,
-      payload: {
-        name,
-        description,
-        graph_json: JSON.stringify(nextGraph),
-      },
-    });
-    const persistedGraph = parsePersistedWorkflowGraph(
-      updatedTemplate.graph_json,
-      nextGraph
-    );
-    setGraph(persistedGraph);
-    return persistedGraph;
   };
 
-  const createAttemptFromLocalDraft = async (nextGraph: WorkflowGraph) => {
+  const createAttemptFromLocalDraft = async (
+    nextGraph: WorkflowGraph,
+    navigateAfterCreate: boolean
+  ) => {
     if (!localDraft || !localDraftId) return null;
-
-    let repos = localDraft.repos;
-    if (repos.length === 0) {
-      const selectedRepos = await selectWorkflowRepositories();
-      if (!selectedRepos) {
-        return null;
+    setGraph(nextGraph);
+    const snapshot = editor.beginSave();
+    if (!snapshot) return null;
+    setIsPreparingAttempt(true);
+    let attempt;
+    try {
+      let repos = localDraft.repos;
+      if (repos.length === 0) {
+        const selectedRepos = await selectWorkflowRepositories();
+        if (!selectedRepos) {
+          return null;
+        }
+        repos = selectedRepos;
       }
-      repos = selectedRepos;
+
+      if (!editor.isCurrent()) return null;
+      attempt = await createAttempt({
+        projectId,
+        issueId: localDraft.issueId,
+        payload: {
+          name: snapshot.value.name,
+          description: snapshot.value.description,
+          graph_json: JSON.stringify(snapshot.value.graph),
+          repos,
+        },
+      });
+
+      if (!editor.isCurrent()) return null;
+      editor.acknowledge(snapshot, snapshot.value, snapshot.revision);
+      deleteIssueWorkflowAttemptDraft(localDraftId);
+    } finally {
+      editor.finishSave(snapshot);
+      if (editor.isCurrent()) setIsPreparingAttempt(false);
     }
-
-    const attempt = await createAttempt({
-      projectId,
-      issueId: localDraft.issueId,
-      payload: {
-        name,
-        graph_json: JSON.stringify(nextGraph),
-        repos,
-      },
-    });
-
-    deleteIssueWorkflowAttemptDraft(localDraftId);
-    navigation.goToProjectWorkflowEdit(projectId, attempt.workflow_id, {
-      replace: true,
-    });
+    if (navigateAfterCreate)
+      navigation.goToProjectWorkflowEdit(projectId, attempt.workflow_id, {
+        replace: true,
+      });
     return attempt;
   };
 
-  const handleSave = async () => {
-    if (!graph || readOnly) return;
-    if (isLocalDraft) {
-      await createAttemptFromLocalDraft(graph);
-      return;
+  const handleSave = async (navigateAfterCreate = true): Promise<boolean> => {
+    if (!graph || readOnly) return false;
+    setRunStartError(null);
+    try {
+      if (isLocalDraft)
+        return !!(await createAttemptFromLocalDraft(
+          graph,
+          navigateAfterCreate
+        ));
+      await persistWorkflowGraph(graph);
+      if (!editor.isCurrent()) return false;
+      if (editor.isDirty()) setRunStartError(t('workflow.draft.newerChanges'));
+      return !editor.isDirty();
+    } catch (err) {
+      if (editor.isCurrent()) setRunStartError(formatWorkflowRunError(err));
+      return false;
     }
-    await persistWorkflowGraph(graph);
   };
 
   const closeRouterConfigPanel = () => {
@@ -535,6 +571,7 @@ export function WorkflowTemplateEditorPage({
     setGraph(nextGraph);
     try {
       await persistWorkflowGraph(nextGraph);
+      if (!editor.isCurrent() || editor.isDirty()) return;
       closeRouterConfigPanel();
     } catch (err) {
       setRunStartError(formatWorkflowRunError(err));
@@ -542,6 +579,7 @@ export function WorkflowTemplateEditorPage({
   };
 
   const handleStartRunFromGraph = async (nextGraph: WorkflowGraph) => {
+    const requestedVersion = editor.state?.editVersion;
     if (isLocalDraft) {
       setRunStartError(t('workflow.errors.saveBeforeRun'));
       return;
@@ -572,7 +610,16 @@ export function WorkflowTemplateEditorPage({
         repoOverrides = selectedRepos;
       }
 
+      if (!editor.isVersionCurrent(requestedVersion)) {
+        setRunStartError(t('workflow.draft.newerChanges'));
+        return;
+      }
       await persistWorkflowGraph(nextGraph);
+      if (!editor.isCurrent()) return;
+      if (editor.isDirty()) {
+        setRunStartError(t('workflow.draft.newerChanges'));
+        return;
+      }
       const run = await runAttempt({
         attemptId: workflowAttempt.id,
         payload: {
@@ -586,6 +633,7 @@ export function WorkflowTemplateEditorPage({
         },
       });
 
+      if (!editor.isCurrent()) return;
       setStaleNodeIds(new Set());
       navigation.goToProjectWorkflowRun(projectId, run.id);
     } catch (err) {
@@ -621,11 +669,12 @@ export function WorkflowTemplateEditorPage({
         graph_json: JSON.stringify(instantiateWorkflowGraphTemplate(graph)),
       },
     });
-    navigation.goToProjectWorkflowEdit(projectId, result.id);
+    if (editor.isCurrent())
+      navigation.goToProjectWorkflowEdit(projectId, result.id);
   };
 
   const handleSaveAsTemplate = async () => {
-    if (!graph || !isValid || isCreating) return;
+    if (!graph || !isValid || isCreating || readOnly) return;
 
     const result = await createTemplate({
       projectId,
@@ -639,6 +688,7 @@ export function WorkflowTemplateEditorPage({
       },
     });
 
+    if (!editor.isCurrent()) return;
     await ConfirmDialog.show({
       title: t('workflow.editor.templateSavedTitle', {
         defaultValue: 'Template saved',
@@ -655,7 +705,6 @@ export function WorkflowTemplateEditorPage({
 
   const handleBack = () => {
     if (localDraft) {
-      deleteIssueWorkflowAttemptDraft(localDraft.id);
       navigation.goToProjectIssue(projectId, localDraft.issueId);
       return;
     }
@@ -789,7 +838,10 @@ export function WorkflowTemplateEditorPage({
   ) => {
     if (!graph || readOnly) return;
     setRunStartError(null);
-    setGraph(applyWorkflowNodeDataPatch(graph, nodeId, dataUpdates));
+    editor.edit((value) => ({
+      ...value,
+      graph: applyWorkflowNodeDataPatch(value.graph, nodeId, dataUpdates),
+    }));
   };
 
   const handleAgentStepEditSave = async ({
@@ -833,6 +885,7 @@ export function WorkflowTemplateEditorPage({
     setRunStartError(null);
     try {
       await persistWorkflowGraph(nextGraph);
+      if (!editor.isCurrent() || editor.isDirty()) return;
       if (
         workflowAttempt?.latest_run_id &&
         changedNextRunConfig &&
@@ -874,6 +927,7 @@ export function WorkflowTemplateEditorPage({
       }
     }
 
+    if (!editor.isCurrent()) return;
     setSessionPanelNodeId(nodeId);
   };
 
@@ -910,6 +964,7 @@ export function WorkflowTemplateEditorPage({
 
   const handleDeleteNode = async (nodeId: string) => {
     if (!graph || readOnly) return;
+    const requestedVersion = editor.state?.editVersion;
     const node = graph.nodes.find((candidate) => candidate.id === nodeId);
     if (!node || node.type === 'start' || node.type === 'end') return;
 
@@ -923,6 +978,7 @@ export function WorkflowTemplateEditorPage({
       if (result !== 'confirmed') return;
     }
 
+    if (!editor.isVersionCurrent(requestedVersion)) return;
     const nextGraph = syncConditionBranches(
       {
         ...graph,
@@ -1185,23 +1241,29 @@ export function WorkflowTemplateEditorPage({
     ]
   );
 
-  if (isLoading) {
+  if (isLoading && !graph) {
     return (
       <div className="flex h-full items-center justify-center bg-primary">
-        <Loader2 className="h-8 w-8 animate-spin text-brand" />
+        <span role="status">
+          <Loader2 className="h-8 w-8 animate-spin text-brand" />
+          {t('states.loading')}
+        </span>
       </div>
     );
   }
 
-  if (error || !template || !graph) {
+  if (!template || !graph) {
     const message =
       error instanceof Error
         ? error.message
         : error
           ? String(error)
-          : t('workflow.errors.draftMissing');
+          : (graphParseError ?? t('workflow.errors.draftMissing'));
     return (
-      <div className="flex h-full items-center justify-center bg-primary text-error">
+      <div
+        role="alert"
+        className="flex h-full items-center justify-center bg-primary text-error"
+      >
         {t('workflow.editor.loadFailed', {
           message,
         })}
@@ -1252,6 +1314,15 @@ export function WorkflowTemplateEditorPage({
 
   return (
     <div className="workflow-canvas-shell flex h-full flex-col bg-primary">
+      <WorkflowDraftGuard
+        dirty={editor.dirty}
+        saving={editor.isSaving}
+        errorMessage={runStartError}
+        hasPendingChanges={editor.hasPendingChanges}
+        canSave={!readOnly && isValid && !editor.conflict}
+        onSave={() => handleSave(false)}
+        onDiscard={editor.discard}
+      />
       {/* Toolbar */}
       <div className="flex shrink-0 items-center justify-between border-b border-secondary bg-panel p-base">
         <div className="flex items-center gap-4">
@@ -1267,6 +1338,7 @@ export function WorkflowTemplateEditorPage({
             <input
               type="text"
               value={name}
+              aria-label={t('workflow.editor.workflowNamePlaceholder')}
               onChange={(e) => setName(e.target.value)}
               disabled={readOnly}
               className="bg-transparent text-base font-semibold text-high outline-none transition-colors hover:text-brand focus:text-brand disabled:opacity-50"
@@ -1275,6 +1347,7 @@ export function WorkflowTemplateEditorPage({
             <input
               type="text"
               value={description}
+              aria-label={t('workflow.editor.descriptionPlaceholder')}
               onChange={(e) => setDescription(e.target.value)}
               disabled={readOnly}
               className="min-w-[280px] bg-transparent text-xs text-low outline-none transition-colors focus:text-high disabled:opacity-50"
@@ -1295,6 +1368,11 @@ export function WorkflowTemplateEditorPage({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <WorkflowHistoryControls
+            canUndo={!readOnly && !!editor.state?.undo.length}
+            canRedo={!readOnly && !!editor.state?.redo.length}
+            onMove={editor.moveHistory}
+          />
           <Button
             variant="outline"
             disabled={readOnly}
@@ -1403,7 +1481,7 @@ export function WorkflowTemplateEditorPage({
               <Button
                 variant="outline"
                 onClick={handleSaveAsTemplate}
-                disabled={isCreating || !isValid}
+                disabled={readOnly || isCreating || !isValid}
                 className="flex items-center gap-2"
               >
                 {isCreating ? (
@@ -1416,8 +1494,13 @@ export function WorkflowTemplateEditorPage({
                 })}
               </Button>
               <Button
-                onClick={handleSave}
-                disabled={isUpdating || isCreatingAttempt || !isValid}
+                onClick={() => void handleSave()}
+                disabled={
+                  readOnly || editor.isSaving || !isValid || editor.conflict
+                }
+                title={
+                  editor.conflict ? t('workflow.draft.conflict') : undefined
+                }
                 className="flex items-center gap-2"
               >
                 {isUpdating || isCreatingAttempt ? (
@@ -1432,6 +1515,44 @@ export function WorkflowTemplateEditorPage({
         </div>
       </div>
 
+      {(editor.dirty || editor.conflict || editor.storageError || error) && (
+        <div
+          role={
+            editor.conflict || editor.storageError || error ? 'alert' : 'status'
+          }
+          className="flex items-center gap-base border-b border-secondary bg-panel px-base py-half text-xs text-medium"
+        >
+          <span>
+            {error
+              ? t('workflow.draft.cachedReadOnly')
+              : editor.conflict
+                ? t('workflow.draft.conflict')
+                : t('workflow.draft.unsaved')}
+          </span>
+          {editor.storageError && (
+            <span>{t('workflow.draft.storageFailed')}</span>
+          )}
+          {error && (
+            <Button variant="outline" onClick={() => void refetch()}>
+              {t('workflow.draft.retry')}
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            disabled={editor.isSaving}
+            onClick={async () => {
+              const confirmed = await ConfirmDialog.show({
+                title: t('workflow.draft.discardTitle'),
+                message: t('workflow.draft.discardDescription'),
+                confirmText: t('workflow.draft.discard'),
+              });
+              if (confirmed === 'confirmed') editor.discard();
+            }}
+          >
+            {t('workflow.draft.discard')}
+          </Button>
+        </div>
+      )}
       {graphParseError ? (
         <div className="border-b border-error/30 bg-error/10 px-base py-half text-xs text-error">
           {graphParseError}
@@ -1690,6 +1811,15 @@ export function WorkflowTemplateEditorPage({
                 isSaving={isUpdating}
                 error={runStartError}
                 onClose={closeRouterConfigPanel}
+                onDraftChange={(executorConfig) =>
+                  editor.edit((value) => ({
+                    ...value,
+                    graph: {
+                      ...value.graph,
+                      router_executor_config: executorConfig,
+                    },
+                  }))
+                }
                 onSave={(executorConfig) =>
                   void handleRouterConfigSave(executorConfig)
                 }
@@ -1704,6 +1834,9 @@ export function WorkflowTemplateEditorPage({
                 hasExistingRun={editPanelHasExistingRun}
                 error={runStartError}
                 onClose={() => setEditPanelNodeId(null)}
+                onDraftChange={(patch) =>
+                  handleNodeChange(editableAgentNode.id, patch)
+                }
                 onExecutorConfigChange={(executorConfig) =>
                   handleNodeChange(editableAgentNode.id, {
                     executor_config: executorConfig,

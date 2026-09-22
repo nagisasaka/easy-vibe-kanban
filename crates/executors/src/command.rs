@@ -15,6 +15,22 @@ pub const CODEX_DEFAULT_BASE_COMMAND: &str = "codex";
 pub const CLAUDE_DEFAULT_BASE_COMMAND: &str = "claude";
 pub const OH_MY_PI_DEFAULT_BASE_COMMAND: &str = "omp";
 
+/// Resolve exactly the command launch will parse, without running the CLI or
+/// mistaking an auth/config file for an installed executable.
+pub fn is_command_installed(default: &str, overrides: &CmdOverrides) -> bool {
+    CommandBuilder::new(
+        overrides
+            .base_command_override
+            .as_deref()
+            .unwrap_or(default),
+    )
+    .build_initial()
+    .ok()
+    .is_some_and(|parts| {
+        workspace_utils::shell::resolve_executable_path_blocking(&parts.program).is_some()
+    })
+}
+
 #[derive(Debug, Error)]
 pub enum CommandBuildError {
     #[error("base command cannot be parsed: {0}")]
@@ -228,6 +244,80 @@ pub fn apply_overrides(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_direct_provider_checks_the_configured_executable_before_auth_files() {
+        use serde_json::json;
+
+        use crate::executors::{AvailabilityInfo, StandardCodingAgentExecutor};
+        let executable = std::env::current_exe().unwrap();
+        for (command, found) in [
+            (format!("\"{}\"", executable.display()), true),
+            (
+                format!("\"{}\"", executable.join("missing").display()),
+                false,
+            ),
+        ] {
+            let config = json!({"base_command_override": command});
+            let codex: crate::executors::codex::Codex =
+                serde_json::from_value(config.clone()).unwrap();
+            let claude: crate::executors::claude::ClaudeCode =
+                serde_json::from_value(config.clone()).unwrap();
+            let gemini: crate::executors::gemini::Gemini =
+                serde_json::from_value(config.clone()).unwrap();
+            let omp: crate::executors::oh_my_pi::OhMyPi = serde_json::from_value(config).unwrap();
+            for availability in [
+                codex.get_availability_info(),
+                claude.get_availability_info(),
+                gemini.get_availability_info(),
+                omp.get_availability_info(),
+            ] {
+                assert_eq!(!matches!(availability, AvailabilityInfo::NotFound), found);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn availability_and_launch_resolve_the_same_explicit_command() {
+        let executable = std::env::current_exe().unwrap();
+        let overrides = CmdOverrides {
+            base_command_override: Some(format!("\"{}\" --unused", executable.display())),
+            ..Default::default()
+        };
+        assert!(is_command_installed("not-installed", &overrides));
+        let (actual, args) = apply_overrides(CommandBuilder::new("not-installed"), &overrides)
+            .unwrap()
+            .build_initial()
+            .unwrap()
+            .into_resolved()
+            .await
+            .unwrap();
+        assert_eq!(actual, executable);
+        assert_eq!(args, ["--unused"]);
+        for invalid in [
+            String::new(),
+            "\"unterminated".into(),
+            executable.join("missing").display().to_string(),
+        ] {
+            let overrides = CmdOverrides {
+                base_command_override: Some(invalid),
+                ..Default::default()
+            };
+            assert!(!is_command_installed(
+                executable.to_str().unwrap(),
+                &overrides
+            ));
+            let launch = apply_overrides(
+                CommandBuilder::new(executable.to_str().unwrap()),
+                &overrides,
+            )
+            .unwrap()
+            .build_initial();
+            if let Ok(parts) = launch {
+                assert!(parts.into_resolved().await.is_err());
+            }
+        }
+    }
 
     #[test]
     fn parses_builtin_local_executor_commands() {

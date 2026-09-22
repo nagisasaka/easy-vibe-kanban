@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PlusIcon } from '@phosphor-icons/react';
-import type { BaseCodingAgent, ExecutorProfile } from 'shared/types';
+import type { BaseCodingAgent } from 'shared/types';
 import { McpConfig } from 'shared/types';
 import { useUserSystem } from '@/shared/hooks/useUserSystem';
 import { McpConfigStrategyGeneral } from '@/shared/lib/mcpStrategies';
@@ -21,20 +21,35 @@ import {
   SettingsTextarea,
 } from './SettingsComponents';
 import { useSettingsDirty } from './SettingsDirtyContext';
-import { useSettingsMachineClient } from './SettingsHostContext';
+import {
+  useSettingsHost,
+  useSettingsMachineClient,
+} from './SettingsHostContext';
 
 export function McpSettingsSection() {
   const { t } = useTranslation('settings');
   const { setDirty: setContextDirty } = useSettingsDirty();
   const machineClient = useSettingsMachineClient();
+  const { canEdit, selectedHostId } = useSettingsHost();
   const { config, profiles } = useUserSystem();
   const [mcpServers, setMcpServers] = useState('{}');
   const [originalMcpServers, setOriginalMcpServers] = useState('{}');
   const [mcpConfig, setMcpConfig] = useState<McpConfig | null>(null);
   const [mcpError, setMcpError] = useState<string | null>(null);
-  const [mcpLoading, setMcpLoading] = useState(true);
-  const [selectedProfile, setSelectedProfile] =
-    useState<ExecutorProfile | null>(null);
+  const [mcpLoading, setMcpLoading] = useState(false);
+  const [selectedProfileKey, setSelectedProfileKey] =
+    useState<BaseCodingAgent | null>(null);
+  const [confirmedScope, setConfirmedScope] = useState<string | null>(null);
+  const selectedScope = `${selectedHostId}:${selectedProfileKey}`;
+  const hasConsent = confirmedScope === selectedScope;
+  const [revision, setRevision] = useState<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [mcpApplying, setMcpApplying] = useState(false);
   const [mcpConfigPath, setMcpConfigPath] = useState<string>('');
   const [success, setSuccess] = useState(false);
@@ -49,38 +64,35 @@ export function McpSettingsSection() {
 
   // Initialize selected profile when config loads
   useEffect(() => {
-    if (config?.executor_profile && profiles && !selectedProfile) {
+    if (config?.executor_profile && profiles && !selectedProfileKey) {
       const currentProfile = profiles[config.executor_profile.executor];
       if (currentProfile) {
-        setSelectedProfile(currentProfile);
+        setSelectedProfileKey(config.executor_profile.executor);
       } else if (Object.keys(profiles).length > 0) {
-        setSelectedProfile(Object.values(profiles)[0]);
+        setSelectedProfileKey(Object.keys(profiles)[0] as BaseCodingAgent);
       }
     }
-  }, [config?.executor_profile, profiles, selectedProfile]);
+  }, [config?.executor_profile, profiles, selectedProfileKey]);
 
   // Load MCP configuration when selected profile changes
   useEffect(() => {
-    const loadMcpServersForProfile = async (profile: ExecutorProfile) => {
+    let active = true;
+    const loadMcpServersForProfile = async (profileKey: BaseCodingAgent) => {
       setMcpLoading(true);
       setMcpError(null);
       setMcpConfigPath('');
 
       try {
-        const profileKey = profiles
-          ? Object.keys(profiles).find((key) => profiles[key] === profile)
-          : null;
-        if (!profileKey) {
-          throw new Error('Profile key not found');
-        }
-
         if (!machineClient) {
           throw new Error('Machine client is required');
         }
 
         const result = await machineClient.loadMcpServers({
           executor: profileKey as BaseCodingAgent,
+          confirmed_sensitive_read: true,
         });
+        if (!active) return;
+        setRevision(result.revision);
         setMcpConfig(result.mcp_config);
         const fullConfig = McpConfigStrategyGeneral.createFullConfig(
           result.mcp_config
@@ -90,23 +102,31 @@ export function McpSettingsSection() {
         setOriginalMcpServers(configJson);
         setMcpConfigPath(result.config_path);
       } catch (err: unknown) {
-        if (
-          err instanceof Error &&
-          err.message.includes('does not support MCP')
-        ) {
-          setMcpError(err.message);
-        } else {
-          console.error('Error loading MCP servers:', err);
-        }
+        if (!active) return;
+        setMcpError(
+          err instanceof Error
+            ? err.message
+            : t('settings.mcp.errors.loadFailed')
+        );
+        setRevision(null);
       } finally {
-        setMcpLoading(false);
+        if (active) setMcpLoading(false);
       }
     };
 
-    if (selectedProfile) {
-      loadMcpServersForProfile(selectedProfile);
+    if (selectedProfileKey && hasConsent) {
+      void loadMcpServersForProfile(selectedProfileKey);
+    } else {
+      setMcpConfig(null);
+      setRevision(null);
+      setMcpServers('{}');
+      setOriginalMcpServers('{}');
+      setMcpLoading(false);
     }
-  }, [machineClient, profiles, selectedProfile]);
+    return () => {
+      active = false;
+    };
+  }, [machineClient, selectedProfileKey, hasConsent, t]);
 
   const handleMcpServersChange = (value: string) => {
     setMcpServers(value);
@@ -131,7 +151,15 @@ export function McpSettingsSection() {
   };
 
   const handleApplyMcpServers = async () => {
-    if (!selectedProfile || !mcpConfig) return;
+    if (
+      !selectedProfileKey ||
+      !mcpConfig ||
+      !revision ||
+      !canEdit ||
+      !hasConsent ||
+      mcpApplying
+    )
+      return;
 
     setMcpApplying(true);
     setMcpError(null);
@@ -147,15 +175,6 @@ export function McpSettingsSection() {
               fullConfig
             );
 
-          const selectedProfileKey = profiles
-            ? Object.keys(profiles).find(
-                (key) => profiles[key] === selectedProfile
-              )
-            : null;
-          if (!selectedProfileKey) {
-            throw new Error('Selected profile key not found');
-          }
-
           if (!machineClient) {
             throw new Error('Machine client is required');
           }
@@ -163,11 +182,14 @@ export function McpSettingsSection() {
           await machineClient.saveMcpServers(
             {
               executor: selectedProfileKey as BaseCodingAgent,
+              confirmed_sensitive_read: true,
             },
-            { servers: mcpServersConfig }
+            { servers: mcpServersConfig, expected_revision: revision }
           );
-
-          setOriginalMcpServers(mcpServers);
+          if (!mounted.current) return;
+          // Close the sensitive editor after save; a new edit must observe a
+          // fresh native revision. Never let a second save reuse stale bytes.
+          setConfirmedScope(null);
           setSuccess(true);
           setTimeout(() => setSuccess(false), 3000);
         } catch (mcpErr) {
@@ -237,12 +259,6 @@ export function McpSettingsSection() {
         .map((key) => ({ value: key, label: toPrettyCase(key) }))
     : [];
 
-  const selectedProfileKey = selectedProfile
-    ? Object.keys(profiles || {}).find(
-        (key) => profiles![key] === selectedProfile
-      ) || ''
-    : '';
-
   if (!config) {
     return (
       <div className="py-8">
@@ -293,8 +309,14 @@ export function McpSettingsSection() {
                 <DropdownMenuItem
                   key={option.value}
                   onClick={() => {
-                    const profile = profiles?.[option.value];
-                    if (profile) setSelectedProfile(profile);
+                    if (
+                      mcpApplying ||
+                      (isDirty &&
+                        !window.confirm(t('settings.mcp.sensitive.discard')))
+                    )
+                      return;
+                    setConfirmedScope(null);
+                    setSelectedProfileKey(option.value as BaseCodingAgent);
                   }}
                 >
                   {option.label}
@@ -304,7 +326,22 @@ export function McpSettingsSection() {
           </DropdownMenu>
         </SettingsField>
 
-        {mcpError && mcpError.includes('does not support MCP') ? (
+        {!hasConsent ? (
+          <div className="space-y-2 text-sm text-low">
+            <p>{t('settings.mcp.sensitive.description')}</p>
+            <button
+              type="button"
+              disabled={!selectedProfileKey || !canEdit}
+              className="underline disabled:opacity-50"
+              onClick={() => {
+                if (window.confirm(t('settings.mcp.sensitive.confirm')))
+                  setConfirmedScope(selectedScope);
+              }}
+            >
+              {t('settings.mcp.sensitive.read')}
+            </button>
+          </div>
+        ) : mcpError && mcpError.includes('does not support MCP') ? (
           <div className="rounded-sm border border-warning/50 bg-warning/10 p-4">
             <h3 className="text-sm font-medium text-warning">
               {t('settings.mcp.errors.notSupported')}
@@ -340,7 +377,7 @@ export function McpSettingsSection() {
                     : mcpServers
                 }
                 onChange={handleMcpServersChange}
-                disabled={mcpLoading}
+                disabled={mcpLoading || mcpApplying || !revision || !canEdit}
                 rows={14}
                 placeholder='{\n  "server-name": {\n    "type": "stdio",\n    "command": "your-command",\n    "args": ["arg1", "arg2"]\n  }\n}'
               />
@@ -418,7 +455,9 @@ export function McpSettingsSection() {
       <SettingsSaveBar
         show={isDirty && !mcpError?.includes('does not support MCP')}
         saving={mcpApplying}
-        saveDisabled={!!mcpError}
+        saveDisabled={
+          !!mcpError || !revision || !canEdit || !hasConsent || mcpLoading
+        }
         onSave={handleApplyMcpServers}
         onDiscard={handleDiscard}
       />

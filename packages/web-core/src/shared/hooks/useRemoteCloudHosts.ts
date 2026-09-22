@@ -18,6 +18,7 @@ export interface RemoteCloudHost {
 
 interface RemoteCloudHostsState {
   hosts: RemoteCloudHost[];
+  discoveryFailed: boolean;
 }
 
 export const REMOTE_CLOUD_HOSTS_STATE_QUERY_KEY = [
@@ -40,14 +41,15 @@ async function fetchRemoteCloudHostsState(): Promise<RemoteCloudHostsState> {
   try {
     pairedHosts = await relayApi.listPairedRelayHosts();
   } catch {
-    return { hosts: [] };
+    return { hosts: [], discoveryFailed: true };
   }
 
   let remoteHosts: RelayHost[] = [];
+  let discoveryFailed = false;
   try {
     remoteHosts = await listRelayHosts();
   } catch {
-    remoteHosts = [];
+    discoveryFailed = true;
   }
 
   const remoteHostsById = new Map(remoteHosts.map((host) => [host.id, host]));
@@ -68,7 +70,7 @@ async function fetchRemoteCloudHostsState(): Promise<RemoteCloudHostsState> {
     })
     .sort((a, b) => b.pairedAt.localeCompare(a.pairedAt));
 
-  return { hosts };
+  return { hosts, discoveryFailed };
 }
 
 export function useRemoteCloudHostsState() {

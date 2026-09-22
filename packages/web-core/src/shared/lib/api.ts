@@ -1,6 +1,9 @@
 // Import all necessary types from shared types
 
 import {
+  type ProfilesContent,
+  type ReplaceProfilesRequest,
+  type RecentModelsPatch,
   ApprovalStatus,
   ApiResponse,
   Config,
@@ -354,12 +357,26 @@ export const sessionsApi = {
     return handleApiResponse<Session>(response);
   },
 
-  create: async (data: {
-    workspace_id: string;
-    executor?: string;
-    name?: string;
-  }): Promise<Session> => {
-    const response = await makeRequest('/api/sessions', {
+  getExecutorConfig: async (
+    sessionId: string,
+    hostId?: string | null
+  ): Promise<ExecutorConfig | null> => {
+    const response = await makeHostAwareRequest(
+      `/api/sessions/${sessionId}/executor-config`,
+      hostId
+    );
+    return handleApiResponse<ExecutorConfig | null>(response);
+  },
+
+  create: async (
+    data: {
+      workspace_id: string;
+      executor?: string;
+      name?: string;
+    },
+    hostId?: string | null
+  ): Promise<Session> => {
+    const response = await makeHostAwareRequest('/api/sessions', hostId, {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -368,12 +385,17 @@ export const sessionsApi = {
 
   followUp: async (
     sessionId: string,
-    data: CreateFollowUpAttempt
+    data: CreateFollowUpAttempt,
+    hostId?: string | null
   ): Promise<AgentRunPortSnapshot> => {
-    const response = await makeRequest(`/api/sessions/${sessionId}/follow-up`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    const response = await makeHostAwareRequest(
+      `/api/sessions/${sessionId}/follow-up`,
+      hostId,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
     return handleApiResponse<AgentRunPortSnapshot>(response);
   },
 
@@ -1213,7 +1235,10 @@ export const mcpServersApi = {
     query: McpServerQuery,
     hostId?: string | null
   ): Promise<GetMcpServerResponse> => {
-    const params = new URLSearchParams(query);
+    const params = new URLSearchParams({
+      executor: query.executor,
+      confirmed_sensitive_read: String(query.confirmed_sensitive_read),
+    });
     const response = await makeHostAwareRequest(
       `/api/mcp-config?${params.toString()}`,
       hostId
@@ -1225,7 +1250,10 @@ export const mcpServersApi = {
     data: UpdateMcpServersBody,
     hostId?: string | null
   ): Promise<void> => {
-    const params = new URLSearchParams(query);
+    const params = new URLSearchParams({
+      executor: query.executor,
+      confirmed_sensitive_read: String(query.confirmed_sensitive_read),
+    });
     // params.set('profile', profile);
     const response = await makeHostAwareRequest(
       `/api/mcp-config?${params.toString()}`,
@@ -1255,20 +1283,38 @@ export const mcpServersApi = {
 // Profiles API
 export const profilesApi = {
   load: async (
-    hostId?: string | null
-  ): Promise<{ content: string; path: string }> => {
-    const response = await makeHostAwareRequest('/api/profiles', hostId);
-    return handleApiResponse<{ content: string; path: string }>(response);
+    hostId?: string | null,
+    confirmedSensitiveRead = false
+  ): Promise<ProfilesContent> => {
+    const response = await makeHostAwareRequest(
+      `/api/profiles?confirmed_sensitive_read=${confirmedSensitiveRead}`,
+      hostId
+    );
+    return handleApiResponse<ProfilesContent>(response);
   },
-  save: async (content: string, hostId?: string | null): Promise<string> => {
+  save: async (
+    request: ReplaceProfilesRequest,
+    hostId?: string | null
+  ): Promise<ProfilesContent> => {
     const response = await makeHostAwareRequest('/api/profiles', hostId, {
       method: 'PUT',
-      body: content,
+      body: JSON.stringify(request),
       headers: {
         'Content-Type': 'application/json',
       },
     });
-    return handleApiResponse<string>(response);
+    return handleApiResponse<ProfilesContent>(response);
+  },
+  updateRecent: async (
+    data: RecentModelsPatch,
+    hostId?: string | null
+  ): Promise<void> => {
+    await handleApiResponse<void>(
+      await makeHostAwareRequest('/api/profiles/recent-models', hostId, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      })
+    );
   },
 };
 
@@ -1327,7 +1373,8 @@ export const attachmentsApi = {
   uploadForAttempt: async (
     workspaceId: string,
     sessionId: string,
-    attachment: File
+    attachment: File,
+    hostId?: string | null
   ): Promise<AttachmentResponse> => {
     const formData = new FormData();
     formData.append('image', attachment);
@@ -1338,6 +1385,9 @@ export const attachmentsApi = {
         method: 'POST',
         body: formData,
         credentials: 'include',
+        ...(hostId !== undefined
+          ? { hostScope: 'explicit' as const, hostId }
+          : {}),
       }
     );
 
@@ -1688,13 +1738,17 @@ export const scratchApi = {
   delete: async (
     scratchType: ScratchType,
     id: string,
-    hostId?: string | null
+    hostId?: string | null,
+    expectedPayload?: UpdateScratch['payload']
   ): Promise<void> => {
     const response = await makeHostAwareRequest(
       `/api/scratch/${scratchType}/${id}`,
       hostId,
       {
         method: 'DELETE',
+        ...(expectedPayload
+          ? { body: JSON.stringify({ expected_payload: expectedPayload }) }
+          : {}),
       }
     );
     return handleApiResponse<void>(response);
@@ -1725,13 +1779,15 @@ export const agentsApi = {
   },
 
   getPresetOptions: async (
-    query: AgentPresetOptionsQuery
+    query: AgentPresetOptionsQuery,
+    hostId?: string | null
   ): Promise<ExecutorConfig> => {
     const params = new URLSearchParams();
     params.set('executor', query.executor);
     if (query.variant) params.set('variant', query.variant);
-    const response = await makeRequest(
-      `/api/agents/preset-options?${params.toString()}`
+    const response = await makeHostAwareRequest(
+      `/api/agents/preset-options?${params.toString()}`,
+      hostId
     );
     return handleApiResponse<ExecutorConfig>(response);
   },
@@ -1744,30 +1800,48 @@ export const queueApi = {
    */
   queue: async (
     sessionId: string,
-    data: DraftFollowUpData
+    data: DraftFollowUpData,
+    hostId?: string | null
   ): Promise<QueueStatus> => {
-    const response = await makeRequest(`/api/sessions/${sessionId}/queue`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    const response = await makeHostAwareRequest(
+      `/api/sessions/${sessionId}/queue`,
+      hostId,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
     return handleApiResponse<QueueStatus>(response);
   },
 
   /**
    * Cancel a queued follow-up message
    */
-  cancel: async (sessionId: string): Promise<QueueStatus> => {
-    const response = await makeRequest(`/api/sessions/${sessionId}/queue`, {
-      method: 'DELETE',
-    });
+  cancel: async (
+    sessionId: string,
+    hostId?: string | null
+  ): Promise<QueueStatus> => {
+    const response = await makeHostAwareRequest(
+      `/api/sessions/${sessionId}/queue`,
+      hostId,
+      {
+        method: 'DELETE',
+      }
+    );
     return handleApiResponse<QueueStatus>(response);
   },
 
   /**
    * Get the current queue status for a session
    */
-  getStatus: async (sessionId: string): Promise<QueueStatus> => {
-    const response = await makeRequest(`/api/sessions/${sessionId}/queue`);
+  getStatus: async (
+    sessionId: string,
+    hostId?: string | null
+  ): Promise<QueueStatus> => {
+    const response = await makeHostAwareRequest(
+      `/api/sessions/${sessionId}/queue`,
+      hostId
+    );
     return handleApiResponse<QueueStatus>(response);
   },
 };

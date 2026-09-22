@@ -93,6 +93,7 @@ async fn setup_workflow_pool() -> SqlitePool {
             name        TEXT NOT NULL,
             description TEXT,
             graph_json  TEXT NOT NULL,
+            revision    INTEGER NOT NULL DEFAULT 0,
             created_at  TEXT NOT NULL DEFAULT (datetime('now', 'subsec')),
             updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'subsec')),
             CHECK (
@@ -1371,6 +1372,7 @@ async fn create_workflow_attempt_creates_issue_bound_draft() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: Some("Keep the editor description".to_string()),
             name: Some("Workflow attempt".to_string()),
             graph_json: valid_graph_json(),
             repos: None,
@@ -1384,6 +1386,13 @@ async fn create_workflow_attempt_creates_issue_bound_draft() {
     assert_eq!(attempt.status, WorkflowAttemptStatus::Draft);
     assert!(attempt.latest_run_id.is_none());
     assert!(attempt.workspace_id.is_none());
+    let template = server::routes::workflows::get_workflow_template(&pool, attempt.workflow_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        template.description.as_deref(),
+        Some("Keep the editor description")
+    );
 }
 
 #[tokio::test]
@@ -1402,6 +1411,7 @@ async fn create_workflow_attempt_with_resources_binds_ready_workspace() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: Some("Workflow attempt".to_string()),
             graph_json: valid_graph_json(),
             repos: Some(vec![DraftWorkspaceRepo {
@@ -1442,6 +1452,7 @@ async fn list_project_workflows_excludes_attempt_owned_backing_workflows() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: Some("Hidden attempt graph".to_string()),
             graph_json: valid_graph_json(),
             repos: None,
@@ -1475,6 +1486,7 @@ async fn workflow_attempt_can_be_resolved_from_backing_workflow() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: Some("Canvas-owned attempt".to_string()),
             graph_json: valid_graph_json(),
             repos: None,
@@ -1506,6 +1518,7 @@ async fn delete_workflow_attempt_removes_backing_graph_runs_and_nodes() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: Some("Delete me".to_string()),
             graph_json: valid_graph_json(),
             repos: None,
@@ -1596,6 +1609,7 @@ async fn workflow_attempt_create_rejects_issue_from_another_project() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: Some("Invalid".to_string()),
             graph_json: valid_graph_json(),
             repos: None,
@@ -1656,6 +1670,7 @@ async fn update_system_template_returns_forbidden() {
         &pool,
         system_workflow_id,
         UpdateWorkflowRequest {
+            expected_revision: 0,
             name: Some("Changed".to_string()),
             description: None,
             graph_json: None,
@@ -1680,6 +1695,7 @@ async fn update_project_workflow_accepts_parseable_draft_graph() {
         &pool,
         workflow_id,
         UpdateWorkflowRequest {
+            expected_revision: 0,
             name: None,
             description: None,
             graph_json: Some(unreachable_draft_graph_json()),
@@ -1715,6 +1731,148 @@ async fn delete_system_template_returns_forbidden() {
         matches!(result, Err(ApiError::Forbidden(message)) if message.contains("system")),
         "system workflows must not be deletable"
     );
+}
+
+#[tokio::test]
+async fn workflow_save_failure_does_not_leave_orphan_sessions() {
+    let pool = setup_workflow_pool().await;
+    let project_id = Uuid::new_v4();
+    let issue_id = Uuid::new_v4();
+    insert_project(&pool, project_id).await;
+    insert_local_issue(&pool, project_id, issue_id, "Atomic save").await;
+    let resolver = FakeWorkspaceResolver::new(&pool, Uuid::new_v4());
+    let attempt = create_issue_workflow_attempt_with_resources(
+        &pool,
+        project_id,
+        issue_id,
+        CreateWorkflowAttemptRequest {
+            description: None,
+            name: None,
+            graph_json: valid_graph_json(),
+            repos: None,
+        },
+        &resolver,
+    )
+    .await
+    .unwrap();
+    let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query("CREATE TRIGGER fail_workflow_save BEFORE UPDATE ON workflows WHEN OLD.source = 'project' BEGIN SELECT RAISE(ABORT, 'injected graph write failure'); END").execute(&pool).await.unwrap();
+    let revision = server::routes::workflows::get_workflow_template(&pool, attempt.workflow_id)
+        .await
+        .unwrap()
+        .revision;
+    let result = update_workflow_template(
+        &pool,
+        attempt.workflow_id,
+        UpdateWorkflowRequest {
+            expected_revision: revision,
+            name: None,
+            description: None,
+            graph_json: Some(unreachable_draft_graph_json()),
+        },
+    )
+    .await;
+    assert!(result.is_err());
+    let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        after, before,
+        "a failed graph save must not leave Sessions behind"
+    );
+}
+
+#[tokio::test]
+async fn workflow_revision_conflict_preserves_graph_and_sessions() {
+    let pool = setup_workflow_pool().await;
+    let project_id = Uuid::new_v4();
+    let issue_id = Uuid::new_v4();
+    insert_project(&pool, project_id).await;
+    insert_local_issue(&pool, project_id, issue_id, "Concurrent save").await;
+    let resolver = FakeWorkspaceResolver::new(&pool, Uuid::new_v4());
+    let attempt = create_issue_workflow_attempt_with_resources(
+        &pool,
+        project_id,
+        issue_id,
+        CreateWorkflowAttemptRequest {
+            description: None,
+            name: None,
+            graph_json: valid_graph_json(),
+            repos: None,
+        },
+        &resolver,
+    )
+    .await
+    .unwrap();
+    let initial = server::routes::workflows::get_workflow_template(&pool, attempt.workflow_id)
+        .await
+        .unwrap();
+    let saved = update_workflow_template(
+        &pool,
+        attempt.workflow_id,
+        UpdateWorkflowRequest {
+            expected_revision: initial.revision,
+            name: Some("First editor".into()),
+            description: None,
+            graph_json: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved.revision, initial.revision + 1);
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let stale = update_workflow_template(
+        &pool,
+        attempt.workflow_id,
+        UpdateWorkflowRequest {
+            expected_revision: initial.revision,
+            name: Some("Stale editor".into()),
+            description: None,
+            graph_json: Some(unreachable_draft_graph_json()),
+        },
+    )
+    .await;
+    assert!(matches!(stale, Err(ApiError::Conflict(_))));
+    let after = server::routes::workflows::get_workflow_template(&pool, attempt.workflow_id)
+        .await
+        .unwrap();
+    assert_eq!(after.revision, saved.revision);
+    assert_eq!(after.name, "First editor");
+    assert_eq!(after.graph_json, saved.graph_json);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sessions")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        count
+    );
+
+    sqlx::query("CREATE TRIGGER fail_session_insert BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'injected Session failure'); END").execute(&pool).await.unwrap();
+    let failed = update_workflow_template(
+        &pool,
+        attempt.workflow_id,
+        UpdateWorkflowRequest {
+            expected_revision: saved.revision,
+            name: Some("Rolled back".into()),
+            description: None,
+            graph_json: Some(unreachable_draft_graph_json()),
+        },
+    )
+    .await;
+    assert!(failed.is_err());
+    let after = server::routes::workflows::get_workflow_template(&pool, attempt.workflow_id)
+        .await
+        .unwrap();
+    assert_eq!(after.revision, saved.revision);
+    assert_eq!(after.graph_json, saved.graph_json);
+    assert_eq!(after.name, saved.name);
 }
 
 #[tokio::test]
@@ -1873,6 +2031,7 @@ async fn running_workflow_attempt_updates_latest_run_workspace_and_status() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: Some("Attempt run".to_string()),
             graph_json: valid_graph_json(),
             repos: None,
@@ -1935,6 +2094,7 @@ async fn canceling_workflow_attempt_syncs_attempt_status() {
         project_id,
         issue_id,
         CreateWorkflowAttemptRequest {
+            description: None,
             name: Some("Cancel attempt".to_string()),
             graph_json: agent_graph_json(),
             repos: None,

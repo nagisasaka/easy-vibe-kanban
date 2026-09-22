@@ -4,6 +4,8 @@ import { useAppRuntime } from '@/shared/hooks/useAppRuntime';
 import { useLocalStorageScratch } from '@/shared/hooks/useLocalStorageScratch';
 import { scratchApi } from '@/shared/lib/api';
 import { ScratchType, type Scratch, type UpdateScratch } from 'shared/types';
+import { useHostId } from '@/shared/providers/HostIdProvider';
+import { enqueueScratchMutation } from '@/shared/lib/scratchMutationQueue';
 
 type ScratchState = {
   scratch: Scratch | null;
@@ -15,7 +17,7 @@ export interface UseScratchResult {
   isConnected: boolean;
   error: string | null;
   updateScratch: (update: UpdateScratch) => Promise<void>;
-  deleteScratch: () => Promise<void>;
+  deleteScratch: (expectedPayload?: UpdateScratch['payload']) => Promise<void>;
 }
 
 interface UseScratchOptions {
@@ -37,6 +39,8 @@ export const useScratch = (
   options?: UseScratchOptions
 ): UseScratchResult => {
   const runtime = useAppRuntime();
+  const hostId = useHostId();
+  const mutationKey = JSON.stringify([runtime, hostId, scratchType, id]);
   const isRemote = runtime === 'remote';
 
   // --- localStorage path (remote-web) ---
@@ -48,7 +52,7 @@ export const useScratch = (
   const serverEnabled =
     !isRemote && (options?.enabled ?? true) && id.length > 0;
   const endpoint = serverEnabled
-    ? scratchApi.getStreamUrl(scratchType, id)
+    ? `${hostId ? `/api/host/${hostId}` : '/api'}/scratch/${scratchType}/${id}/stream/ws`
     : undefined;
 
   const initialData = useCallback((): ScratchState => ({ scratch: null }), []);
@@ -62,16 +66,25 @@ export const useScratch = (
 
   const updateScratch = useCallback(
     async (update: UpdateScratch) => {
-      await scratchApi.update(scratchType, id, update);
+      await enqueueScratchMutation(mutationKey, () =>
+        scratchApi.update(scratchType, id, update, hostId)
+      );
     },
-    [scratchType, id]
+    [scratchType, id, hostId, mutationKey]
   );
 
-  const deleteScratch = useCallback(async () => {
-    await scratchApi.delete(scratchType, id);
-  }, [scratchType, id]);
+  const deleteScratch = useCallback(
+    async (expectedPayload?: UpdateScratch['payload']) => {
+      await enqueueScratchMutation(mutationKey, () =>
+        scratchApi.delete(scratchType, id, hostId, expectedPayload)
+      );
+    },
+    [scratchType, id, hostId, mutationKey]
+  );
 
-  const isLoading = !isInitialized && !error;
+  // A failed connection is not proof that a draft is empty. Keep waiting for
+  // the first authoritative snapshot (the editor still permits local typing).
+  const isLoading = serverEnabled && !isInitialized;
 
   const serverResult: UseScratchResult = {
     scratch,

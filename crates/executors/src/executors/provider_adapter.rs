@@ -21,7 +21,7 @@ use crate::{
     approvals::ExecutorApprovalService,
     env::ExecutionEnv,
     executors::{CodingAgent, ExecutorError, SpawnedChild},
-    profile::{ExecutorConfig, ExecutorConfigs},
+    profile::{ExecutorConfig, ExecutorConfigs, runtime_profile_ids_match},
     runtime::{
         AGENT_EVENT_PAYLOAD_VERSION, AGENT_EVENT_SCHEMA_VERSION, AGENT_LIVE_EVENT_SCHEMA_VERSION,
         AgentEvent, AgentEventEnvelope, AgentEventPayload, AgentLiveEvent, AgentLiveEventPayload,
@@ -146,7 +146,8 @@ fn validate_direct_launch(request: &DirectProviderLaunchRequest<'_>) -> Result<(
                 request.provider.id()
             ))
         })?;
-        if session.provider_id != request.provider.id() || session.runtime_profile_id != profile_id
+        if session.provider_id != request.provider.id()
+            || !runtime_profile_ids_match(&session.runtime_profile_id, &profile_id)
         {
             return Err(ExecutorError::FollowUpNotSupported(format!(
                 "provider session does not match {} profile {profile_id}",
@@ -321,7 +322,7 @@ impl DirectProvider {
                 runtime: None,
                 protocol: Some("acp-0.8"),
                 adapter: "gemini-adapter-v1",
-                mapper: "gemini-mapper-v2",
+                mapper: "gemini-mapper-v3",
             },
             Self::Codex => DirectAdapterVersions {
                 executable: "codex",
@@ -337,14 +338,14 @@ impl DirectProvider {
                 runtime: None,
                 protocol: Some("stream-json-v1"),
                 adapter: "claude-code-adapter-v1",
-                mapper: "claude-code-mapper-v2",
+                mapper: "claude-code-mapper-v3",
             },
             Self::OhMyPi => DirectAdapterVersions {
                 executable: "omp",
                 runtime: None,
                 protocol: Some("stdio-rpc-ndjson-v1"),
                 adapter: "oh-my-pi-adapter-v1",
-                mapper: "oh-my-pi-mapper-v2",
+                mapper: "oh-my-pi-mapper-v3",
             },
         }
     }
@@ -531,12 +532,9 @@ impl DirectProvider {
     pub fn mapper(self) -> DirectProviderMapper {
         DirectProviderMapper {
             provider: self,
-            semantics: if self == Self::Codex {
-                MapperSemantics::V3
-            } else {
-                MapperSemantics::V2
-            },
+            semantics: MapperSemantics::V3,
             scope: Default::default(),
+            replay_sequence: Default::default(),
         }
     }
 
@@ -545,16 +543,18 @@ impl DirectProvider {
             provider: self,
             semantics: MapperSemantics::V2,
             scope: Default::default(),
+            replay_sequence: Default::default(),
         }
     }
 
     /// Retains deterministic replay for Native Audit bundles written before
-    /// semantic compaction was introduced. New runtime streams always use v2.
+    /// semantic compaction was introduced. New runtime streams use v3.
     pub fn legacy_mapper(self) -> DirectProviderMapper {
         DirectProviderMapper {
             provider: self,
             semantics: MapperSemantics::V1,
             scope: Default::default(),
+            replay_sequence: Default::default(),
         }
     }
 }
@@ -880,6 +880,7 @@ pub struct DirectProviderMapper {
     pub provider: DirectProvider,
     semantics: MapperSemantics,
     scope: std::sync::Mutex<super::codex::agent_scope::AgentScope>,
+    replay_sequence: std::sync::Mutex<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -904,7 +905,10 @@ impl NativeAuditReplayMapper for DirectProviderMapper {
     }
 
     fn decode(&self, frame: &NativeAuditFrame) -> Result<ProviderEvent, NativeAuditError> {
-        Ok(self.provider.decode_native_frame(frame)?.raw)
+        // Decoding is lossless; selecting the mapper semantics belongs to map.
+        // Running the latest classifier here would reject old, intentionally
+        // ignored shapes before a historical mapper could interpret them.
+        crate::runtime::DefaultNativeAuditMapper::new(self.versions()).decode(frame)
     }
 
     fn map(
@@ -912,7 +916,12 @@ impl NativeAuditReplayMapper for DirectProviderMapper {
         event: &ProviderEvent,
         manifest: &NativeAuditManifest,
     ) -> Result<Vec<AgentEvent>, NativeAuditError> {
-        let typed = classify_payload(self.provider, event)?;
+        let typed =
+            if self.semantics != MapperSemantics::V3 && self.provider != DirectProvider::Codex {
+                classify_payload_legacy(self.provider, event)?
+            } else {
+                classify_payload(self.provider, event)?
+            };
         let mut decoded = DecodedProviderEvent {
             raw: event.clone(),
             typed,
@@ -927,8 +936,26 @@ impl NativeAuditReplayMapper for DirectProviderMapper {
                 if event.sequence == 1 {
                     *scope = Default::default();
                 }
-                scope.apply(&mut decoded);
-                Ok(project_typed_event(self.provider, &decoded, manifest)?.durable_events)
+                if self.provider == DirectProvider::Codex {
+                    scope.apply(&mut decoded);
+                }
+                let mut projected =
+                    project_typed_event(self.provider, &decoded, manifest)?.durable_events;
+                if self.provider != DirectProvider::Codex {
+                    // v3 non-Codex frames can expand into several semantic
+                    // events. Native references retain raw ordering; canonical
+                    // replay must use its own dense cursor, just as DB append does.
+                    // Do not alter the already published Codex/v1/v2 semantics.
+                    let mut sequence = self.replay_sequence.lock().expect("replay sequence lock");
+                    if event.sequence == 1 {
+                        *sequence = 0;
+                    }
+                    for event in &mut projected {
+                        *sequence += 1;
+                        event.sequence = *sequence;
+                    }
+                }
+                Ok(projected)
             }
         }
     }
@@ -966,7 +993,258 @@ fn fixture_manifest(provider: DirectProvider) -> NativeAuditManifest {
     }
 }
 
+/// Extract displayable text from provider-native values. Claude's stream-json
+/// assistant events put the actual text under `message.content[]`, while
+/// other providers commonly emit a string directly. Keeping this extraction
+/// here prevents each consumer from having to understand provider envelopes.
+fn text_from_value(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Array(values) => {
+            let parts = values
+                .iter()
+                .filter_map(text_from_value)
+                .collect::<Vec<_>>();
+            (!parts.is_empty()).then(|| parts.join(""))
+        }
+        Value::Object(map)
+            if matches!(
+                map.get("type").and_then(Value::as_str),
+                Some("tool_use" | "tool_result")
+            ) =>
+        {
+            None
+        }
+        Value::Object(map) => ["text", "content", "message", "delta", "output", "result"]
+            .iter()
+            .find_map(|key| map.get(*key).and_then(text_from_value)),
+        Value::Null | Value::Bool(_) | Value::Number(_) => None,
+    }
+}
+
+fn text_or_number_from_value(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Number(number) => Some(number.to_string()),
+        _ => None,
+    }
+}
+
+fn error_marker(value: Option<&Value>) -> bool {
+    match value {
+        Some(Value::Bool(true)) => true,
+        Some(Value::String(text)) => !text.trim().is_empty(),
+        Some(Value::Number(_)) => true,
+        Some(Value::Object(map)) => !map.is_empty(),
+        Some(Value::Array(values)) => !values.is_empty(),
+        _ => false,
+    }
+}
+
+fn is_provider_error(object: Option<&serde_json::Map<String, Value>>, event_type: &str) -> bool {
+    let Some(object) = object else {
+        return false;
+    };
+    object
+        .get("is_api_error_message")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || object
+            .get("is_error")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || object.contains_key("api_error_status")
+        || error_marker(object.get("error"))
+        || object
+            .get("subtype")
+            .and_then(Value::as_str)
+            .is_some_and(|subtype| {
+                let subtype = subtype.to_ascii_lowercase();
+                subtype.contains("error") || subtype.contains("fail")
+            })
+        || (event_type == "result"
+            && object
+                .get("result")
+                .and_then(Value::as_str)
+                .is_some_and(|result| result.starts_with("API Error:")))
+}
+
+fn provider_error(
+    provider: DirectProvider,
+    object: Option<&serde_json::Map<String, Value>>,
+    params: Option<&serde_json::Map<String, Value>>,
+) -> AgentRuntimeError {
+    let text = |map: Option<&serde_json::Map<String, Value>>| {
+        map.and_then(|map| {
+            ["result", "message", "reason", "output", "error"]
+                .iter()
+                .find_map(|key| map.get(*key).and_then(text_from_value))
+        })
+    };
+    let message = text(object)
+        .or_else(|| text(params))
+        .or_else(|| {
+            object
+                .and_then(|map| map.get("api_error_status"))
+                .map(|status| format!("provider API error (status {status})"))
+        })
+        .unwrap_or_else(|| "provider error".to_string());
+    AgentRuntimeError::new(AgentRuntimeErrorKind::Unknown, message)
+        .with_provider(Some(provider.id()))
+}
+
+fn claude_api_retry_message(object: &serde_json::Map<String, Value>) -> String {
+    let message = ["message", "error", "reason", "detail", "details", "cause"]
+        .iter()
+        .find_map(|key| object.get(*key).and_then(text_from_value));
+    let attempt = [
+        "attempt",
+        "attemptNumber",
+        "attempt_number",
+        "retryAttempt",
+        "retry_attempt",
+        "retryCount",
+        "retry_count",
+    ]
+    .iter()
+    .find_map(|key| object.get(*key))
+    .and_then(text_or_number_from_value);
+    let max_retries = ["max_retries", "maxRetries", "max_attempts", "maxAttempts"]
+        .iter()
+        .find_map(|key| object.get(*key))
+        .and_then(text_or_number_from_value);
+    let delay_ms = ["retry_delay_ms", "retryDelayMs", "delay_ms", "delayMs"]
+        .iter()
+        .find_map(|key| object.get(*key))
+        .and_then(Value::as_u64);
+
+    let mut details = Vec::new();
+    if let Some(attempt) = attempt {
+        details.push(match max_retries {
+            Some(max_retries) => format!("attempt {attempt}/{max_retries}"),
+            None => format!("attempt {attempt}"),
+        });
+    }
+    if let Some(delay_ms) = delay_ms {
+        details.push(if delay_ms >= 1_000 && delay_ms % 1_000 == 0 {
+            format!("next in {}s", delay_ms / 1_000)
+        } else {
+            format!("next in {delay_ms}ms")
+        });
+    }
+
+    let mut content = "Claude Code is retrying a temporary API failure".to_string();
+    if let Some(message) = message.filter(|message| !message.trim().is_empty()) {
+        content.push_str(": ");
+        content.push_str(&message);
+    }
+    if !details.is_empty() {
+        content.push_str(" (");
+        content.push_str(&details.join(", "));
+        content.push(')');
+    }
+    content
+}
+
 fn classify_payload(
+    provider: DirectProvider,
+    event: &ProviderEvent,
+) -> Result<TypedProviderEvent, NativeAuditError> {
+    // Codex has a richer dedicated classifier (Live/Goal/root-child scopes).
+    // Do not reintroduce upstream's generic delta-to-message fallback.
+    if provider == DirectProvider::Codex {
+        return classify_payload_legacy(provider, event);
+    }
+    let Some(object) = event.payload_json.as_ref().and_then(Value::as_object) else {
+        return classify_payload_legacy(provider, event);
+    };
+    let kind = object
+        .get("type")
+        .or_else(|| object.get("method"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let params = object.get("params").and_then(Value::as_object);
+    if provider == DirectProvider::ClaudeCode && kind == "system" {
+        match object.get("subtype").and_then(Value::as_str) {
+            Some("api_retry") => {
+                return Ok(TypedProviderEvent::Message {
+                    provider_message_id: Some("claude-api-retry".into()),
+                    role: AgentRuntimeMessageRole::System,
+                    content: claude_api_retry_message(object),
+                    final_output: false,
+                });
+            }
+            Some("init") => {
+                return object
+                    .get("session_id")
+                    .and_then(Value::as_str)
+                    .map(|id| TypedProviderEvent::SessionObserved(id.into()))
+                    .ok_or(NativeAuditError::MalformedFrame(event.sequence));
+            }
+            _ => {}
+        }
+    }
+    if matches!(
+        kind.as_str(),
+        "assistant" | "result" | "completed" | "done" | "success"
+    ) && is_provider_error(Some(object), &kind)
+    {
+        return Ok(TypedProviderEvent::Error(provider_error(
+            provider,
+            Some(object),
+            params,
+        )));
+    }
+    let mut typed = classify_payload_legacy(provider, event)?;
+    match &mut typed {
+        TypedProviderEvent::Message {
+            content,
+            provider_message_id,
+            ..
+        } => {
+            *content = ["text", "content", "message", "delta", "output"]
+                .iter()
+                .find_map(|key| object.get(*key).and_then(text_from_value))
+                .unwrap_or_default();
+            *provider_message_id = object
+                .get("message")
+                .and_then(|message| message.get("id"))
+                .and_then(Value::as_str)
+                .or_else(|| {
+                    ["message_id", "messageId", "item_id", "itemId"]
+                        .iter()
+                        .find_map(|key| object.get(*key).and_then(Value::as_str))
+                })
+                .map(str::to_owned);
+        }
+        TypedProviderEvent::ToolCall { id, status, .. }
+            if matches!(
+                kind.as_str(),
+                "tool_result" | "tool_end" | "function_result"
+            ) =>
+        {
+            if id.is_none() {
+                *id = object
+                    .get("tool_use_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+            }
+            if object.get("is_error").and_then(Value::as_bool) == Some(true)
+                || error_marker(object.get("error"))
+            {
+                *status = AgentRuntimeToolStatus::Failed;
+            }
+        }
+        TypedProviderEvent::Error(error) => {
+            error.message = provider_error(provider, Some(object), params).message
+        }
+        _ => {}
+    }
+    Ok(typed)
+}
+
+fn classify_payload_legacy(
     provider: DirectProvider,
     event: &ProviderEvent,
 ) -> Result<TypedProviderEvent, NativeAuditError> {
@@ -1627,6 +1905,85 @@ fn project_typed_event(
     event: &DecodedProviderEvent,
     manifest: &NativeAuditManifest,
 ) -> Result<ProviderEventProjection, NativeAuditError> {
+    // Claude emits mixed text/tool content in a single envelope. Expand only
+    // completed semantic blocks at the adapter boundary, with distinct stable
+    // event IDs and the same native reference. Preserve historical v1/v2 replay.
+    if provider == DirectProvider::ClaudeCode
+        && manifest.mapper_version.ends_with("-v3")
+        && matches!(event.typed, TypedProviderEvent::Message { .. })
+        && let Some(blocks) = event
+            .raw
+            .payload_json
+            .as_ref()
+            .and_then(|value| value.pointer("/message/content"))
+            .and_then(Value::as_array)
+    {
+        let tools: Vec<_> = blocks
+            .iter()
+            .enumerate()
+            .filter_map(|(index, block)| {
+                let kind = block.get("type").and_then(Value::as_str)?;
+                if !matches!(kind, "tool_use" | "tool_result") {
+                    return None;
+                }
+                Some((
+                    index,
+                    TypedProviderEvent::ToolCall {
+                        id: block
+                            .get(if kind == "tool_use" {
+                                "id"
+                            } else {
+                                "tool_use_id"
+                            })
+                            .and_then(Value::as_str)
+                            .map(str::to_owned),
+                        name: block
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or("unknown_tool")
+                            .into(),
+                        status: if kind == "tool_use" {
+                            AgentRuntimeToolStatus::Running
+                        } else if block.get("is_error").and_then(Value::as_bool) == Some(true) {
+                            AgentRuntimeToolStatus::Failed
+                        } else {
+                            AgentRuntimeToolStatus::Succeeded
+                        },
+                        arguments: (kind == "tool_use")
+                            .then(|| block.get("input").cloned())
+                            .flatten(),
+                        result: (kind == "tool_result")
+                            .then(|| block.get("content").cloned())
+                            .flatten(),
+                    },
+                ))
+            })
+            .collect();
+        if !tools.is_empty() {
+            let mut text_event = event.clone();
+            text_event.raw.payload_json = None; // prevent re-expanding this envelope
+            let mut projected = project_typed_event(provider, &text_event, manifest)?;
+            projected.durable_events.retain(|event| {
+                !matches!(&event.payload,
+                AgentEventPayload::Message { message, .. } if message.content.is_empty())
+            });
+            for (index, typed) in tools {
+                let decoded = DecodedProviderEvent {
+                    raw: event.raw.clone(),
+                    typed,
+                };
+                let mut tool = project_typed_event(provider, &decoded, manifest)?;
+                for event in &mut tool.durable_events {
+                    event.event_id = canonical_provider_message_id(
+                        manifest.run_attempt_id,
+                        &format!("claude-content-block:{}:{index}", decoded.raw.sequence),
+                    );
+                }
+                projected.durable_events.extend(tool.durable_events);
+            }
+            return Ok(projected);
+        }
+    }
     let live_payload = match &event.typed {
         TypedProviderEvent::MessageDelta {
             provider_message_id,
@@ -2090,6 +2447,36 @@ mod tests {
     }
 
     #[test]
+    fn follow_up_accepts_explicit_default_identity_without_changing_other_bindings() {
+        let config = ExecutorConfig::new(BaseCodingAgent::Codex);
+        let mut session = provider_session(DirectProvider::Codex, &config);
+        session.runtime_profile_id = "CODEX:DEFAULT".to_string();
+        assert!(
+            validate_launch(
+                DirectProvider::Codex,
+                &config,
+                DirectIntent::FollowUp,
+                Some(&session),
+                None,
+            )
+            .is_ok()
+        );
+        for profile in ["CODEX:PLAN", "CODEX:default", "CLAUDE_CODE:DEFAULT"] {
+            session.runtime_profile_id = profile.to_string();
+            assert!(
+                validate_launch(
+                    DirectProvider::Codex,
+                    &config,
+                    DirectIntent::FollowUp,
+                    Some(&session),
+                    None,
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
     fn native_session_ids_reject_ambiguous_whitespace_and_option_values() {
         assert!(validate_native_session_id(DirectProvider::Gemini, " session ").is_err());
         assert!(validate_native_session_id(DirectProvider::OhMyPi, "-resume").is_err());
@@ -2154,6 +2541,121 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn claude_nested_assistant_content_is_projected() {
+        let event = DirectProvider::ClaudeCode
+            .decode_native_frame(&frame(
+                DirectProvider::ClaudeCode,
+                serde_json::json!({
+                    "type": "assistant",
+                    "message": {
+                        "id": "msg-1",
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "hello from Claude"}]
+                    },
+                    "session_id": "session-1"
+                }),
+            ))
+            .unwrap();
+        assert!(matches!(
+            event.typed,
+            TypedProviderEvent::Message {
+                role: AgentRuntimeMessageRole::Assistant,
+                ref content,
+                provider_message_id: Some(ref id),
+                ..
+            } if content == "hello from Claude" && id == "msg-1"
+        ));
+    }
+
+    #[test]
+    fn claude_api_error_events_are_not_success() {
+        let assistant_error = DirectProvider::ClaudeCode
+            .decode_native_frame(&frame(
+                DirectProvider::ClaudeCode,
+                serde_json::json!({
+                    "type": "assistant",
+                    "message": {
+                        "id": "msg-error",
+                        "role": "assistant",
+                        "content": [{
+                            "type": "text",
+                            "text": "API Error: 503 No available channel"
+                        }]
+                    },
+                    "is_api_error_message": true,
+                    "error": "server_error"
+                }),
+            ))
+            .unwrap();
+        let TypedProviderEvent::Error(error) = assistant_error.typed else {
+            panic!("Claude assistant API errors must map to an error event");
+        };
+        assert_eq!(error.provider.as_deref(), Some("claude_code"));
+        assert!(error.message.contains("API Error: 503"));
+
+        let result_error = DirectProvider::ClaudeCode
+            .decode_native_frame(&frame(
+                DirectProvider::ClaudeCode,
+                serde_json::json!({
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": true,
+                    "api_error_status": 503,
+                    "result": "API Error: 503 No available channel"
+                }),
+            ))
+            .unwrap();
+        let TypedProviderEvent::Error(error) = result_error.typed else {
+            panic!("Claude result API errors must map to an error event");
+        };
+        assert!(error.message.contains("API Error: 503"));
+
+        let success = DirectProvider::ClaudeCode
+            .decode_native_frame(&frame(
+                DirectProvider::ClaudeCode,
+                serde_json::json!({
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": false,
+                    "result": "completed"
+                }),
+            ))
+            .unwrap();
+        assert_eq!(
+            success.typed,
+            TypedProviderEvent::Lifecycle(AgentRunStatus::Succeeded)
+        );
+    }
+
+    #[test]
+    fn claude_api_retry_is_a_visible_non_terminal_status() {
+        let event = DirectProvider::ClaudeCode
+            .decode_native_frame(&frame(
+                DirectProvider::ClaudeCode,
+                serde_json::json!({
+                    "type": "system",
+                    "subtype": "api_retry",
+                    "attempt": 3,
+                    "max_retries": 10,
+                    "retry_delay_ms": 4000,
+                    "error": "server_error"
+                }),
+            ))
+            .unwrap();
+
+        assert!(matches!(
+            event.typed,
+            TypedProviderEvent::Message {
+                role: AgentRuntimeMessageRole::System,
+                ref content,
+                final_output: false,
+                provider_message_id: Some(ref message_id),
+            } if content == "Claude Code is retrying a temporary API failure: server_error (attempt 3/10, next in 4s)"
+                && message_id == "claude-api-retry"
+        ));
     }
 
     #[test]
@@ -2959,15 +3461,9 @@ mod tests {
     }
 
     #[test]
-    fn mapper_v2_does_not_relabel_legacy_audit_bundles() {
+    fn mapper_versions_do_not_relabel_legacy_audit_bundles() {
         for provider in DirectProvider::ALL {
-            assert!(provider.mapper().versions().mapper_version.ends_with(
-                if provider == DirectProvider::Codex {
-                    "-v3"
-                } else {
-                    "-v2"
-                }
-            ));
+            assert!(provider.mapper().versions().mapper_version.ends_with("-v3"));
             assert!(
                 provider
                     .semantic_mapper()
@@ -2981,6 +3477,178 @@ mod tests {
                     .versions()
                     .mapper_version
                     .ends_with("-v1")
+            );
+        }
+        let provider = DirectProvider::ClaudeCode;
+        let legacy_only = frame(
+            provider,
+            serde_json::json!({"type":"system","subtype":"init"}),
+        );
+        assert!(provider.decode_native_frame(&legacy_only).is_err());
+        let mapper = provider.semantic_mapper();
+        let raw = mapper.decode(&legacy_only).unwrap();
+        let mut manifest = fixture_manifest(provider);
+        manifest.mapper_version = mapper.versions().mapper_version;
+        assert!(mapper.map(&raw, &manifest).unwrap().is_empty());
+    }
+
+    #[test]
+    fn non_codex_v3_replays_mixed_content_losslessly_without_rewriting_v2() {
+        use serde_json::json;
+        let provider = DirectProvider::ClaudeCode;
+        let root = tempfile::tempdir().unwrap();
+        let manifest = fixture_manifest(provider);
+        let mut writer = crate::runtime::NativeAuditWriter::create_in(
+            root.path(),
+            crate::runtime::NativeAuditMetadata {
+                session_id: manifest.session_id,
+                agent_run_id: manifest.agent_run_id,
+                turn_id: manifest.turn_id,
+                run_attempt_id: manifest.run_attempt_id,
+                run_attempt_number: 1,
+                provider_id: provider.id().into(),
+                runtime_profile_id: "fixture".into(),
+                workspace_path: root.path().display().to_string(),
+                runtime_version: manifest.runtime_version.clone(),
+                protocol_version: manifest.protocol_version.clone(),
+                adapter_version: manifest.adapter_version.clone(),
+                mapper_version: manifest.mapper_version.clone(),
+                created_at: manifest.created_at,
+            },
+        )
+        .unwrap();
+        let frames = [
+            json!({"type":"system","subtype":"init","session_id":"claude-fixture"}),
+            json!({"type":"assistant","message":{"id":"msg-1","content":[
+                {"type":"text","text":"hello "},
+                {"type":"tool_use","id":"tool-1","name":"Read","input":{"path":"a"}},
+                {"type":"text","text":"world"},
+                {"type":"tool_use","id":"tool-2","name":"Read","input":{"path":"b"}}
+            ]}}),
+            json!({"type":"user","message":{"content":[
+                {"type":"tool_result","tool_use_id":"tool-1","content":[{"type":"text","text":"file"}]},
+                {"type":"tool_result","tool_use_id":"tool-2","is_error":true,"content":"not found"}
+            ]}}),
+            json!({"type":"system","subtype":"api_retry","attempt":1,"error":"overloaded","retry_delay_ms":500}),
+            json!({"type":"result","is_error":false,"result":"success"}),
+        ];
+        for payload in &frames {
+            writer
+                .append_native_output(
+                    NativeAuditChannel::Stdout,
+                    "application/json",
+                    Uuid::nil(),
+                    &serde_json::to_vec(payload).unwrap(),
+                )
+                .unwrap();
+        }
+        let closed = writer.close().unwrap();
+        let bundle = crate::runtime::AuditBundle::read(
+            root.path()
+                .join(&closed.manifest_relative_path)
+                .parent()
+                .unwrap(),
+        )
+        .unwrap();
+        let mapper = provider.mapper();
+        let replay = bundle.replay(&mapper).unwrap();
+        assert_eq!(replay.provider_events.len(), frames.len());
+        assert!(
+            replay
+                .provider_events
+                .iter()
+                .zip(&frames)
+                .all(|(event, raw)| event.payload_json.as_ref() == Some(raw))
+        );
+        assert_eq!(replay.agent_events.len(), 8);
+        assert_eq!(replay.state.status, AgentRunStatus::Succeeded);
+        assert_eq!(
+            replay.state.projection_status,
+            crate::runtime::ProjectionStatus::Current
+        );
+        assert!(
+            replay.state.last_error.is_none(),
+            "retry must not become a terminal error"
+        );
+        assert_eq!(
+            replay
+                .agent_events
+                .iter()
+                .map(|event| event.sequence)
+                .collect::<Vec<_>>(),
+            (1..=8).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            replay
+                .agent_events
+                .iter()
+                .map(|event| event.event_id)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            8
+        );
+        assert!(
+            matches!(&replay.agent_events[1].payload, AgentEventPayload::Message { message, .. } if message.content == "hello world")
+        );
+        assert!(matches!(
+            &replay.agent_events[4].payload,
+            AgentEventPayload::ToolCall {
+                status: AgentRuntimeToolStatus::Succeeded,
+                ..
+            }
+        ));
+        assert!(matches!(
+            &replay.agent_events[5].payload,
+            AgentEventPayload::ToolCall {
+                status: AgentRuntimeToolStatus::Failed,
+                ..
+            }
+        ));
+        assert_eq!(
+            bundle.replay(&mapper).unwrap().agent_events,
+            replay.agent_events
+        );
+
+        let raw = &replay.provider_events[1];
+        let mut old_manifest = manifest;
+        old_manifest.mapper_version = provider.semantic_mapper().versions().mapper_version;
+        let old = provider.semantic_mapper().map(raw, &old_manifest).unwrap();
+        assert_eq!(old.len(), 1);
+        assert_eq!(old[0].sequence, raw.sequence);
+        assert!(
+            matches!(&old[0].payload, AgentEventPayload::Message { message, .. } if message.content.is_empty())
+        );
+    }
+
+    #[test]
+    fn provider_native_nested_text_errors_and_tool_results_stay_at_adapter_boundary() {
+        use serde_json::json;
+        for provider in [
+            DirectProvider::ClaudeCode,
+            DirectProvider::Gemini,
+            DirectProvider::OhMyPi,
+        ] {
+            let text = provider
+                .decode_native_frame(&frame(
+                    provider,
+                    json!({"type":"assistant","content":[{"text":"first"},{"text":"second"}]}),
+                ))
+                .unwrap();
+            assert!(
+                matches!(text.typed, TypedProviderEvent::Message { content, .. } if content == "firstsecond")
+            );
+            let failed = provider.decode_native_frame(&frame(provider, json!({"type":"tool_result","tool_use_id":"tool-id","is_error":true,"content":[{"text":"details"}]}))).unwrap();
+            assert!(
+                matches!(failed.typed, TypedProviderEvent::ToolCall { id: Some(id), status: AgentRuntimeToolStatus::Failed, result: Some(Value::Array(_)), .. } if id == "tool-id")
+            );
+            let error = provider
+                .decode_native_frame(&frame(
+                    provider,
+                    json!({"type":"protocol_error","error":{"message":"wire failed"}}),
+                ))
+                .unwrap();
+            assert!(
+                matches!(error.typed, TypedProviderEvent::Error(error) if error.kind == AgentRuntimeErrorKind::ProtocolFailed && error.message == "wire failed")
             );
         }
     }

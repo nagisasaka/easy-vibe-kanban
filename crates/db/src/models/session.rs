@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, SqliteConnection, SqlitePool};
 use thiserror::Error;
 use ts_rs::TS;
 use uuid::Uuid;
@@ -157,6 +157,26 @@ impl Session {
         workspace_id: Uuid,
     ) -> Result<Self, SessionError> {
         let agent_working_dir = Self::resolve_agent_working_dir(pool, workspace_id).await?;
+        Self::create_with_working_dir(
+            &mut *pool.acquire().await?,
+            data,
+            id,
+            workspace_id,
+            agent_working_dir,
+        )
+        .await
+    }
+
+    /// Insert into the caller's transaction using the same Session creation
+    /// rules. Resource preparation resolves the working directory before taking
+    /// the write lock; it does not create a Session outside the graph commit.
+    pub async fn create_with_working_dir(
+        connection: &mut SqliteConnection,
+        data: &CreateSession,
+        id: Uuid,
+        workspace_id: Uuid,
+        agent_working_dir: Option<String>,
+    ) -> Result<Self, SessionError> {
         let name = data.name.as_deref().filter(|s| !s.is_empty());
 
         Ok(sqlx::query_as!(
@@ -176,11 +196,11 @@ impl Session {
             data.executor,
             agent_working_dir
         )
-        .fetch_one(pool)
+        .fetch_one(connection)
         .await?)
     }
 
-    async fn resolve_agent_working_dir(
+    pub async fn resolve_agent_working_dir(
         pool: &SqlitePool,
         workspace_id: Uuid,
     ) -> Result<Option<String>, sqlx::Error> {

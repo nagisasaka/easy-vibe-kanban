@@ -4,6 +4,11 @@ import { ReactFlowProvider } from '@xyflow/react';
 import '../../../../packages/web-core/src/i18n/config';
 import './style.css';
 import { CardContextHarness } from './CardContextHarness';
+import { RuntimeInputHarness } from './RuntimeInputHarness';
+import { SettingsSafetyHarness } from './SettingsSafetyHarness';
+import { RouteLoadingHarness } from './RouteLoadingHarness';
+import { WorkflowDraftHarness } from './WorkflowDraftHarness';
+import { DiffTreeHarness } from './DiffTreeHarness';
 import {
   WORKFLOW_GRAPH_VERSION,
   createDefaultWorkflowGraph,
@@ -348,6 +353,8 @@ function WorkflowCanvasHarness() {
             graph={graph}
             validationIssues={canvasValidationIssues}
             readOnly={readOnly}
+            selectedNodeId={selectedNodeId}
+            selectedEdgeId={selectedEdgeId}
             onChange={setGraph}
             onNodeDrop={handleNodeDrop}
             onSelectionChange={(selection) => {
@@ -537,7 +544,17 @@ function TaskAttemptsHarness() {
 const mode = new URLSearchParams(window.location.search).get('mode');
 
 createRoot(document.getElementById('root')!).render(
-  mode === 'card-context' ? (
+  mode === 'diff-tree' ? (
+    <DiffTreeHarness />
+  ) : mode === 'workflow-draft' ? (
+    <WorkflowDraftHarness />
+  ) : mode === 'route-loading' ? (
+    <RouteLoadingHarness />
+  ) : mode === 'settings-safety' ? (
+    <SettingsSafetyHarness />
+  ) : mode === 'runtime-input' ? (
+    <RuntimeInputHarness />
+  ) : mode === 'card-context' ? (
     <CardContextHarness />
   ) : mode === 'entry' ? (
     <WorkflowEntryHarness />

@@ -52,14 +52,22 @@ sources:
     resource: repo://packages/web-core/src/features/workspace-chat/ui/ExecutionInspectionPanel.tsx
   - id: openwiki-source-1be0c4423a1ed260c67b498f
     resource: repo://packages/web-core/src/features/workspace-files/model/workspaceFileRawUrl.test.ts
+  - id: openwiki-source-9b9697ea8eafb71c1ca35e40
+    resource: repo://packages/web-core/src/pages/workspaces/ChangesPanelContainer.tsx
   - id: openwiki-source-e4b6c8db09a6d8887192b13e
     resource: repo://packages/web-core/src/shared/lib/previewProxyUrl.ts
+  - id: openwiki-source-3b6f5885b9d50925c82267dd
+    resource: repo://packages/web-core/src/shared/providers/WorkspaceProvider.tsx
   - id: openwiki-source-5ef837b2bc54d286b3dedd8f
     resource: repo://packages/web-core/src/shared/stores/useUiPreferencesStore.ts
-generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
+  - id: openwiki-source-7156bd32d206a84b272e44b5
+    resource: repo://packages/web-core/src/shared/stores/useWorkspaceDiffStore.ts
+  - id: openwiki-source-dcac74ef871fd02e6315fa93
+    resource: repo://tests/workflow/specs/diff-tree.spec.ts
+generated: { by: "codex", at: "2026-09-22T02:14:43.589Z" }
 verified:
   - by: openwiki/0.5.1
-    at: 2026-09-21T08:16:36.701Z
+    at: 2026-09-22T02:14:43.589Z
 ---
 
 # ファイル・差分・プレビュー・端末の境界
@@ -115,6 +123,12 @@ Issue を関連づけて Workspace を作る経路では、remote client が取�
 Git diff は専用の signed WebSocket 経路を持つ。diff stream は現在の base commit と worktree から差分を計算し、Repo ID と複数 Repo 用 prefix を付けて replace patch を配信する。WorkspaceRepo の target_branch が変わったら base を再計算して stream を reset する。[API](../../crates/server/src/routes/workspaces/git.rs#L137-L175)・[snapshot](../../crates/services/src/services/diff_stream.rs#L318-L375)・[target 変更](../../crates/services/src/services/diff_stream.rs#L443-L459)
 
 stats-only と累積本文容量の上限により、diff の old/new content を省くことがある。本文がないことと変更がないことを同一視しない。追加・削除行数は可能なら省略前に計算して保持する。[省略の契約](../../crates/services/src/services/diff_stream.rs#L667-L706) レビュー後に変更を統合する手順は [Task から統合まで](../workflows/task-to-integration.md) に続く。
+
+### 差分の未取得・エラー・空を区別する
+
+差分 panel と右側 file tree は、初期 loading、取得失敗、正常に取得した空差分を別の状態で表示する。通信失敗を「変更なし」やゼロ行の成功と解釈しない。再接続中に同じ対象の最後の snapshot が残る場合は、古い表示であることとエラーを示す。[差分 panel](../../packages/web-core/src/pages/workspaces/ChangesPanelContainer.tsx#L878-L889)、[file tree](../../packages/web-core/src/pages/workspaces/FileTreeContainer.tsx)
+
+`WorkspaceProvider` が Workspace / host の切替と unmount に合わせて共有差分 store をリセットし、前の対象の snapshot・error・初期化状態を残さない。store 自体が host ID を保持して選別する構造ではない。既存ファイルを見られることや cached diff があることを、現在の target での検証・統合成功の証拠に使わない。正常な empty と未取得・再接続の見分けは [実 component fixture](../../tests/workflow/specs/diff-tree.spec.ts)で確認する。[scope 境界の処理](../../packages/web-core/src/shared/providers/WorkspaceProvider.tsx#L145-L152)、[store の初期値と reset](../../packages/web-core/src/shared/stores/useWorkspaceDiffStore.ts#L55-L81)
 
 ## Preview と開発サーバー
 

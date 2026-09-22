@@ -31,7 +31,10 @@ import {
   TwoColumnPickerEmpty,
 } from './SettingsComponents';
 import { useSettingsDirty } from './SettingsDirtyContext';
-import { useSettingsMachineClient } from './SettingsHostContext';
+import {
+  useSettingsHost,
+  useSettingsMachineClient,
+} from './SettingsHostContext';
 import { AgentIcon } from '@/shared/components/AgentIcon';
 import { getExecutorVariantKeys } from '@/shared/lib/executor';
 import { AgentConfigurationSettingsPanel } from './AgentConfigurationSettingsPanel';
@@ -42,6 +45,7 @@ export function AgentsSettingsSection() {
   const { t } = useTranslation(['settings', 'common']);
   const { setDirty: setContextDirty } = useSettingsDirty();
   const machineClient = useSettingsMachineClient();
+  const { canEdit } = useSettingsHost();
 
   // Profiles hook for server state
   const {
@@ -50,6 +54,8 @@ export function AgentsSettingsSection() {
     isSaving: profilesSaving,
     error: profilesError,
     save: saveProfiles,
+    hasSensitiveValues,
+    reveal,
   } = useMachineProfiles(machineClient);
 
   const { config, updateAndSaveConfig, reloadSystem } = useUserSystem();
@@ -103,6 +109,7 @@ export function AgentsSettingsSection() {
   };
 
   const handleCreateConfig = async (executor: string) => {
+    if (!canEdit || !hasSensitiveValues) return;
     try {
       const result = await CreateConfigurationDialog.show({
         executorType: executor as BaseCodingAgent,
@@ -152,6 +159,7 @@ export function AgentsSettingsSection() {
   };
 
   const handleDeleteConfig = async (executor: string, configName: string) => {
+    if (!canEdit || !hasSensitiveValues) return;
     try {
       const result = await DeleteConfigurationDialog.show({
         configName,
@@ -402,6 +410,24 @@ export function AgentsSettingsSection() {
 
   return (
     <>
+      {!hasSensitiveValues && (
+        <div className="mb-4 rounded-sm border border-border p-3 text-sm text-normal">
+          <p>{t('settings.agents.sensitiveProfiles.description')}</p>
+          <button
+            type="button"
+            disabled={!canEdit || profilesLoading}
+            className="mt-2 underline disabled:opacity-50"
+            onClick={() => {
+              if (
+                window.confirm(t('settings.agents.sensitiveProfiles.confirm'))
+              )
+                reveal();
+            }}
+          >
+            {t('settings.agents.sensitiveProfiles.read')}
+          </button>
+        </div>
+      )}
       {/* Status messages */}
       {!!profilesError && (
         <div
@@ -534,7 +560,7 @@ export function AgentsSettingsSection() {
                   <button
                     className="p-half rounded-sm hover:bg-secondary text-low hover:text-normal"
                     onClick={() => handleCreateConfig(selectedExecutorType)}
-                    disabled={profilesSaving}
+                    disabled={profilesSaving || !canEdit || !hasSensitiveValues}
                     title={t('settings.agents.editor.createNew')}
                   >
                     <PlusIcon className="size-icon-2xs" weight="bold" />
@@ -647,7 +673,7 @@ export function AgentsSettingsSection() {
                     formData
                   )
                 }
-                disabled={profilesSaving}
+                disabled={profilesSaving || !canEdit || !hasSensitiveValues}
               />
               <AgentConfigurationSettingsPanel
                 executor={selectedExecutorType}
