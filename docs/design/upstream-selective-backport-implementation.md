@@ -5,7 +5,7 @@ description: "固定した上流からの五段階移植の対応表、設計判
 
 ## 状況
 
-実装中。AC01〜AC12は未達成。上流のコードを読んだこと、自動テストの成功、実機受入の成功を区別して記録する。
+第1〜第5弾の実装・段階commit・自動検証・Chrome DevTools MCP受入を完了。AC01〜AC12の対応は末尾の最終判定を参照。途中の「未実施」「進行中」はその時点の記録として残し、最終結果と区別する。
 
 正規仕様は[選別移植仕様](upstream-selective-backport.md)。canonical Wikiは編集しない。
 
@@ -277,3 +277,112 @@ composer修正commitは`f43ae3ce78ca0d55bb02162fdbe0af0f28f24c46`。以降のrun
 - 自動Syncは00:26:01.030Z開始。Workspace `c0875ce1-662b-400d-b187-c1b41b74e99c`、Session `76b4bed1-6b26-4450-983b-f550f8b0def0`、Run `b22e4cce-d655-46ac-af77-f7a0a37fea1d`、Attempt `733fc07c-cf5e-49fd-b192-d87530fc0ce5`。固定したsource／Integrationの2 semantic eventsを照合し、MCP `openwiki_begin(mode=update)`から既存2ページの更新を実行。最終publication／Viewerの確認は続報に記録する。
 
 Auditの共通pathは`dev_assets/runtime/native-audit/v1/sessions/{Session先頭2文字}/{Session}/agent-runs/{Run}/attempts/{Attempt}/`（`frames.jsonl`／`manifest.json`）。全文会話や機密値を本記録へ複製しない。共有Manifest／索引／Syncの入力は`/var/tmp/vibe-kanban-dev/shared/lvk-backport-acceptance.tGwIkS-8dc5c831-f4ad-49cd-9fa3-be445e2b763e/persistent/knowledge/`に残る。
+
+### Syncの公開とViewer — 最終結果
+
+Syncは00:33:13ZにAgent成功、00:33:18.675Zにpublication／receipt記録を完了（開始から約7分18秒）。targetへのWiki-only commitは`a6b7a1fa97aed9038127e13fb49607b3394b74d8`、親は検証済みR `895a1dd`。maintenance側commit `2809c85f88a37ca0c99e75e3780ff42abb29b01f`とは別OIDだが、`openwiki/`のtree差分はゼロ。変更8ファイルはすべて`openwiki/`内、source変更なし、両worktreeのGit statusはclean。
+
+- Native Auditは478 frames／closed complete。seq75で固定入力manifest、seq87／91で4 chunks全体のchecksum確認・読取。対象はsource event `0f99ec7d…`とIntegration event `16764c1c…`だけ。seq69にregistered MCP update、seq324／350に2ページのsubmit、seq419にfinish complete。単なるprompt掲載を実利用とは数えていない。
+- repository memoryは`current`、error／active runなし、sourceはR、Wiki commitは`a6b7a1f`。2 event receiptsは`updated`。MCPのIntegration画面も`all selected semantic events acknowledged by OpenWiki`。Agent proposalに残る「host validation pending」は明示的に検証前の提案と表示され、その下の実host証拠・published／doneとは区別される。
+- 最終表示コード`160da0edb3e4fe62e70b34a142b39fa33ea2bb15`で、MCP page 7のExecutions／HistoryからSync workspaceを開き、owner `openwiki`／succeeded／Published result、Stop disabled、自由chat／新Session不可を確認。Wikiをindex→quickstart→Unicode length limits本文リンクで遷移し、ブラウザreload後も同じworkspace branchの更新Wikiを閲覧。Reload Wiki filesも実行。通常Workspaceに戻り元の08:59 Sessionを選択し、未送信文とCode設定の保持を確認。
+- 内容確認は小fixtureの契約に限定。既存normalization／Guest／greeting／呼出側のencoding責務を保持し、追加のcode-point制限、正規化→limit validationの順序、TypeError／RangeError、surrogate pairとgraphemeの違い、将来指針と実装済み動作の区別をsource／tests／designに照合した。2ページはこの小repoのまとまりであり、大きなrepoの品質・網羅性やA/B改善を保証しない。成果物を手修正していない。
+
+### 最終quality gatesとreview
+
+最終製品コードは`160da0ed`。これ以降は実装記録だけを更新する。server／process-hostのRust sourceは`84ec5ebe`以降不変（`git diff 84ec5ebe HEAD -- crates`は空）。このため、修正版Bootstrap／Integration／Syncの実機結果と最終UI表示確認を同じruntime契約の証拠として使用できる。古い失敗runや修正前の成功Bootstrapを最終runtimeの代用にはしていない。
+
+| コマンド／範囲 | 最終結果 |
+| --- | --- |
+| `pnpm run format` | 成功。root／remote Rust formatとwebを実行。追加fixtureもweb-coreのPrettier設定でformat |
+| `RUST_TEST_THREADS=8 cargo test --workspace` | 983 passed、0 failed、8既存ignored、filtered 0。server 154、Workflow integration 40、executors 288、local-deployment 71、DB 61等を含む |
+| `pnpm --filter @vibe/web-core exec vitest run --maxWorkers=4` | 74 files／411 passed |
+| `pnpm exec playwright test -c tests/workflow/playwright.config.ts` | 39 passed。最後のfixture format後にも新規diff 2 testsを再確認 |
+| `pnpm run check` | local-web／remote-web／web-core／UI／root Rustすべて成功 |
+| `pnpm run lint` | frontend、root clippy all-targets／qa-mode、unused-i18nすべて成功 |
+| `pnpm run generate-types:check` | 成功。Rust由来のtypes／schemas一致、手編集なし |
+| `node --test scripts/validate-npm-version.test.cjs` | 3 passed。実発行validatorを使用、Actions／発行は未実行 |
+| `pnpm run server:check` | 12 passed、nginx未導入の既存1 skip。HTTPS ingress実機は未検証 |
+| `pnpm --filter @vibe/local-web exec vite build --mode development --manifest --outDir …/local` とremote-webの同等command | 両方成功。release packageではない |
+
+最終build／Rustログは`/tmp/lvk-backport-verified-web.39oLXY/`。entryの静的JS依存はlocal 1,522,000 bytes／gzip 475,354 bytes、remote 3,139,516／969,236 bytes。既存Browserslist、Tailwind、chunk size等のwarningは記録し、warningなしとは主張しない。rootにPrettier executableがないため追加fixture用の最初の`pnpm exec prettier`は失敗したが、既存web-core依存・設定から実行し直して成功。製品format自体は成功していた。
+
+全差分の自己レビューでは、profile secretのallowlistと未読値保持、明示Host、保存CAS／Session transaction、semantic/liveとjournal、terminal／process exit、旧mapper replay、source・owner・publication境界、全graph fields、tab draft identity、生成型・除外機能を再確認した。確認済みfinding（Stage hitbox、lazy worktree準備、hard reload draft、sidebar false-empty）はすべて修正・回帰test・元操作でMCP確認済み。新たな確定findingはない。
+
+途中で一度失敗した旧OpenWiki全attempt fixtureはdiagnosticを追加し、単独・server全体・複数回の全workspace gateで再現していない。判定条件の変更／skipはしておらず、原因を解明したとは主張しない。最終gateでは当該testも成功。開始前からあるterminal runのpending Cancel recovery警告、過去のunknown owner履歴は今回の受入runと切り分け、DBを手修正していない。
+
+### 再開後の最終確認
+
+2026-09-22T01:00Zの再開時、コンテナのuptimeは約5分で、旧server／Vite／Chromeプロセスと実行handleは存在しなかった。Git、DB、Audit、試験repo、検証ログは保持されていた。実行中AgentRun／Workflowが0であることをread-only照会し、製品コードを変更せず再起動した。停止中プロセスをユーザーrunとしてkillしたことはない。
+
+- `pnpm run format`を再実行して成功、製品コードの追加差分なし。
+- `cargo build --bin server --bin agent-process-host`成功。中断由来と考えられるincremental artifact警告が1件あり、rustcが無効artifactを無視してbuildを完了した。原因をコード不具合と断定しない。server SHA256は`b5486c9a9175a6537697c54ed59b39c28b47fed0a2c66d1a6e27d729dd31cbd3`、hostは`4abf4d54ef1339a03926946ecb0ca7c58d0f76ee77da7f2768f0857f8bf7c957`。両方のsourceは最終製品commit `160da0ed`。
+- 01:00:35Zにserver PID `2677`を起動。frontendは`0.0.0.0:4020`、backendは`0.0.0.0:4021`。migration両件の成功、Bootstrap／通常Workflow／Integration／Syncの成功、別試験runのcancelledを再確認。
+- 新しいChrome profile `/tmp/lvk-backport-final-browser.hMzHTG`とMCP context `lvk-backport-final-verification`を使い、同じSync WorkspaceのPublished result、inspection-only、Wiki quickstartと本文内部リンクを確認。ブラウザreloadも成功。元の一時browser contextがコンテナ再起動後も残るとは扱わず、以前の入力保全試験はその時点のMCP記録を根拠とする。
+- `cargo test -p server --lib routes::openwiki::completion::tests -- --test-threads=8`も再実行し、全4件成功。これは全workspace 983件成功に追加の確認であり、全suiteを再実行したとは記載しない。
+
+再開時に製品コードは変わっていないため、既存の修正版実Codex受入を再生成せず保持する。再起動後のUI確認を、新しいモデル実行の成功と混同しない。
+
+### BP01〜BP19の最終判定
+
+固定上流`76a86da903a931e7cd290d1d4b26e9b4304794d9`の最終codeを参照。全必須項目を採用、条件付きBP15／BP19も該当して採用した。非適用へ変更した項目はない。Task移行・新shell全体・Agent Center全画面・DB reset・CLI installer・新schedulerは除外のまま。
+
+| 要求 | 判定・主な変更module | 根拠／最終検証 |
+| --- | --- | --- |
+| BP01 | 採用: `routes/agent_runs.rs`、DB event wake-up | 空State訂正／cursor catch-up／timeout fixture、実Live／完了／Goal／Stop |
+| BP02 | 採用: workspace-chat hooks、Scratch DB/API、`pendingSessionDraft` | late ACK／Queue／Skills／scope／reload、MCP入力保全 |
+| BP03 | 採用: `profile/runtime_identity.rs`、DB／adapter／Session | exact DEFAULT aliasのみ共通化、provider／variant隔離 |
+| BP04 | 採用: `sessions/executor_config.rs`、config復元hook | latest immutable attempt／native adoption／破損、fresh Goal／旧Session復元 |
+| BP05 | 採用: diff stream/store／stats／主panel／FileTree | loading／empty／error／cache／scope fixture、MCP故障注入と正常empty |
+| BP06 | 採用: settings/tools `public_api.rs`、profile/config/native写込 | safe DTO、consent、revision、preserve/replace/clear、設定UI |
+| BP07 | 採用: `SettingsHostContext`、machine client／queries | explicit Host保持、late response隔離、local可用性、fake Host fixture |
+| BP08 | 採用: workflow revision migration、DB model／routes | 実SQL fault injection／409／Session atomicity、二つのMCP editor |
+| BP09 | 採用: `process_host/journal.rs`、bounded buffers | count／bytes／巨大event／group flush／slow reader、記載した性能fixture |
+| BP10 | 採用: Subscribe／`agent_run_port.rs` | disconnect／cursor再送／重複／有限timeout、自動故障tests |
+| BP11 | 採用: process registry migration／Audit verifier／recovery | confirmed-dead／子生存／PID reuse／破損／未完了末尾、旧protocol |
+| BP12 | 採用: `utils::shell`、executor command／availability | explicit path優先と拒否、PATH整合、実Codex pathのUI表示 |
+| BP13 | 採用: versioned `provider_adapter.rs` | nested text/tool、API error/retry、旧v1/v2 replay、Codex四plane |
+| BP14 | 採用: `routes/frontend.rs` | production routerのAPI 404とSPA deep link、MCP reload |
+| BP15 | 条件成立・採用: local／remote Viteとrouter | 分割前後entry測定、lazy loading/failure、両app build／型検証 |
+| BP16 | 採用: `useWorkflowEditorDraft`／guard／editor | late save・leave・409・reload・system read-only、MCP二画面 |
+| BP17 | 採用: `workflowEditorDraft`／history controls | bounded全field history、Session割当、native undo、MCP Undo/Redo |
+| BP18 | 採用: 上記UI／Stage CSS／i18n | keyboard／focus／disabled理由／error、MCPと実component fixture |
+| BP19 | 条件成立・採用: `validate-npm-version.cjs`／既存発行workflow | stable／beta／easyと不正値の実validator tests、発行なし |
+
+### 段階branchと互換性・運用
+
+| 段階 | branch | 完了commit |
+| --- | --- | --- |
+| 1 | `fix/merge-upstream-test` | `d4e305c3` |
+| 2 | `fix/upstream-settings-safety` | `fb509b17` |
+| 3 | `fix/upstream-host-recovery` | `56af98b6` |
+| 4 | `fix/upstream-compatibility` | `2ce8cf13` |
+| 5 | `fix/upstream-workflow-editing` | `34987ca0`、受入修正`84ec5ebe`／`f43ae3ce`／`160da0ed`を含む |
+
+最後のbranchが全変更を含む。開始時のmain／origin/main `39bbba0f4238d08cdbc203defe20dae03aa90368`は不変。最終の記録commitはこの表の後に同branchへ積む。user未commit変更は開始時の許可済み仕様だけで、それ以外の変更を便乗commitしていない。push／PR／main merge／release／publish／Actionsは未実施。開発branchの`openwiki/`変更ゼロ。
+
+- migrationは`workflows.revision`（既存値0）とnullable `host_protocol_version/host_start_identity`の追加だけ。既存graph、Session、Audit、cursor、履歴を削除しない。稼働DBにも両migration成功を確認。
+- serverとagent-process-hostは同じRust sourceから開発用buildし、実行中runがないことを確認して再起動済み。旧HostはAttach互換、未知version／死亡不明はfail-closed。SQLite DELETE／有限busy timeout／監査付きCancel／four planesは維持。
+- 設定はThis machineまたは選択Hostが対象。機密値は明示取得が必要で、他editorが更新したnative file／Workflowはrefreshしてから再編集する。masked summaryをraw置換として送らない。scopeが未検証の場合はcached表示を読めても変更できない。
+- Workflowでは未保存draft、競合、保存失敗を表示。離脱時は保存／破棄／継続を選ぶ。Undo/Redoはeditor graphだけで、実行／Gitを戻さない。sessionStorageが利用不可ならreload保持は保証しない。新しい汎用backupや自動復旧基盤は追加していない。
+- ProcessHost journalは既存asset retentionに従い、offsetはbatch数に比例する。全メモリー一定・disk増分ゼロとはしない。confirmed-deadでもraw Audit／journalが壊れていれば成功へ偽装せず診断を残す。自動全文projection rebuildは追加していない。
+- remote-web型／開発build、remote Rust formatは検証済み。private billing依存を持つ別remote backendのCargoは規定の対象外。実remote Host、他providerの有料実行、非Linuxのprocess死亡判定、HTTPS ingress実機、大規模Wiki品質比較は未実施。対応するfixture／静的検証との区別を維持。
+
+### AC01〜AC12と残した試験資産
+
+| AC | 最終根拠 |
+| --- | --- |
+| AC01–02 | 開始状態／固定SHA／上記19項目の採用表。5段階すべて実装 |
+| AC03 | 第1弾回帰、39 browser tests、通常Session／follow-up／fresh／GoalのMCP |
+| AC04 | safe settings／Host／CAS／migration故障testsと二画面競合 |
+| AC05 | journal／Subscribe／confirmed-dead故障・性能fixture、実Auditと正規Cancel |
+| AC06 | CLI／provider／API／route分割／Workflow／版番号testsと両app build |
+| AC07 | root983・frontend411 testsにMemory／Integration／owner／全attempt proof／通常Workflow／Arena／direct-folder／複数repo等の既存回帰を含む。除外機能なし |
+| AC08 | 最終コードの上記quality gates成功、confirmed findings修正・MCP再確認 |
+| AC09 | 通常Session、Goal、Stop、編集競合／Undo／実Workflow、設定・差分のMCP証拠 |
+| AC10 | 修正版Bootstrap PASS→Publish、通常開発→Manifest→正式Integration→Done→Sync→Publish、Viewer／execution-only閲覧 |
+| AC11 | 積み重ねbranch／commit、main不変、隔離targetのみへの試験反映 |
+| AC12 | 本記録、runtime運用文書、検証範囲・互換性・制約・資産を記録 |
+
+試験project／repo、両`test/upstream-backport-*` branch、通常／内部Workspace、Native Audit、shared receipts／索引、MCP操作記録と最終確認用browser profileを残す。失敗した旧Workflow runも原因・修正の証拠として保持し、履歴を削除しない。停止済み／成功済みでactive AgentRunは0。LVKサーバーは引き続きlocalhost:4020で利用できる。
+
+後片付けは、確認後にEVKでこの専用projectの試験Workspaceと依存する内部実行が不要か確認し、通常の削除導線を使う。shared領域とAuditはworkspace削除で必ず消えるとは限らない。branch／repo／assetを削除する場合も本記録の明示ID／pathだけを対象とし、広いworktrees／shared／DB全体を削除しない。今回は削除を実行しない。
