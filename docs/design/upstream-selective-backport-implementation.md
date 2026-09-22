@@ -245,3 +245,11 @@ server／agent-process-hostを同一codeからdevelopment buildし、2026-09-21T
 上記修正後はserver lib 154／Workflow routes 40／Playwright 35 tests成功、format・check・lintも成功。serverとprocess-hostを同じcodeからdevelopment build（hostのsource変更はなくbinary hashも同じ）。AgentRun／Workflow／Integration active=0を確認して2026-09-21T23:55:48Zに再起動、server PID `3938671`、SHA256 `f4ca60fa8f9cd59f4addbffb95e0b84d94fc1ebfe25683590d8de71c8a825a2d`。ユーザー実行は停止していない。
 
 通常WorkflowはMCPから新規run `25b09c1a-cf26-4b40-98ea-9b9da2b53617` を開始し、23:56:22〜23:57:53Zで成功。AgentRun `6386e9d1-10e8-e758-7c59-75353e27b9a9`。修正前に失敗した同じlazy workspaceでCodexのLive出力と完了を確認。修正版BootstrapはMCPから `a7b5311f-1faa-4156-bca0-3f340ad2a6d5`、Workspace `1a7220eb-4ce4-49c2-ac88-1ee02a08476a` として23:56:44Z開始。Generate Session `923467c2-019b-414d-9256-ded10c72453b`、AgentRun `118f4868-3d55-8c0e-4676-4475fc7bfdd5`。完了は別途確認する。
+
+後続の受入修正・検証:
+
+- 上記CSS／dispatcher修正commitは`84ec5ebe3dac317989089610c03e84180de30829`。このRustコードで`RUST_TEST_THREADS=8 cargo test --workspace`がexit 0（既存ignored 8）。後続の変更は通常composerとそのtests／記録のみで、Rust結果は引き続き有効。
+- 修正版Bootstrapは2026-09-22T00:05:34.874Zに成功（約8分51秒）。fresh Review Session `3d9149d1-c557-4e77-98de-e8417da8ef76`、AgentRun `8d4e1475-020b-7d7d-4494-b976090b8449`、PASSでRefine skipped。隔離target `test/upstream-backport-final`へのWiki-only publicationは`7d244f2`。MCPでSucceededとphase状態を確認した。通常composer変更はsystem Workflowのserver-side prompt／dispatchには接続しないため、このBootstrapの再実行は不要と判断する。
+- 通常Session `892dc7b8-19ac-4076-8787-1d7b7cdf552f`では初回`804c1220-fdab-4886-b514-09fe55c90e1a`とUI Queueのfollow-up `e470e119-6251-4911-a51b-c580bfc75d87`が成功。同一provider threadで完成全文を表示、source変更0を確認。
+- BP02の追加finding: 入力直後のhard reloadで、500ms debounce前の本文が失われた。React unmount時のflushはdocument破棄では実行されず、Scratch行も未保存だった。入力eventでruntime／Host／Scratch identity別のtab-local write-ahead copyを置き、保存ACKと一致するnonceだけを消す。次の読込でそのscopeへ再保存し、遅いACKが新しい入力を消さない。ブラウザstorageが禁止／満杯の場合はconsoleへ報告し、editor／server保存は継続する（ブラウザstorage不可でもreload耐久性があるとは主張しない）。
+- local Scratch API失敗とremote localStorageの両経路でdebounceを固定したhard reload testを追加。別Sessionとの非混同、既存send／新Session／late ACKを含むPlaywright全37 passed、Vitest 74 files／411 passed。MCPでも同じ入力→直後reload操作で未送信本文を復元できた。HMR中のhook構造変更で一時Reactエラーが出たが、通常reload後の本番操作では再現せず、HMR中の表示を受入結果にしない。

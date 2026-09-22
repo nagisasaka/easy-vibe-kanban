@@ -1,5 +1,45 @@
 import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
 
+for (const runtime of ["remote", "local"] as const) {
+  test(`${runtime}: reload before the draft debounce preserves text and isolates Session identities`, async ({
+    page,
+  }) => {
+    if (runtime === "local") {
+      await page.routeWebSocket(
+        "**/api/scratch/DRAFT_FOLLOW_UP/*/stream/ws",
+        (ws) => {
+          ws.send(JSON.stringify({ Ready: true }));
+        },
+      );
+      await page.route("**/api/scratch/DRAFT_FOLLOW_UP/*", (route) =>
+        route.fulfill({
+          status: 503,
+          json: { success: false, message: "scratch temporarily unavailable" },
+        }),
+      );
+    }
+    await page.goto(
+      `/?mode=runtime-input${runtime === "local" ? "&local=1" : ""}`,
+    );
+    await expect(page.getByTestId("scratch-ready")).toHaveText("true");
+    // Freeze the debounce, not the input event: the server/local scratch still
+    // holds its old value when the document is replaced.
+    await page.clock.install();
+    await page.clock.pauseAt(new Date());
+    await page.getByLabel("Draft").fill("not yet acknowledged by scratch");
+    await page.reload();
+    await expect(page.getByLabel("Draft")).toHaveValue(
+      "not yet acknowledged by scratch",
+    );
+    await page.getByLabel("Identity").selectOption("b");
+    await expect(page.getByLabel("Draft")).toHaveValue("");
+    await page.getByLabel("Identity").selectOption("a");
+    await expect(page.getByLabel("Draft")).toHaveValue(
+      "not yet acknowledged by scratch",
+    );
+  });
+}
+
 async function deferredSend(page: Page, failure = false) {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
