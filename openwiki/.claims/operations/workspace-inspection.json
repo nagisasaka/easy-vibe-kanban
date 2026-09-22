@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:a229a3b22e85f12e3fdee676da5d46b9696e36c40360d46bd055424a289d4103",
+  "pageVersion": "sha256:d7266179bc9c7c099f2bf9904a6862914fbaef266327417e68753c9d23000e71",
   "claims": [
     {
       "id": "claim_ef965d37641846bda42842bf4788c8cc",
@@ -361,10 +361,38 @@
           "version": "repo-file-v1:sha256:611bd0cce1e2888ccc2003460d09c388900aa424ea45836c4d243060f61d5ad2"
         }
       ]
+    },
+    {
+      "id": "claim_863d881f23cb4bf6b083ddc963b78276",
+      "statement": "差分 UI は loading・error・正常 empty を区別し、cached diff があっても失敗をゼロ変更の成功へ変換しない。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/pages/workspaces/ChangesPanelContainer.tsx#L878-L889",
+          "version": "repo-lines-v1:sha256:6fcfcc6b8f7c7aecc4a31db7635ed478459da15afe2a9686bf69eb0440d2c1b7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwNzYzM2ZiYzlkNzI0YjRhZjQ4ODM2NDNiZWZkODZiYTRiMjBhM2MwMTQ4M2NhOGEzMDBkODJkMTdmMDYwZWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzYzc3OGZiMjk4YzU2MDVkZDgyYTExZGZhZmJhZmY0NjczYTQ4ODEyZWNjZWM4N2E1Mjg5MTcxNDExNzVjZTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzNDE3N2NmMzZiYTFiOGM1YTVmODY3MjQwZWYyODQ4NmQ5NzQxNGEwOTQ2YjgwNDZjMjNhNDAxNWJjM2FlYjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0OWJjOWU4ZjU3YTVkODIxZDBhNWI2ODM4N2NhNDcxNjA3ZGFlMDMzNzY2ZDZjZGY0ZmI0YjgwYzFjMjhmMzQifQ"
+        },
+        {
+          "resource": "repo://tests/workflow/specs/diff-tree.spec.ts",
+          "version": "repo-file-v1:sha256:14e7e81b0f7511c4520b3e08cbb7578ff38e8d0c161aa1b0e3e9816a8c95a4c1"
+        }
+      ]
+    },
+    {
+      "id": "claim_00faaccbc31a40c09374619dd57c51ea",
+      "statement": "WorkspaceProvider は Workspace / host の切替と unmount で共有差分 store をリセットし、前の対象の snapshot・error・初期化状態を残さない。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/shared/providers/WorkspaceProvider.tsx#L145-L152",
+          "version": "repo-lines-v1:sha256:b6effa454709329d2360beb4d47a0f62f9f6678796ff455712edaa0cd3badcdd:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWIzYTdiZWU0ZDY1NDVlYjk2M2E2NDcxZTA4MDRmNmMyODQ3YTQzYjM1NWJlZjk0YmZkM2ZhZTIzY2M3NDFlNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGNkZDU2NGZkZDQwYzA4ZGFjNzQ3MWMxNmIyYWE2YTJlZjNmZjA5NzAzOTU5ZGI1YTY1MjQ5ZjNjNGEwYWRlNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDM5ZjY0MjJhNTFmYjYxMzQxNDdiYzZlMGEwZjk5ZjkxMjJiNmQ3NWVlNGMyNTdjMDJmN2M2NDQ5Y2EyYTgwYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjUzYWQ1ZjUzMjE2NTMwNDU4MWNlOTlkMzcyZDE5MjQ2YzBjM2VhNjc0N2QxZDRlYWJhN2YzZjFjNDk4ZDBlYyJ9"
+        },
+        {
+          "resource": "repo://packages/web-core/src/shared/stores/useWorkspaceDiffStore.ts#L55-L81",
+          "version": "repo-lines-v1:sha256:30c62725e2b1a62052077724730713dc93097246b4dd812d743f84d1de3e6060:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllMjRmZDk5OGQ4OTI4OTk5MzQzM2FlMWUwMDM5NmM0MTRhZTc1OTMwYzBmYjNmMWM4NDRkYmM1MzYwMTFkNzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViNzQxZDJjMDhlNmY1MTBiN2U5YTI2NGYzNzhmOWNlMDA0OWE1MDRlMGU3ZWY1ZDY3Y2QzZWE4MTNmODU0NzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI4ZmIyYmI2MTQzMTkxMTdkNDhmYjZjNWIzMGU0ZTRkNWVlNjkzMGQzM2I0OGQyY2Q0ZWQ2M2M0ZjY3YTU4ZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRkNjNkNjU5OGRlN2M2YmY1YjYzMWY1MTAxZGQ2Y2IxODFjYjI4MTZhMzFiYzU2NjYyYzhmZDI3ZWFhNjBhYTYifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.1",
-    "at": "2026-09-21T08:16:36.701Z"
+    "at": "2026-09-22T02:14:43.589Z"
   }
 }

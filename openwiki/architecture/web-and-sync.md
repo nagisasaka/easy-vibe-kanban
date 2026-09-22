@@ -8,6 +8,8 @@ sources:
     resource: repo://crates/remote/src/routes/electric_proxy.rs
   - id: openwiki-source-162bcfe1ee47c1047ccf7d52
     resource: repo://crates/server/src/routes/agent_runs.rs
+  - id: openwiki-source-4f90d37fb90b7f5198b7b293
+    resource: repo://crates/server/src/routes/frontend.rs
   - id: openwiki-source-a623a548ee805a854d7d5e18
     resource: repo://packages/local-web/src/app/entry/App.tsx
   - id: openwiki-source-c0121fb1c48b7f86e87da731
@@ -22,6 +24,10 @@ sources:
     resource: repo://packages/web-core/src/pages/workspaces/WorkspacesLayout.tsx
   - id: openwiki-source-c03336fce241c80068d03edc
     resource: repo://packages/web-core/src/pages/workspaces/WorkspacesMainContainer.tsx
+  - id: openwiki-source-a7cac6e6f3abafbcf9390ddf
+    resource: repo://packages/web-core/src/shared/components/RouteLoadState.tsx
+  - id: openwiki-source-70a9c5225d8ef0472482d401
+    resource: repo://packages/web-core/src/shared/hooks/useJsonPatchWsStream.ts
   - id: openwiki-source-2bc4d71db2cf73c3210b9268
     resource: repo://packages/web-core/src/shared/hooks/useNotifications.ts
   - id: openwiki-source-43d7a2f6bd06c556e7d48e3c
@@ -46,10 +52,12 @@ sources:
     resource: repo://packages/web-core/src/shared/lib/localApiTransport.ts
   - id: openwiki-source-d4726fdd33da0f7c2f1ae1ee
     resource: repo://packages/web-core/src/shared/lib/remoteApi.ts
-generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
+  - id: openwiki-source-cee2e1d83945892a2c77838b
+    resource: repo://packages/web-core/src/shared/lib/settingsHostPolicy.ts
+generated: { by: "codex", at: "2026-09-22T02:14:43.589Z" }
 verified:
   - by: openwiki/0.5.1
-    at: 2026-09-21T08:16:36.701Z
+    at: 2026-09-22T02:14:43.589Z
 ---
 
 # Web の実行環境と同期
@@ -61,6 +69,10 @@ Local と Remote の App はどちらも TanStack Router と Hotkeys を利用�
 UI package は既に Kanban や chat、preview などの再利用部品を持つ。[Kanban の例](../../packages/ui/src/components/KanbanBoard.tsx#L1-L58)。`packages/ui/README.md` の「initial scaffold」と [抽出前の監査](../../docs/frontend-ui-library-refactor-audit.md)は現行配置の全体図ではない。監査は責任分割の経緯を知る資料として読み、古い `local-web/src/components` の位置を変更先にしない。
 
 ## 同じ API 呼び出しでも対象ホストが変わる
+
+Local / Remote の route は TanStack Router の code splitting を使う。読み込み中と chunk 読み込み失敗には共通表示を置き、失敗を無表示のままにしない。この route 単位の遅延読込は、Workspace 内の Wiki / chat 切替で composer を unmount する設計とは異なる。[router](../../packages/local-web/src/app/router/index.ts)、[loading / error](../../packages/web-core/src/shared/components/RouteLoadState.tsx)
+
+API の未定義 path が SPA の `index.html` を成功応答として返すと、client は API 応答として解釈できない HTML を受け取ってしまう。backend は `/api` 以下の未定義 path を 404 とし、通常の画面 route の SPA fallback と分ける。この拒否は JSON 本文を保証する契約ではない。[HTTP fallback](../../crates/server/src/routes/frontend.rs#L15-L33)、[非 HTML・非 redirect の回帰テスト](../../crates/server/src/routes/frontend.rs#L94-L118)
 
 `localApiTransport` は HTTP と WebSocket を統一し、`current`、`explicit`、`none` の host scope を解決する。対象 host がある `/api/...` は `/api/host/{hostId}/...` へ変換される。ただし relay 認証や remote editor のローカル資格情報を使う入口は変換しない。[scope 解決](../../packages/web-core/src/shared/lib/localApiTransport.ts#L28-L88)
 
@@ -86,7 +98,9 @@ Cloud の access / refresh token は、ホスト pairing の signing session と
 
 ## ドラフト・表示設定・通知の保存境界
 
-Scratch は Electric の共有 Issue データとは別の UI 状態である。local-web は対象 local API の SQLite と JSON Patch WebSocket、remote-web はそのブラウザー origin の localStorage を使う。remote-web の Scratch は Cloud への保存や端末間同期を意味しない。composer のキー、保存失敗、復元・消去と送信待ち queue の違いは [Session の未送信ドラフト](../concepts/session-and-agent-run.md#未送信ドラフトと-scratch)に集約する。[runtime 分岐](../../packages/web-core/src/shared/hooks/useScratch.ts#L26-L86)
+設定画面の host は明示指定・route の identity を優先し、その host が見つからない場合に別マシンへ自動で切り替えない。remote の discovery 失敗や offline は編集を閉じるが、任意の remote discovery が失敗しただけで local 設定まで閉じない。host 切替時のフォームと遅延応答も対象別に隔離する。[選択・編集 policy](../../packages/web-core/src/shared/lib/settingsHostPolicy.ts#L9-L34)、[設定 scope](../../packages/web-core/src/shared/dialogs/settings/settings/SettingsHostContext.tsx#L154-L182)
+
+Scratch は Electric の共有 Issue データとは別の UI 状態である。local-web は対象 local API の SQLite と JSON Patch WebSocket、remote-web はそのブラウザー origin の localStorage を使う。remote-web の Scratch は Cloud への保存や端末間同期を意味しない。composer のキー、保存失敗、復元・消去と送信待ち queue の違いは [Session の未送信ドラフト](../concepts/session-and-agent-run.md#未送信ドラフトと-scratch)に集約する。[runtime 分岐](../../packages/web-core/src/shared/hooks/useScratch.ts#L28-L99)
 
 Kanban の Project / view 別表示設定も UI preferences の Scratch に入る。同じ画面でも、表示設定を保存する処理と Issue を変更する REST mutation では共有範囲が異なる。Team / Personal、列操作、blocked 判定の意味は [ボード表示と共有状態](../concepts/project-and-issue.md#ボード表示と共有状態)で確認する。[preferences の保存形式](../../packages/web-core/src/shared/hooks/useUiPreferencesScratch.ts#L27-L98)
 
@@ -94,9 +108,15 @@ Cloud 通知はログイン user_id を引数に notifications shape を購読�
 
 ## Agent の会話は別の同期経路
 
-AgentRun stream は Electric ではない。サーバーは Live を先に購読し、その間の到着を受け止めてから永続履歴を replay する。cursor は RunAttempt 番号と canonical sequence で進め、Live 通知で進めない。再接続時に usage の最新 snapshot も送る。[stream](../../crates/server/src/routes/agent_runs.rs#L391-L484)
+AgentRun stream は Electric ではない。サーバーは Live を先に購読し、その間の到着を受け止めてから永続履歴を replay する。cursor は RunAttempt 番号と canonical sequence で進め、Live 通知で進めない。再接続時に usage の最新 snapshot も送る。[stream](../../crates/server/src/routes/agent_runs.rs#L428-L500)
 
 会話 projection は表示用 entry に変換しても AgentRun、RunAttempt、event ID を保持する。この識別を外すと、別 attempt の表示と制御が混ざり得る。[表示 identity](../../packages/web-core/src/features/agent-runtime/model/canonicalAgentConversation.ts#L25-L73)。永続化・一時差分・劣化時の詳細は [Agent Runtime](agent-runtime.md)に集約する。
+
+## State と履歴を同期させる際の注意
+
+AgentRun stream は新しい event がゼロでも State が変われば送信する。履歴が複数ページに跨る場合は、残りの event より先に terminal State を表示させない。DB commit 後の通知は再読取のヒントであり、取りこぼしは周期 poll で補う。catch-up を有界ページで進めて Live と切断処理を挟み、WebSocket の送信にも有限 timeout を設ける。[履歴と State](../../crates/server/src/routes/agent_runs.rs#L450-L585)
+
+JSON Patch stream は接続成立と初回 snapshot の Ready を分ける。再接続時は空 accumulator へ replay しつつ同じ endpoint の最後の表示を保持し、別 endpoint へ切り替えた場合は引き継がない。接続失敗を「保存済み draft は空」の証明に使わない。[snapshot の境界](../../packages/web-core/src/shared/hooks/useJsonPatchWsStream.ts#L90-L166)
 
 ## Wiki のナビゲーションと本文を一つの状態で動かす
 
@@ -110,7 +130,7 @@ Wiki を開くことはチャットや AgentRun の終了ではない。`Preserv
 
 Workspace stream と summary は用途を持ち、通常 Work / Archive から `execution_only` を除き、archived の実行専用環境も Executions / History 側へ集める。通常作業の running 表示は最新一件だけで判定せず、summary の実行集計を優先する。[一覧の分割](../../packages/web-core/src/shared/hooks/useWorkspaces.ts#L61-L79)、[用途による分類](../../packages/web-core/src/shared/hooks/useWorkspaces.ts#L237-L255)。用途と製品所有者の契約は [Workspace](../concepts/workspace.md#操作用途と実行所有者)に集約する。
 
-実行専用画面は composer の代わりに inspection panel を表示し、製品の owner view を明示 host scope で取得する。query key に host と Workspace を含め、失敗を成功した空データに変換しない。[画面分岐](../../packages/web-core/src/pages/workspaces/WorkspacesMainContainer.tsx#L241-L263)、[owner の取得と Stop](../../packages/web-core/src/shared/hooks/useWorkspaceOwner.ts#L6-L59)。これらの表示制御に加え、backend も変更操作を検査する。
+実行専用画面は composer の代わりに inspection panel を表示し、製品の owner view を明示 host scope で取得する。query key に host と Workspace を含め、失敗を成功した空データに変換しない。[画面分岐](../../packages/web-core/src/pages/workspaces/WorkspacesMainContainer.tsx#L256-L278)、[owner の取得と Stop](../../packages/web-core/src/shared/hooks/useWorkspaceOwner.ts#L6-L59)。これらの表示制御に加え、backend も変更操作を検査する。
 
 Session 一覧の再取得では利用者が選んだ古いログや new-session draft を維持する。host / Workspace または明示 Session link の変更時だけ選択を再解決し、入口に使った URL がその後の手動選択を奪わない。[選択規則](../../packages/web-core/src/shared/hooks/workspaceSessionSelection.ts#L3-L25)、[scope の更新](../../packages/web-core/src/shared/hooks/useWorkspaceSessions.ts#L51-L87)、[回帰テスト](../../packages/web-core/src/shared/hooks/workspaceSessionSelection.test.ts#L4-L36)
 

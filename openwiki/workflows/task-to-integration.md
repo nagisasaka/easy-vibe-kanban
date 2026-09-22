@@ -60,10 +60,10 @@ sources:
     resource: repo://packages/web-core/src/pages/kanban/KanbanIssuePanelContainer.tsx
   - id: openwiki-source-ffc55e6e31e6ce477ca57329
     resource: repo://packages/web-core/src/shared/hooks/useWorkflowRun.ts
-generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
+generated: { by: "codex", at: "2026-09-22T01:26:32.834Z" }
 verified:
   - by: openwiki/0.5.1
-    at: 2026-09-21T08:16:36.701Z
+    at: 2026-09-22T01:26:32.834Z
 ---
 
 # Issue から実行・レビュー・統合まで
@@ -79,6 +79,8 @@ Cloud の Issue/Comment 添付は、upload の confirm だけでは親への関�
 入力の user description と再利用する context は [Card context と LLM Wiki](../concepts/card-context-and-llm-wiki.md) で区別する。Workflow の graph を実行する場合は、通常 Session の起動と別に [WorkflowAttempt の準備・Run snapshot](../concepts/workflow-attempt.md) を作る。
 
 ## 2. Setup の依存を満たす
+
+通常 Workflow では Attempt の row や graph が作られた時点で、実 worktree まで準備済みとは限らない。Agent dispatch で既存 container 準備を行い、Session の所属と Integration 予約を検査する。実行専用の内部環境は owner が準備した root を使い、閲覧や dispatch で勝手に再作成しない。[Workflow の準備境界](../architecture/workflow-runtime.md#作業場所の準備は実-dispatch-の責任)
 
 Repo setup script の扱いは三つに分かれる。
 
@@ -158,10 +160,10 @@ EVK 自身の手動 direct squash と正式 Integration はそれぞれ明示的
 
 ScheduledTask は既存 Workflow template を日次・週次で起動する設定である。現行 target は Workflow のみ、concurrency policy は SkipIfRunning のみ。時刻になった task を期限付き DB claim で取得する。[型](../../crates/server/src/routes/scheduled_tasks.rs#L42-L59)・[claim](../../crates/server/src/routes/scheduled_tasks.rs#L288-L337)
 
-毎回 template の Agent node の session_id を消した graph から新しい WorkflowAttempt を作る。実行は [通常の Workflow lifecycle](../concepts/workflow-attempt.md) に入り、trigger_source は schedule / schedule_manual を使う。[起動](../../crates/server/src/routes/scheduled_tasks.rs#L445-L487)・[Session binding の初期化](../../crates/server/src/routes/scheduled_tasks.rs#L926-L937)
+毎回 template の Agent node の session_id を消した graph から新しい WorkflowAttempt を作る。実行は [通常の Workflow lifecycle](../concepts/workflow-attempt.md) に入り、trigger_source は schedule / schedule_manual を使う。[起動](../../crates/server/src/routes/scheduled_tasks.rs#L445-L487)・[Session binding の初期化](../../crates/server/src/routes/scheduled_tasks.rs#L927-L938)
 
-前回の last_run_id が pending / running / awaiting_human / awaiting_arena なら今回は skipped とし次回時刻へ進める。人や Arena の待ち時間も「前回が active」に含まれ、同じ slot を無期限 queue に積む契約ではない。[skip](../../crates/server/src/routes/scheduled_tasks.rs#L388-L404)・[active の範囲](../../crates/server/src/routes/scheduled_tasks.rs#L727-L744)
+前回の last_run_id が pending / running / awaiting_human / awaiting_arena なら今回は skipped とし次回時刻へ進める。人や Arena の待ち時間も「前回が active」に含まれ、同じ slot を無期限 queue に積む契約ではない。[skip](../../crates/server/src/routes/scheduled_tasks.rs#L388-L404)・[active の範囲](../../crates/server/src/routes/scheduled_tasks.rs#L728-L745)
 
-時刻計算は IANA timezone を用い、daily/weekly と DST の focused tests がある。server のローカル timezone や固定 UTC offset だけで schedule を再実装しない。[tests](../../crates/server/src/routes/scheduled_tasks.rs#L1218-L1274)
+時刻計算は IANA timezone を用い、daily/weekly と DST の focused tests がある。server のローカル timezone や固定 UTC offset だけで schedule を再実装しない。[tests](../../crates/server/src/routes/scheduled_tasks.rs#L1219-L1275)
 
 定時 task の起動と、その後に Agent 完了を検知して graph を進めることも別である。この checkout では completion watcher は embedded backend の startup で登録され、standalone main には登録がない。GET/SSE は reconciliation を行い、UI は active run を既定 4 秒で poll する。無人の standalone 運用で予定通り起動したことだけを根拠に、後続段階まで自動進行すると判断しない。[起動形態と前進の契機](../architecture/workflow-runtime.md#起動形態と前進の契機) に登録箇所・read 側の処理・文書の自動連鎖という意図との差をまとめる。[embedded 登録](../../crates/server/src/startup.rs#L214-L225)、[standalone 入口](../../crates/server/src/main.rs)、[poll](../../packages/web-core/src/shared/hooks/useWorkflowRun.ts#L26-L55)

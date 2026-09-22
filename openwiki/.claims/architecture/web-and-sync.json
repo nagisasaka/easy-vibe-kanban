@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:926eb6b398e26369ee938bcda9a8dd7b03a7eba879f2b303069c9a92adc35c21",
+  "pageVersion": "sha256:9dd177ab11974f2d8c17bb0664a077d83dae485d1cbd4760b3aab3a7d8e67bc8",
   "claims": [
     {
       "id": "claim_cd547b65737e432fb2cf718c4992aa97",
@@ -83,8 +83,8 @@
       "statement": "AgentRun WebSocketはLive購読後に永続履歴をreplayし、Liveは永続cursorに影響せず最新usage snapshotも再送する。",
       "evidence": [
         {
-          "resource": "repo://crates/server/src/routes/agent_runs.rs#L391-L484",
-          "version": "repo-lines-v1:sha256:f393e20adcba1599307da75853af203ddcdfb4f2489e1ee79677e672e69e813b:eyJzZWxlY3RlZExpbmVDb3VudCI6OTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxNWMwY2U2OTk0NWU1MDFhN2YxMjRmOTg1Yjg4ZDg4N2RlNTM1NmNiNmNiZWIwYzM3MzY5MDZkNzk5ZGM2YmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxYTBlOGFmYTA4ZThlZmRhNWRlODI0MjAxMDVlNDFmNGE5OGU0MTI0NDcyYjhmYThhYzY0MTM0OTZlZjdjYTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNjNjNGQxYWY4Y2Q4OWJiMGJkZDc2NTdmZmNiZjY4MDZhNjEwZDc5ZDZjOGQ0YzMwN2MyNDFkZjM5MDA1MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiNTM1ODgxMDBkZmM3NGY5M2JiODljY2NlY2Y3YjY0ZWExODhlOGUxMGMyMmFlYzc0YzMyNzI3OTJlY2U0YjQifQ"
+          "resource": "repo://crates/server/src/routes/agent_runs.rs#L428-L500",
+          "version": "repo-lines-v1:sha256:222adf548f63a92e0d624da597ca05a7c21ed3694b406d9a99cd1f2df8e48a7e:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhMTMzMjYzNGE0ZjNkMWM0YWE3NWRhYWVkNTUxOWIyOTczM2RjOTc0MDFlODY4Njc5YjhmOGRkMzQwMjFkMWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2OGNjOGMxZjliNzkwY2E0ZTYyMTJlY2EzYmJhZmRmMjk4NjIzZDFmNGVmZTdiMWQ3OTdlYWQ4NzA2ZTM3MjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI3MDliOGY1ZDg0NzJmMmZlNjU5ZmRkZTkxOWUxZTA2ZjNmZmZjNDVjNTA3Y2E5ZWEyNzdiZWFmMDdmODNiNWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxMDE1MjE0ODNjZjlmMDIzMDBlMGZiZTY4ZjQ3N2Y2ODg3ZGIwNGNmNjI3NDhhYThiNDJmMWJlMWE3ZmVjM2QifQ"
         }
       ]
     },
@@ -103,8 +103,8 @@
       "statement": "Scratchはlocal-webではSQLiteとJSON Patch WebSocket、remote-webではブラウザーlocalStorageを使うため、Cloud IssueのElectric同期と保存範囲が異なる。",
       "evidence": [
         {
-          "resource": "repo://packages/web-core/src/shared/hooks/useScratch.ts#L26-L86",
-          "version": "repo-lines-v1:sha256:bbe7f8b3fd333109232860ea0d60161f55778e43eeefe9ceae2d71f91fa7d1db:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhMWQxYTYzMzkwMjI5Yzc5ODM0N2U4M2EwNDA1NDQxYzk0MDAwMzUyODRhZDE2OGMxYmY2Y2RmMWQ3MGEzNzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlNmRmYzg2YThlOWJjNmRlZjE4M2RlMTdhNWY1MjliOGRkYzExOGQ5NTAwNDc3YzViODQyOGEzM2UwM2FiMGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://packages/web-core/src/shared/hooks/useScratch.ts#L28-L99",
+          "version": "repo-lines-v1:sha256:241e3963773d8fe9a9da18cf97f54d872893e51848b2bdb26f2b4cbcdb7cc8b7:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhZjIyY2YwNzMyNTkyYzI0NzE0MWNiZTYxZWZhMTEwMTI2MTJmNWEzMTIyYjlhZjliYmFmNTJmNTcyNGQxOTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhMWQxYTYzMzkwMjI5Yzc5ODM0N2U4M2EwNDA1NDQxYzk0MDAwMzUyODRhZDE2OGMxYmY2Y2RmMWQ3MGEzNzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlNmRmYzg2YThlOWJjNmRlZjE4M2RlMTdhNWY1MjliOGRkYzExOGQ5NTAwNDc3YzViODQyOGEzM2UwM2FiMGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -201,10 +201,64 @@
           "version": "repo-lines-v1:sha256:f5cf95d2fb9a2b36050d6a17786a7d94efc7935b316589599065eab9644ad98d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkNmIzZjU0MTYyNTE0YjVlNmZjNzE0NDZlYTczNTdjN2I4MTI1YTMwOGEyZTdhMTdjNGYxNGQxNTExMTljZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzMTYyNzk0NmJhOTgzZmFjNTU4YjYyMjI4ZWExZWY3MzQ2ZmI0ODM2YjA1ZjU2ODJjNzZiNmRiZjg4YjlhYmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
+    },
+    {
+      "id": "claim_651d5cd746344563833b26aecb6be998",
+      "statement": "AgentRun WebSocket は event が空でも変更された State を修復し、未配信履歴がある間は terminal State を先行送信しない。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/agent_runs.rs#L537-L586",
+          "version": "repo-lines-v1:sha256:ad8f4e68745010786511315867339141e53be751135f2fe46f5abad8e113d517:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxMGVmMTQzZTYyMTFhYTM1Zjc1MzczZjFmNTRjMGZiZTA5YWJhNzk1MjlmYjE3YzgyMTEzZGYyNGE2OTU3NDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1ODc2OWU2ZmZjMDI1NTU1ZTZiNjUxMzA4ODA1MWRkZDA5ZmVkZjU0ODFmZmVjNDdiMzU5MzkwYTIzZWM1NGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdlODk5NTdkNTRjZDgyM2E1Mjg3NmUxYjk2OGU0NTVmZDJlZWYzMTExNGZmMDY4MjZkNGZjYjI5YWE4OTgzN2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY1YWM5ODE0MDkzZmEwODExMWVmZmE2NGI0ZDJiNGNkMzgxZjZmYTUzYTdlNTEyZmEzNDA0YjljM2MyZjE4ZmUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_7b7a6d071daf4bc79f28a6c9095860c7",
+      "statement": "明示指定した設定 host が不在でも別マシンへ置き換えず、remote は discovery と online 状態を確認して編集を許可する。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/shared/lib/settingsHostPolicy.ts#L9-L34",
+          "version": "repo-lines-v1:sha256:fb506aa19c10e3c6d007c29869c119a2c9ea8685a8f127cccb1f220a5310cd90:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0ZDk1MWIyY2MxMjk0YjUzNGVlNjY5ZjA4YjA2NTAzMDA1YjA3NTE4ZjMyNjdkMmE2ZWJlMWVkM2UyZTEwMTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExMDNjZWVjOWVmODdhMWRmZjk1YWM3Y2Q1Zjk3MDE3MjJmOTA5ZGFkY2Q3YTI0MDUzMTJhNjhmNDM2MzEyYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3e44333cb22642818b6b8d62f5d25591",
+      "statement": "JSON Patch の再接続は初回 Ready と単なる接続を区別し、同一 endpoint の最後の表示を保持しつつ空 accumulator で replay する。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/shared/hooks/useJsonPatchWsStream.ts#L90-L166",
+          "version": "repo-lines-v1:sha256:8255997806461ed9c3c45c93ef991076d61060de3f27c4b7e2bf6cd7ce2f2056:eyJzZWxlY3RlZExpbmVDb3VudCI6NzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2ODJkZjE5YjlkZGJlNjNjMTFjZjUyNGRjYTlmMGZlMTc4MjNkYjYzNWRlNjM5NjEyZDFkYzEyZmE1Nzg0NDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxMzBmMWViNzA2ZjM5YmQ5NTc0OGQxZWQ3OThjMDU2ZDdlOWQ5YTNiY2RkMjI4YjI4YzBhMGVlZjM4MGZiZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkNzMzNjMyYjYzZGQ2YjNmZmFhYWRmNDlhNGZmNzBkZmY4YTY1NWNhMmFhMGE2OTU3YTBlZTIwNjRmNDNiOTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQwMWUwNzJkYWQxOGEwODRlYzJhMTYzYmFlNzYyNzJmMDY3ZTdiMTVlZjM5OTViNTg5MTNjM2IxYzg2MjYwY2EifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_27946064b5cf459d869ee22c9b231703",
+      "statement": "backend は /api 以下の未定義 path を 404 として SPA の HTML 成功応答から分離するが、JSON 本文は保証しない。",
+      "evidence": [
+        {
+          "resource": "repo://crates/server/src/routes/frontend.rs#L15-L33",
+          "version": "repo-lines-v1:sha256:1a194a40bfd7635a80b49730003970c69b001523eae95b8c0c96dd1ef1f4ba19:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzYzgzMzMxMDllNmJlNGQwNWUwMjllNjhiYTQ5MGQyMzY1MTU0ZTM4YmY5MDc1MGI2MWEzZDhhMzAxZGJhNDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM0YTM4YzM0NDUxMzQxNGY4ZGViNjU5NmY4M2RiYjM3ZTNhODJkZTg2MjAwMmZlYmUzYzBjNmU3OGIyMTM4ZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyODZjZGJmZjE0NWEwNWFlOTJmZjU2NWM1ZjI1NzVmZjUxMWM0ZGUzOWYwYTM2ZjQ1MzYxODg2M2NlNTE2NzIifQ"
+        },
+        {
+          "resource": "repo://crates/server/src/routes/frontend.rs#L94-L118",
+          "version": "repo-lines-v1:sha256:f03193e7b12f8e659fb64b4af7bc219604f124bd336871500bc99db5d0951a36:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0YzY5ZGY0Y2QzNDI1NDUyNjgzYzRiYWYzN2MwNWU3ZGJmMjM0YWQ5OGEwNGU0N2Q4Y2VkMjc4NDhjN2UwZjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0OTQ5NjlhZTM3NGE2MGUzNDI0ZmJlMmI4MWJjNGY1M2IwY2UzOThjMzRjM2I2NGQ3NDg1NTg1NjMwYjA4NzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM1ODVkZGJhMjA0ZjI2OTI4MjRiOTMwZWZjOTIzNTI2MTJhYzljMzc4OTE2ZTM3MDU1NDZiYjZhMjJlMGQ3ZWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d507221d1bd34a4ebd39ab5fb516fe5e",
+      "statement": "route 読込失敗は共通 error 表示を通し、無表示のままにしない。",
+      "evidence": [
+        {
+          "resource": "repo://packages/web-core/src/shared/components/RouteLoadState.tsx",
+          "version": "repo-file-v1:sha256:dba9de06060581c764448045bf9cb4c614807d7a456eca5b9330963c7b6f0288"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.1",
-    "at": "2026-09-21T08:16:36.701Z"
+    "at": "2026-09-22T02:14:43.589Z"
   }
 }

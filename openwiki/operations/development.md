@@ -56,16 +56,18 @@ sources:
     resource: repo://rust-toolchain.toml
   - id: openwiki-source-d90097af5777425ac57c25b3
     resource: repo://scripts/prepare-db.js
+  - id: openwiki-source-30e56c8d7adebcb9dacd7f0c
+    resource: repo://scripts/validate-npm-version.cjs
   - id: openwiki-source-7d85b73c82559c83c6efb7f9
     resource: repo://tests/workflow/fixture/src/main.tsx
   - id: openwiki-source-966297deb875824dc95ee8d5
     resource: repo://tests/workflow/playwright.config.ts
   - id: openwiki-source-1d08facbf90704cd4c4c54d8
     resource: repo://tests/workflow/specs/card-context.spec.ts
-generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
+generated: { by: "codex", at: "2026-09-22T01:26:32.834Z" }
 verified:
   - by: openwiki/0.5.1
-    at: 2026-09-21T08:16:36.701Z
+    at: 2026-09-22T01:26:32.834Z
 ---
 
 # 開発・検証・運用文書の使い分け
@@ -131,11 +133,11 @@ NPX wrapper の platform 名を解決できることと、その配布物に bin
 | `publish-easy-npx.yml` | Linux x64（musl）と Windows x64 を build し、`npx-cli/dist/{platform}/*.zip` を npm package に同梱する |
 | `pre-release.yml` | Linux・Windows・macOS の x64/arm64 を対象にし、version ごとの manifest と binary を R2 に upload。NPX の bundled JS に R2 URL と binary tag を埋め込む |
 
-[Easy build/package](../../.github/workflows/publish-easy-npx.yml#L150-L232)、[npm に含める files](../../npx-cli/package.json#L32-L35)、[pre-release matrix](../../.github/workflows/pre-release.yml#L213-L237)、[R2 manifest](../../.github/workflows/pre-release.yml#L655-L695)、[URL/tag の注入](../../.github/workflows/pre-release.yml#L1168-L1175)
+[Easy build/package](../../.github/workflows/publish-easy-npx.yml#L145-L227)、[npm に含める files](../../npx-cli/package.json#L32-L35)、[pre-release matrix](../../.github/workflows/pre-release.yml#L213-L237)、[R2 manifest](../../.github/workflows/pre-release.yml#L655-L695)、[URL/tag の注入](../../.github/workflows/pre-release.yml#L1168-L1175)
 
 `download.ts` は dist directory の存在、または `VIBE_KANBAN_LOCAL=1` で local/bundled mode に入る。このとき対象 zip がなければエラーとなり、**R2 へ fallback しない**。そのため CLI が macOS/ARM64 を認識していても、上記 Easy 同梱 package でそれらを提供する証明にはならない。dist がない R2 経路では tag/platform 別 cache と manifest を使い、取得した zip の checksum を検査する。[mode 選択](../../npx-cli/src/download.ts#L7-L17)、[取得分岐](../../npx-cli/src/download.ts#L155-L197)、[platform の解決](../../npx-cli/src/cli.ts#L66-L94)、[取得時検証](../../npx-cli/src/download.ts#L126-L143)
 
-アプリ用 `vibe-kanban.zip` は server に加えて **`agent-process-host`（Windows は .exe）を同梱**する。wrapper は archive 全体を同じ directory に展開し、server の起動解決は環境指定、build 時指定、実行ファイルの隣などから process host を探す。server 単体の差し替えでこの companion を欠くと AgentRun の起動は Unavailable になり得る。[同梱と検査](../../.github/workflows/publish-easy-npx.yml#L194-L217)、[展開](../../npx-cli/src/cli.ts#L126-L180)、[host 解決](../../crates/local-deployment/src/agent_run_port.rs#L2745-L2786)。これは [Agent Runtime の独立 process host](../architecture/agent-runtime.md) が配布へ課す依存である。
+アプリ用 `vibe-kanban.zip` は server に加えて **`agent-process-host`（Windows は .exe）を同梱**する。wrapper は archive 全体を同じ directory に展開し、server の起動解決は環境指定、build 時指定、実行ファイルの隣などから process host を探す。server 単体の差し替えでこの companion を欠くと AgentRun の起動は Unavailable になり得る。[同梱と検査](../../.github/workflows/publish-easy-npx.yml#L189-L212)、[展開](../../npx-cli/src/cli.ts#L126-L180)、[host 解決](../../crates/local-deployment/src/agent_run_port.rs#L3122-L3163)。これは [Agent Runtime の独立 process host](../architecture/agent-runtime.md) が配布へ課す依存である。
 
 廃止表示のない [Easy NPX 発行文書](../../docs/easy-npx-npm-publish.md) は Trusted Publishing と dry-run の手順を記録するが、build 対象の記述は Windows x64 のみで、現在の Linux x64 追加を反映していない。手順の意図を残し、対象 platform は実際の workflow と package contents を優先する。ここでは npm registry、公開済み archive、R2 の稼働状態を検査していないため、現在配信されている版の対応を断定しない。
 
@@ -147,9 +149,17 @@ NPX wrapper の platform 名を解決できることと、その配布物に bin
 
 この確認だけで Docker image の build・実配置・live agent 認証が成功したことにはならない。配布済み binary と作業 checkout の分離、永続 volume、停止・更新・復旧の契約は [サーバーコンテナー](server-container.md)に置く。[記録された検証限界](../../docs/self-hosting/server-container.mdx#validation-boundaries)
 
+## 版番号の検証と選別移植の追跡
+
+Easy NPX の版番号は stable `0.1.44`、`0.1.44-beta.1`、`0.1.44-easy.1` の形式を許し、空白・数値の先頭ゼロ・別 prerelease 形式を拒否する。実際の発行 workflow が共通 validator を呼ぶため、単なる UI の入力補助ではない。validator test は公開済み package の動作や発行成功を証明しない。[validator](../../scripts/validate-npm-version.cjs)、[CI の呼出し](../../.github/workflows/publish-easy-npx.yml#L57-L64)
+
+上流変更の採否・LVK 向け適応・故障注入・実 Codex を使った MCP 受入は [選別移植の実装記録](../../docs/design/upstream-selective-backport-implementation.md)にある。各試験の source revision と実行対象を識別し、過去の成功を別 revision の成功と取り違えない。特に server と `agent-process-host` を同じソースから更新し、旧 Host の互換接続と新 Host の journal 回復を分けて試す。[Host の回復契約](../architecture/agent-runtime.md#接続断と確認済み終了を分ける)
+
+Workflow fixture には draft / Undo、設定安全性、route loading、Runtime input、diff tree の harness がある。これは製品 component のブラウザー試験であり、認証済み provider・publication を含む実機試験とは別である。[fixture の入口](../../tests/workflow/fixture/src/main.tsx#L1-L29)
+
 ## 型・schema・SQLx を変更する場合
 
-local API の生成元は Rust の generate_types binary であり、shared/types.ts と shared/schemas を生成・比較する。Remote には shared/remote-types.ts 用の独立した generator がある。API 変更は生成先だけを編集せず、Rust 側を更新して各 generator と --check を使う。[local generator](../../crates/server/src/bin/generate_types.rs#L642-L674)・[remote generator](../../crates/remote/src/bin/generate_types.rs#L30-L56)
+local API の生成元は Rust の generate_types binary であり、shared/types.ts と shared/schemas を生成・比較する。Remote には shared/remote-types.ts 用の独立した generator がある。API 変更は生成先だけを編集せず、Rust 側を更新して各 generator と --check を使う。[local generator](../../crates/server/src/bin/generate_types.rs#L673-L705)・[remote generator](../../crates/remote/src/bin/generate_types.rs#L30-L56)
 
 prepare-db は一時 SQLite を作り、migration を適用してから cargo sqlx prepare を実行し、finally で一時 DB を削除する。--check でも一時 DB の作成と migration は行うため、単なる読み取り専用の型検査ではない。Remote には別の prepare-db / prepare-db:check script が用意される。[SQLite 準備](../../scripts/prepare-db.js#L7-L47)・[Remote の入口](../../package.json#L56-L57)
 
@@ -162,4 +172,4 @@ prepare-db は一時 SQLite を作り、migration を適用してから cargo sq
 - [Mobile testing](../../mobile-testing.md) は remote-web をスマートフォンから試すための Tailscale/Caddy 手順。手元の local-web への直接接続とは対象が異なる。[対象](../../mobile-testing.md)・[直接接続の説明](../integrations/remote-access.md#self-hosting-と直接接続)
 - [OpenWiki maintenance](openwiki-maintenance.md) は、通常開発の tests や release と別の生成・レビュー・公開 checkpoint を説明する。
 
-この Wiki の初期生成・Refine では source・test・設定と該当文書を読んで照合した。製品の build、test suite、外部サービス接続を実行して合格を確認した記録ではない。
+この Wiki は実装理解のための派生知識であり、試験成績そのものではない。初期生成時の静的調査と、その後の選別移植で行った自動検証・MCP受入を区別する。再検証するときは上記の実装記録と現行コマンドを参照し、未実行や既存 skip を合格に数えない。
