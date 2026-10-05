@@ -3,7 +3,8 @@ name: Build and publish EVK server image
 on:
   push:
     tags: ["v*"]
-  # Test a branch's image without publishing it. No GitHub Release is required.
+  # Test a branch's image and refresh the build cache, without publishing an
+  # application image. No GitHub Release is required.
   workflow_dispatch:
 
 permissions:
@@ -14,7 +15,8 @@ env:
   PNPM_VERSION: "10.13.1"
 
 concurrency:
-  group: evk-server-${{ github.ref }}
+  # All releases share one registry cache; serialize writers across tags.
+  group: evk-server-image
   cancel-in-progress: false
 
 jobs:
@@ -47,8 +49,15 @@ jobs:
             version="test-${GITHUB_SHA:0:12}"
           fi
           echo "reference=$repository:$version" >> "$GITHUB_OUTPUT"
+          echo "cache=$repository:buildcache" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR for the shared build cache
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build (not yet published)
         uses: docker/build-push-action@v6
         with:
@@ -63,19 +72,12 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.image.outputs.version }}
             org.opencontainers.image.licenses=Apache-2.0
-          cache-from: type=gha,scope=evk-server-amd64
-          cache-to: type=gha,mode=max,scope=evk-server-amd64
+          cache-from: type=registry,ref=${{ steps.image.outputs.cache }}
+          cache-to: type=registry,ref=${{ steps.image.outputs.cache }},mode=max
       - name: Check the built image before publishing
         env:
           EVK_SMOKE_IMAGE: ${{ steps.image.outputs.reference }}
         run: bash deploy/server/smoke-image.sh "$EVK_SMOKE_IMAGE"
-      - name: Log in to GHCR
-        if: github.event_name == 'push' && github.ref_type == 'tag'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish the tested image
         if: github.event_name == 'push' && github.ref_type == 'tag'
         env:

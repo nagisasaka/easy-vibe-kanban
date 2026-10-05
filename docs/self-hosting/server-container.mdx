@@ -202,12 +202,20 @@ Replace the example base with your published version/digest. Preserve the non-ro
 The `Build and publish EVK server image` workflow builds the root Dockerfile's `server` target. It uses `GITHUB_TOKEN` with `packages: write`, and publishes to `ghcr.io/<owner>/<repository>` in lowercase. It does not alter the existing npm release workflow.
 
 1. Merge tested changes into `main`; merging alone does not publish an image.
-2. For an image-build rehearsal, manually dispatch the workflow on your branch. It builds and smoke-tests, but does **not** publish.
+2. For an image-build rehearsal, manually dispatch the workflow on your branch. It builds and smoke-tests, and refreshes the build cache, but does **not** publish an application image.
 3. At the chosen commit, create and push a version Git tag such as `v1.2.0` or `v1.2.0-rc.1`. The workflow strips `v`, builds the image, runs smoke tests, then publishes `:1.2.0` or `:1.2.0-rc.1`.
 4. On the first publication, check the package's visibility and access under GitHub Packages. Make it public for anonymous pulls, or give users the appropriate package-read authentication. GitHub Releases need not be created.
 5. Record the source commit and image digest from the workflow. Do not move/reuse version tags; the workflow intentionally does not publish a mutable `latest` tag. GHCR tags themselves are mutable, so pin deployments by digest when you require exact artefact identity.
 
 The image carries OCI source, revision and version labels. See [GitHub's container publishing documentation](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images) for registry permissions and organisation restrictions. A successful source merge or local test is not evidence that an image has been published: check the workflow result and GHCR package before telling users to pull it.
+
+### Build cache
+
+The workflow shares a registry cache at `ghcr.io/<owner>/<repository>:buildcache` across release tags. This tag contains build metadata and intermediate layers; use a version tag or application image digest for `EVK_IMAGE`. Workflow runs are serialised so concurrent releases cannot overwrite each other's cache exports. A missing cache causes a full build.
+
+The Dockerfile uses a pinned `cargo-chef` to build Rust dependencies before copying the application sources and embedded frontend. Dependency artefacts stay in ordinary image layers so fresh CI runners can restore them. Changes to the dependency recipe or Rust toolchain rebuild that layer. The server's development tools are built independently of the EVK binaries, so application changes do not reinstall them. The lightweight `runtime` target remains available.
+
+The first build after this change populates the cache and can still take a long time. To measure reuse, dispatch another build on the same commit and compare the build-step duration, then repeat after a normal source change. A same-commit cache hit does not measure Rust recompilation time. Check the dependency and tool-installation steps for `CACHED` in the build logs, and require the smoke tests to pass on each run.
 
 ## Validation boundaries
 

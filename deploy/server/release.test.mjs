@@ -23,10 +23,26 @@ test("release builds the server target, tests before publishing, and does not pu
   );
   const smoke = steps.findIndex((step) => step.run?.includes("smoke-image.sh"));
   const publish = steps.findIndex((step) => step.run?.includes("docker push"));
+  const login = steps.findIndex((step) =>
+    step.uses?.startsWith("docker/login-action@"),
+  );
+  assert(login >= 0 && login < build);
+  assert.equal(steps[login].if, undefined);
   assert(build < smoke && smoke < publish);
   assert.equal(steps[build].with.target, "server");
   assert.equal(steps[build].with.push, false);
   assert.equal(steps[build].with.load, true);
+  assert.equal(
+    steps[build].with["cache-from"],
+    "type=registry,ref=${{ steps.image.outputs.cache }}",
+  );
+  assert.equal(
+    steps[build].with["cache-to"],
+    "type=registry,ref=${{ steps.image.outputs.cache }},mode=max",
+  );
+  // Different release tags must not race while replacing the shared cache.
+  assert(!workflow.concurrency.group.includes("github.ref"));
+  assert.equal(workflow.concurrency["cancel-in-progress"], false);
   assert.match(steps[publish].if, /github.event_name == 'push'/);
   assert.match(steps[publish].if, /github.ref_type == 'tag'/);
   assert(!JSON.stringify(workflow).includes(":latest"));
@@ -66,12 +82,13 @@ test("Docker distribution includes the prebuilt app, process host, pinned tools,
     docker,
     /COPY --from=builder \/usr\/local\/bin\/agent-process-host/,
   );
-  assert.match(docker, /FROM runtime AS server/);
+  assert.match(docker, /FROM runtime-base AS runtime/);
+  assert.match(docker, /FROM server-tools AS server/);
   assert.match(docker, /ARG CODEX_VERSION=\d+\.\d+\.\d+/);
   assert.match(docker, /rust-toolchain\.toml/);
   assert.match(
     docker,
-    /COPY --from=builder \/usr\/local\/cargo\/bin \/usr\/local\/bin/,
+    /COPY --from=rust-toolchain \/usr\/local\/cargo\/bin \/usr\/local\/bin/,
   );
   assert.match(docker, /USER appuser[\s\S]*ENTRYPOINT.*server\.mjs/);
   const entrypoints = docker.match(/^ENTRYPOINT .*$/gm);
