@@ -6,6 +6,62 @@
 
 export type Repo = { id: string, path: string, name: string, display_name: string, setup_script: string | null, cleanup_script: string | null, archive_script: string | null, copy_files: string | null, parallel_setup_script: boolean, dev_server_script: string | null, default_target_branch: string | null, default_working_dir: string | null, created_at: Date, updated_at: Date, };
 
+export type SharedResource = { id: string, resource_key: string, name: string, description: string, state: string, revision: number, fence: number, health: string, created_at: string, };
+
+export type RegisterResource = { resource_key: string, name: string, description: string, state: string, };
+
+export type ResourceClaim = { resource_id: string,
+/**
+ * The contract/state observed before authoring this operation.
+ */
+expected_revision: number,
+/**
+ * Persistent state after success, e.g. schema v3; None means unchanged.
+ */
+resulting_state: string | null, };
+
+export type ResourceOperationSpec = { request_id: string, session_id: string, purpose: string, claims: Array<ResourceClaim>,
+/**
+ * Entire critical section, including cleanup. Do not detach work.
+ */
+script: string,
+/**
+ * Independently checks that all resources are idle in the declared state.
+ */
+verification_script: string,
+/**
+ * Relative to the multi-repository workspace root.
+ */
+working_dir: string, timeout_seconds: number, };
+
+export type ResourceOperation = { sequence: number, id: string, workspace_id: string, session_id: string, spec: ResourceOperationSpec, status: string, priority: number, process_id: string | null, runtime_id: string | null, cancel_requested: boolean, message: string | null, created_at: string, updated_at: string, };
+
+export type ResourceHolder = { resource_id: string, operation_id: string, fence: number, };
+
+export type ResourceEvent = { sequence: number, resource_id: string | null, operation_id: string | null, kind: string, message: string, created_at: string, };
+
+export type ResourceQueueEntry = { id: string, workspace_id: string, purpose: string, claims: Array<ResourceClaim>, status: string, priority: number, message: string | null, };
+
+export type ResourceSnapshot = { resources: Array<SharedResource>, holders: Array<ResourceHolder>, queue: Array<ResourceQueueEntry>, };
+
+export type ResourceMediation = { id: string, trigger_operation_id: string, snapshot: ResourceSnapshot, status: string, workspace_id: string | null, session_id: string | null, agent_run_id: string | null, result: string | null, created_at: string, };
+
+export type ResourceDecision = { explanation: string,
+/**
+ * A complete ordering of the snapshot's queued requests. Never preempts.
+ */
+order: Array<string>,
+/**
+ * Queued requests whose authors must reconsider their assumptions.
+ */
+needs_replan: Array<string>, };
+
+export type ResourceRecovery = { evidence: string,
+/**
+ * All held resources, with current revisions and verified resulting states.
+ */
+claims: Array<ResourceClaim>, };
+
 export type RepositoryMemoryState = { version: number, enabled: boolean, status: RepositoryWikiStatus, target_branch: string | null, source_commit: string | null, wiki_commit: string | null, last_success: string | null, active_run_id: string | null, bootstrap: OpenWikiBootstrapOwner | null, maintenance_workspace_id: string | null, maintenance_session_id: string | null, error: string | null, output_language: string, active_source_commit: string | null, active_event_ids: Array<string>, active_sync_input_digest: string | null, coding_errors: Array<string>, };
 
 export type OpenWikiBootstrapOwner = { workflow_run_id: string, server_instance_id: string, phase: OpenWikiBootstrapPhase, child: OpenWikiBootstrapChild | null, review_fingerprint: string | null, };
@@ -410,7 +466,7 @@ dropped: boolean, started_at: string, completed_at: string | null, created_at: s
 
 export enum ExecutionProcessStatus { running = "running", completed = "completed", failed = "failed", killed = "killed" }
 
-export type ExecutionProcessRunReason = "setupscript" | "cleanupscript" | "archivescript" | "devserver" | "integrationvalidation";
+export type ExecutionProcessRunReason = "setupscript" | "cleanupscript" | "archivescript" | "devserver" | "integrationvalidation" | "resourcecommand";
 
 export type ExecutionProcessRepoState = { id: string, execution_process_id: string, repo_id: string, before_head_commit: string | null, after_head_commit: string | null, merge_commit: string | null, created_at: Date, updated_at: Date, };
 
@@ -1067,7 +1123,7 @@ goal_max_concurrent_agents?: number | null, };
 
 export enum ExecutionMode { code = "code", plan = "plan", goal = "goal", plan_with_goal = "plan_with_goal" }
 
-export type ScriptContext = "SetupScript" | "CleanupScript" | "ArchiveScript" | "DevServer" | "ToolInstallScript" | "IntegrationValidation";
+export type ScriptContext = "SetupScript" | "CleanupScript" | "ArchiveScript" | "DevServer" | "ToolInstallScript" | "IntegrationValidation" | "ResourceCommand";
 
 export type ScriptRequest = { script: string, language: ScriptRequestLanguage, context: ScriptContext,
 /**
@@ -1362,7 +1418,7 @@ export type UpdateAgentRunGoalRequest = { objective?: string, status?: AgentGoal
 
 export type UpdatePlanGoalDraftRequest = { objective: string, command_id: string, idempotency_key: string, correlation_id: string, created_at: string, };
 
-export enum OrchestrationProductKind { workflow = "workflow", arena = "arena", integration = "integration" }
+export enum OrchestrationProductKind { workflow = "workflow", arena = "arena", integration = "integration", resource_mediation = "resource_mediation" }
 
 export enum OrchestrationFailurePolicy { fail_fast = "fail_fast", allow_partial = "allow_partial" }
 

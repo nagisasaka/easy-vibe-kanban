@@ -34,7 +34,8 @@
         "remote-projects": "Projects",
         "remote-projectsDesc": "Manage projects",
         "relay": "Remote Access",
-        "relayDesc": "Relay tunnel and enrollment"
+        "relayDesc": "Relay tunnel and enrollment",
+        "resources": "Shared resources"
       }
     },
     "hostPicker": {
@@ -677,5 +678,61 @@
         }
       }
     }
+  },
+  "resources": {
+    "title": "Shared resources",
+    "description": "Coordinate exclusive access across parallel Cards. Codex assesses conflicts; LVK controls ownership.",
+    "scope": "This host is one coordination authority. Register a physical resource once. Other LVK installations and commands run outside this protocol are not coordinated.",
+    "loading": "Loading resources…",
+    "occupied": "In use",
+    "revision": "State revision {{revision}}",
+    "owner": "Operation",
+    "empty": "No resources registered. Start with a mock resource before connecting hardware or services.",
+    "fields": {
+      "resource_key": "Canonical identity (for example, mock:phone-1)",
+      "name": "Display name",
+      "description": "Usage contract and verification requirements",
+      "state": "Current verified state"
+    },
+    "register": "Register resource",
+    "operations": "Operations",
+    "operationsHelp": "Agents submit a complete command, cleanup and verification through the LVK tools. Waiting requests hold no resources.",
+    "workspace": "Workspace",
+    "command": "Command",
+    "verification": "Verification",
+    "process": "Process log ID",
+    "cancel": "Cancel operation",
+    "mediate": "Ask Codex to reassess",
+    "inspectRecovery": "Review recovery",
+    "recoveryHelp": "Confirm that the old process and all remote effects have stopped. Record the actual state of every resource. This releases the bundle and increments state revisions; waiting Cards must reconsider old assumptions.",
+    "evidence": "Evidence of termination and state verification",
+    "confirmRecovery": "Confirm verified recovery",
+    "noOperations": "No operations yet.",
+    "mediations": "Mediation history",
+    "mediationsHelp": "Only contention, changed assumptions or uncertain outcomes start Codex. Decisions cannot preempt an owner or waive a state check.",
+    "assessing": "Waiting for an assessment…",
+    "health": {
+      "ready": "Ready",
+      "recovery_required": "Recovery required"
+    },
+    "status": {
+      "queued": "Queued",
+      "blocked": "Replan required",
+      "launching": "Starting",
+      "running": "Running",
+      "succeeded": "Verified complete",
+      "cancelled": "Cancelled",
+      "recovery_required": "Recovery required",
+      "recovered": "Recovered"
+    },
+    "mediationStatus": {
+      "pending": "Queued",
+      "preparing": "Preparing",
+      "running": "Assessing",
+      "applied": "Applied",
+      "stale": "State changed; not applied",
+      "failed": "Assessment unavailable"
+    },
+    "stopMediation": "Stop assessment"
   }
 }

@@ -85,6 +85,10 @@ async fn main() -> Result<(), VibeKanbanError> {
     let shutdown_token = CancellationToken::new();
 
     let deployment = DeploymentImpl::new(shutdown_token.clone()).await?;
+    db::models::resource_coordination::ResourceMediation::fence_interrupted_preparations(
+        &deployment.db().pool,
+    )
+    .await?;
     deployment.update_sentry_scope().await?;
     server::workflow_runtime::bootstrap::fence_interrupted_runs(&deployment).await?;
     db::models::integration::IntegrationRun::fence_interrupted_preparations(&deployment.db().pool)
@@ -134,6 +138,7 @@ async fn main() -> Result<(), VibeKanbanError> {
     // durable commands and leases, avoiding two concurrent recovery owners.
     routes::openwiki::spawn_recovery_monitor(deployment.clone());
     routes::integrations::spawn_monitor(deployment.clone());
+    routes::resource_coordination::spawn_monitor(deployment.clone());
     spawn_scheduled_task_loop(deployment.clone());
     deployment
         .container()

@@ -20,6 +20,7 @@ pub mod orchestration;
 pub mod parallel_context;
 pub mod pipelines;
 pub mod pr_monitor;
+pub mod resource_coordination;
 
 #[cfg(feature = "qa-mode")]
 pub mod qa_repos;

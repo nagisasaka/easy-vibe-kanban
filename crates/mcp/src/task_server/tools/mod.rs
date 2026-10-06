@@ -44,6 +44,7 @@ mod organizations;
 mod remote_issues;
 mod remote_projects;
 mod repos;
+mod resources;
 mod sessions;
 mod task_attempts;
 mod workspaces;
@@ -51,6 +52,7 @@ mod workspaces;
 impl McpServer {
     pub fn global_mode_router() -> rmcp::handler::server::tool::ToolRouter<Self> {
         Self::context_tools_router()
+            + Self::resource_tools_router()
             + Self::workspaces_tools_router()
             + Self::organizations_tools_router()
             + Self::repos_tools_router()
@@ -65,6 +67,7 @@ impl McpServer {
 
     pub fn orchestrator_mode_router() -> rmcp::handler::server::tool::ToolRouter<Self> {
         let mut router = Self::context_tools_router()
+            + Self::resource_tools_router()
             + Self::workspaces_tools_router()
             + Self::session_tools_router();
         router.remove_route("list_workspaces");
@@ -403,16 +406,20 @@ mod tests {
     }
 
     #[test]
-    fn orchestrator_mode_exposes_only_scoped_workflow_tools() {
+    fn orchestrator_mode_exposes_only_scoped_workflow_and_resource_tools() {
         let actual = tool_names(McpServer::orchestrator_mode_router());
         let expected = BTreeSet::from([
+            "cancel_resource_operation".to_string(),
             "create_session".to_string(),
             "get_context".to_string(),
             "get_execution".to_string(),
             "list_sessions".to_string(),
+            "list_shared_resources".to_string(),
+            "run_resource_operation".to_string(),
             "run_session_prompt".to_string(),
             "update_session".to_string(),
             "update_workspace".to_string(),
+            "wait_resource_operation".to_string(),
         ]);
 
         assert_eq!(actual, expected);
@@ -424,6 +431,7 @@ mod tests {
 
         assert!(actual.contains("list_workspaces"));
         assert!(actual.contains("delete_workspace"));
+        assert!(actual.contains("run_resource_operation"));
         assert!(!actual.contains("output_markdown"));
     }
 

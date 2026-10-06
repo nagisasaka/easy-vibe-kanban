@@ -28,6 +28,7 @@ pub enum OrchestrationProductKind {
     Workflow,
     Arena,
     Integration,
+    ResourceMediation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

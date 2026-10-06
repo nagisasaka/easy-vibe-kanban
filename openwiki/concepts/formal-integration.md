@@ -32,6 +32,10 @@ generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
 
 ## 選択を凍結し、他の writer を止める
 
+共有リソース調停を導入した後は、採用元 Workspace に順番待ち・実行中・再検討待ち・
+復旧待ちの資源操作がないことも必要になる。資源操作の完了は Git の統合を自動的に
+開始しない。詳しくは [共有リソースの所有権と AI 調停](shared-resource-coordination.md) を参照。
+
 採用元は現在その local Card / Project に関連している必要がある。Card に関連する全 Workspace を調べ、AgentRun・未確認 process・script finalization・送信待ち queue・active Goal がなく、tracked / untracked 変更や未完了 Git 操作もないことを要求する。他 Repo の未統合結果がある Card は拒否する。source の意味記録がある場合は成功 coding run の Manifest 完了も確認する。[idle 判定](../../crates/server/src/routes/integrations/admission.rs#L26-L54)、[全関連環境の検査](../../crates/server/src/routes/integrations/admission.rs#L79-L155)、[clean の意味](../../crates/git/src/publication.rs#L175-L201)
 
 source OID、branch、Card の title / description / status / requirements revision、関連 Workspace 群、帰属を証明できる event ID を保存する。HEAD が利用者の `expected_commit` と異なれば `SOURCE_CHANGED` で明示的な再選択を要求する。同じ request ID は同じ選択・設定に対して既存 run を返し、違う入力で再利用できない。[凍結](../../crates/server/src/routes/integrations/admission.rs#L155-L188)、[冪等性](../../crates/server/src/routes/integrations/admission.rs#L225-L254)

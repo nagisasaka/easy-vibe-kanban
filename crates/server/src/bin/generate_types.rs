@@ -12,6 +12,18 @@ fn generate_types_content() -> String {
 
     let decls: Vec<String> = vec![
         db::models::repo::Repo::decl(),
+        db::models::resource_coordination::SharedResource::decl(),
+        db::models::resource_coordination::RegisterResource::decl(),
+        db::models::resource_coordination::ResourceClaim::decl(),
+        db::models::resource_coordination::ResourceOperationSpec::decl(),
+        db::models::resource_coordination::ResourceOperation::decl(),
+        db::models::resource_coordination::ResourceHolder::decl(),
+        db::models::resource_coordination::ResourceEvent::decl(),
+        db::models::resource_coordination::ResourceQueueEntry::decl(),
+        db::models::resource_coordination::ResourceSnapshot::decl(),
+        db::models::resource_coordination::ResourceMediation::decl(),
+        db::models::resource_coordination::ResourceDecision::decl(),
+        db::models::resource_coordination::ResourceRecovery::decl(),
         utils::repository_memory::RepositoryMemoryState::decl(),
         utils::repository_memory::OpenWikiBootstrapOwner::decl(),
         utils::repository_memory::OpenWikiBootstrapChild::decl(),

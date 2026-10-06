@@ -34,7 +34,8 @@
         "machineSettings": "Machine Settings",
         "accountSettings": "Account Settings",
         "pairOtherMachines": "Pair other machines",
-        "selectHost": "Select host"
+        "selectHost": "Select host",
+        "resources": "共有リソース"
       }
     },
     "general": {
@@ -667,5 +668,61 @@
         }
       }
     }
+  },
+  "resources": {
+    "title": "共有リソース",
+    "description": "並列カード間の排他的な利用を調整します。Codex が競合を判断し、LVK が所有権を管理します。",
+    "scope": "このホストがひとつの調停主体です。同じ実体は一度だけ登録してください。別の LVK 環境や、この仕組みを通さないコマンドは調停の対象外です。",
+    "loading": "リソースを読み込み中…",
+    "occupied": "使用中",
+    "revision": "状態リビジョン {{revision}}",
+    "owner": "操作",
+    "empty": "未登録です。実機や外部サービスにつなぐ前に模擬リソースで確認できます。",
+    "fields": {
+      "resource_key": "実体を識別する一意のキー（例: mock:phone-1）",
+      "name": "表示名",
+      "description": "利用条件と終了時に確認すること",
+      "state": "確認済みの現在の状態"
+    },
+    "register": "リソースを登録",
+    "operations": "操作と待ち行列",
+    "operationsHelp": "AI は LVK のツールから、操作・後始末・確認を含む一連のコマンドを要求します。待機中はリソースを占有しません。",
+    "workspace": "ワークスペース",
+    "command": "実行コマンド",
+    "verification": "終了時の確認",
+    "process": "プロセスログ ID",
+    "cancel": "操作を中止",
+    "mediate": "Codex に再検討を依頼",
+    "inspectRecovery": "復旧を確認",
+    "recoveryHelp": "旧プロセスと外部で進行中の処理が停止したことを確認し、すべてのリソースの実際の状態を記録してください。解放すると状態リビジョンが更新され、待機カードは古い前提を再検討する必要があります。",
+    "evidence": "停止と状態確認の根拠",
+    "confirmRecovery": "確認済みとして復旧・解放",
+    "noOperations": "まだ操作はありません。",
+    "mediations": "調停履歴",
+    "mediationsHelp": "競合・前提の変更・状態不明の場合だけ Codex を起動します。実行中の所有権の剥奪や、状態確認の省略はできません。",
+    "assessing": "判断を待っています…",
+    "health": {
+      "ready": "利用可能",
+      "recovery_required": "復旧確認が必要"
+    },
+    "status": {
+      "queued": "順番待ち",
+      "blocked": "計画の再検討が必要",
+      "launching": "起動中",
+      "running": "実行中",
+      "succeeded": "確認完了",
+      "cancelled": "中止済み",
+      "recovery_required": "復旧確認が必要",
+      "recovered": "復旧済み"
+    },
+    "mediationStatus": {
+      "pending": "待機中",
+      "preparing": "準備中",
+      "running": "検討中",
+      "applied": "反映済み",
+      "stale": "状態変化のため未反映",
+      "failed": "判断を取得できませんでした"
+    },
+    "stopMediation": "調停を停止"
   }
 }

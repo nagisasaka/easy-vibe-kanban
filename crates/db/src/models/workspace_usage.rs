@@ -11,6 +11,7 @@ use super::workspace::{Workspace, WorkspaceError};
 pub const OPENWIKI_BOOTSTRAP: &str = "openwiki_bootstrap";
 pub const OPENWIKI_SYNC: &str = "openwiki_sync";
 pub const INTEGRATION: &str = "integration";
+pub const RESOURCE_MEDIATION: &str = "resource_mediation";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Type, Serialize, Deserialize, TS)]
 #[sqlx(type_name = "workspace_usage", rename_all = "snake_case")]

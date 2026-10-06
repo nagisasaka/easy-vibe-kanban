@@ -32,6 +32,7 @@ pub mod relay_auth;
 pub mod releases;
 pub mod remote;
 pub mod repo;
+pub mod resource_coordination;
 pub mod scheduled_tasks;
 pub mod scratch;
 pub mod search;
@@ -60,6 +61,7 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
         .merge(filesystem::router())
         .merge(repo::router())
         .merge(integrations::router())
+        .merge(resource_coordination::router())
         .merge(events::router(&deployment))
         .merge(approvals::router())
         .merge(scratch::router(&deployment))

@@ -73,6 +73,19 @@ pub async fn describe(
         view.published = result.wiki_commit.is_some();
     }
     match (owner.kind.as_str(), owner.run_id) {
+        (db::models::workspace_usage::RESOURCE_MEDIATION, Some(id)) => {
+            let (status, result): (String, Option<String>) = sqlx::query_as(
+                "SELECT status,result FROM resource_mediations WHERE id=? AND workspace_id=?",
+            )
+            .bind(id)
+            .bind(workspace.id)
+            .fetch_one(pool)
+            .await?;
+            view.terminal = matches!(status.as_str(), "applied" | "stale" | "failed");
+            view.can_stop = !view.terminal;
+            view.error = if status == "failed" { result } else { None };
+            view.status = status;
+        }
         (INTEGRATION, Some(id)) => {
             let run = IntegrationRun::find(pool, id).await?;
             if run.workspace_id != Some(workspace.id)
@@ -238,6 +251,11 @@ pub async fn stop(deployment: &DeploymentImpl, workspace: &Workspace) -> Result<
         .ok_or_else(|| error("Owner missing"))?;
     let id = owner.run_id.ok_or_else(|| error("Owner is unbound"))?;
     match owner.kind.as_str() {
+        db::models::workspace_usage::RESOURCE_MEDIATION => {
+            crate::routes::resource_coordination::cancel_mediation(deployment, id)
+                .await
+                .map_err(error)?;
+        }
         INTEGRATION => {
             IntegrationRun::request_cancel(&deployment.db().pool, id).await?;
         }

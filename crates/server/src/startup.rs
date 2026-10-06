@@ -168,6 +168,11 @@ pub async fn initialize_deployment(
     }
 
     let deployment = DeploymentImpl::new(shutdown).await?;
+    db::models::resource_coordination::ResourceMediation::fence_interrupted_preparations(
+        &deployment.db().pool,
+    )
+    .await
+    .map_err(DeploymentError::Other)?;
     migrate_legacy_attachment_directories(&deployment).await?;
     deployment.update_sentry_scope().await?;
     crate::workflow_runtime::bootstrap::fence_interrupted_runs(&deployment).await?;
@@ -216,6 +221,7 @@ pub async fn initialize_deployment(
         .await
         .map_err(|err| DeploymentError::Other(anyhow::anyhow!(err.to_string())))?;
     crate::routes::openwiki::spawn_recovery_monitor(deployment.clone());
+    crate::routes::resource_coordination::spawn_monitor(deployment.clone());
     // Start the event-driven workflow completion watcher. This eliminates the
     // need for HTTP polling to advance workflow runs when agent executions
     // complete — instead each execution's exit-monitor publishes an event that

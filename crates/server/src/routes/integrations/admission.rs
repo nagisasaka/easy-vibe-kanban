@@ -25,6 +25,7 @@ use crate::DeploymentImpl;
 
 pub(super) async fn idle(deployment: &DeploymentImpl, workspace: Uuid) -> anyhow::Result<()> {
     let pool = &deployment.db().pool;
+    services::services::resource_coordination::guard_workspace_idle(pool, workspace).await?;
     let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_runs WHERE workspace_id=? AND status NOT IN ('succeeded','failed','cancelled','crashed','audit_failed')) OR EXISTS(SELECT 1 FROM execution_processes p JOIN sessions s ON s.id=p.session_id WHERE s.workspace_id=? AND p.status='running') OR EXISTS(SELECT 1 FROM agent_process_registry p JOIN agent_run_attempts a ON a.id=p.run_attempt_id JOIN agent_runs r ON r.id=a.agent_run_id WHERE r.workspace_id=? AND p.registry_status IN ('spawned','running','unreachable'))")
         .bind(workspace).bind(workspace).bind(workspace).fetch_one(pool).await?;
     ensure!(

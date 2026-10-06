@@ -26,6 +26,7 @@ pub enum ScriptContext {
     DevServer,
     ToolInstallScript,
     IntegrationValidation,
+    ResourceCommand,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]

@@ -58,6 +58,10 @@ docker exec "$name" sh -ec '
   touch /home/appuser/smoke-persistence /repos/smoke-persistence /var/tmp/smoke-persistence
   test -f /home/appuser/.local/share/vibe-kanban/db.v2.sqlite
 '
+# Exercise the resource protocol against this disposable database. Codex auth
+# is intentionally absent; deterministic ownership must work without a model.
+docker cp scripts/test-resource-coordination.py "$name:/tmp/test-resource-coordination.py"
+docker exec "$name" python3 /tmp/test-resource-coordination.py http://127.0.0.1:3000
 docker stop -t 150 "$name" >/dev/null
 docker rm "$name" >/dev/null
 start 127.0.0.1

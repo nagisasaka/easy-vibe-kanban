@@ -779,6 +779,10 @@ impl LocalAgentRunPort {
             })
             .collect();
         let mut memory_instructions = Vec::new();
+        let resource_mediator = workspace
+            .execution_owner
+            .as_ref()
+            .is_some_and(|o| o.kind == db::models::workspace_usage::RESOURCE_MEDIATION);
         let mut openwiki_maintenance = false;
         let mut openwiki_reviewer = false;
         let parallel_policy = services::services::parallel_context::saved_context(
@@ -789,6 +793,12 @@ impl LocalAgentRunPort {
         .await
         .map_err(|error| AgentRunPortError::Rejected(format!("Card context: {error:#}")))?;
         let local_api_port = utils::port_file::read_port_file("vibe-kanban").await.ok();
+        if !resource_mediator && let Some(port) = local_api_port {
+            memory_instructions.push(services::services::resource_coordination::instructions(
+                port,
+                request.session_id,
+            ));
+        }
         let integration_workspace =
             db::models::integration::is_integration_workspace(&self.db.pool, workspace.id)
                 .await
@@ -911,6 +921,9 @@ impl LocalAgentRunPort {
         env.insert("VK_AGENT_RUN_ID", request.agent_run_id.to_string());
         env.insert("VK_RUN_ATTEMPT_ID", attempt.run_attempt_id.to_string());
         env.insert("OPENWIKI_TELEMETRY_DISABLED", "1");
+        if resource_mediator {
+            env.insert("LVK_RESOURCE_MEDIATOR", "1");
+        }
         if openwiki_maintenance {
             env.insert("EVK_OPENWIKI_MAINTENANCE", "1");
         }

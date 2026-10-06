@@ -46,6 +46,10 @@ import type {
 import type { AppRuntime } from '@/shared/hooks/useAppRuntime';
 import { handleApiResponse } from './api';
 import {
+  createResourceCoordinationClient,
+  type ResourceCoordinationClient,
+} from './resourceCoordinationApi';
+import {
   makeLocalApiRequest,
   type LocalApiRequestOptions,
 } from './localApiTransport';
@@ -65,6 +69,7 @@ export type MachineTarget =
     };
 
 export interface MachineClient {
+  resources: ResourceCoordinationClient;
   target: MachineTarget;
   queryScopeKey: readonly ['machine', string];
   getConfig: () => Promise<UserSystemInfo>;
@@ -220,6 +225,9 @@ export function createMachineClient(
 
   return {
     target,
+    resources: createResourceCoordinationClient((path, init) =>
+      makeMachineRequest(runtime, target, path, init)
+    ),
     queryScopeKey,
     getConfig: async () =>
       handleApiResponse<UserSystemInfo>(

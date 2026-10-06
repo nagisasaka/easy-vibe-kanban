@@ -17,6 +17,7 @@ import { AgentsSettingsSection } from './AgentsSettingsSection';
 import { McpSettingsSection } from './McpSettingsSection';
 import { RelaySettingsSectionContent } from './RelaySettingsSection';
 import { AgentToolsSettingsSection } from './AgentToolsSettingsSection';
+import { ResourceSettingsSection } from './ResourceSettingsSection';
 
 export type SettingsSectionType =
   | 'general'
@@ -26,6 +27,7 @@ export type SettingsSectionType =
   | 'agents'
   | 'mcp'
   | 'agent-tools'
+  | 'resources'
   | 'relay';
 
 export type SettingsSectionGroup = 'host' | 'universal';
@@ -40,6 +42,7 @@ export type SettingsSectionInitialState = {
   agents: { executor?: string; variant?: string } | undefined;
   mcp: undefined;
   'agent-tools': undefined;
+  resources: undefined;
   relay: { hostId?: string } | undefined;
 };
 
@@ -66,6 +69,7 @@ export const SETTINGS_SECTION_DEFINITIONS: SettingsSectionDefinition[] = [
     showInNavigation: false,
   },
   { id: 'agent-tools', icon: WrenchIcon, group: 'host' },
+  { id: 'resources', icon: BuildingsIcon, group: 'host' },
   { id: 'organizations', icon: BuildingsIcon, group: 'universal' },
   { id: 'remote-projects', icon: CloudIcon, group: 'universal' },
   { id: 'relay', icon: BroadcastIcon, group: 'universal' },
@@ -110,6 +114,8 @@ export function renderSettingsSection(
       return <McpSettingsSection />;
     case 'agent-tools':
       return <AgentToolsSettingsSection />;
+    case 'resources':
+      return <ResourceSettingsSection key="resources" />;
     case 'relay':
       return (
         <RelaySettingsSectionContent
