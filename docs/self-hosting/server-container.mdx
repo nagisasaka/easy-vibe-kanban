@@ -137,7 +137,7 @@ cd /opt/evk-server
 docker compose exec evk git clone https://github.com/nagisasaka/lucky-vibe-kanban.git /repos/lucky-vibe-kanban
 ```
 
-Skip the clone if that checkout already exists. Repositories in `/repos` are shared with the stable service, so its agents can edit the development checkout too.
+Skip the clone if that checkout already exists. Repositories in `/repos` are shared with the stable service, so its agents can edit the development checkout too. In the stable LVK UI, choose `/repos/lucky-vibe-kanban` and work **in place** to edit the watched checkout. Changes in a different worktree are not automatically shown by this development service.
 
 </Step>
 <Step title="Enable authenticated development HTTPS">
