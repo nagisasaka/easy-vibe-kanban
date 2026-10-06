@@ -41,6 +41,7 @@ jobs:
         run: |
           docker compose -f deploy/server/compose.yaml config --quiet
           docker compose -f deploy/server/compose.yaml -f deploy/server/compose.acme.yaml config --quiet
+          docker compose -f deploy/server/compose.yaml -f deploy/server/compose.acme.yaml -f deploy/server/compose.development.yaml --profile development config --quiet
           EVK_HOST= EVK_DOMAIN=evk.example.test docker compose -f deploy/server/compose.yaml config --quiet
         env:
           EVK_IMAGE: ghcr.io/example/evk:test
