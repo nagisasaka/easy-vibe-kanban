@@ -6,6 +6,7 @@ import { createServer } from "node:http";
 import https from "node:https";
 import { isIP } from "node:net";
 import { checkServerIdentity } from "node:tls";
+import { X509Certificate } from "node:crypto";
 import { mkdtemp, readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +18,17 @@ const nginx = process.env.EVK_TEST_NGINX || "nginx";
 const available = spawnSync(nginx, ["-v"]).status === 0;
 if (!available && process.env.EVK_REQUIRE_NGINX_TEST === "1") {
   throw new Error("nginx is required for this CI gate");
+}
+
+function verifyIdentity(host, certificate) {
+  // Node 22.23's checkServerIdentity passes IPv6 through domainToASCII, which
+  // loses the IP literal. Verify IP SANs explicitly; TLS still checks the CA.
+  if (isIP(host)) {
+    return new X509Certificate(certificate.raw).checkIP(host)
+      ? undefined
+      : new Error(`TLS certificate does not cover IP ${host}`);
+  }
+  return checkServerIdentity(host, certificate);
 }
 
 for (const host of ["evk.example.test", "127.0.0.1", "2001:db8::1"])
@@ -158,7 +170,7 @@ for (const host of ["evk.example.test", "127.0.0.1", "2001:db8::1"])
               path,
               servername: isIP(host) ? "" : host,
               checkServerIdentity: (_, certificate) =>
-                checkServerIdentity(host, certificate),
+                verifyIdentity(host, certificate),
               ca,
               headers: { Host: authority(host), ...headers },
             },
@@ -182,16 +194,18 @@ for (const host of ["evk.example.test", "127.0.0.1", "2001:db8::1"])
         });
       }
       let ready = false;
+      let connectionError;
       for (let i = 0; i < 50; i++) {
         try {
           await request();
           ready = true;
           break;
-        } catch {
+        } catch (error) {
+          connectionError = error;
           await delay(20);
         }
       }
-      assert(ready, errors);
+      assert(ready, `${errors}\n${connectionError?.message ?? ""}`);
       for (const path of ["/", "/api/info", "/api/events", "/stream"])
         assert.equal((await request(path)).status, 401, path);
       assert.equal(
@@ -275,7 +289,7 @@ for (const host of ["evk.example.test", "127.0.0.1", "2001:db8::1"])
             path: "/stream",
             servername: isIP(settings.app) ? "" : settings.app,
             checkServerIdentity: (_, certificate) =>
-              checkServerIdentity(settings.app, certificate),
+              verifyIdentity(settings.app, certificate),
             ca,
             headers: {
               Host: authority(settings.app),
