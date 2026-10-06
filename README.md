@@ -6,7 +6,7 @@ Lucky Vibe Kanban is a self-hosted development workspace built on the Vibe Kanba
 and Easy Vibe Kanban projects. Run it on your computer, or on your own server so
 agent sessions can continue while your laptop is disconnected.
 
-[中文](README.zh-CN.md) · [Server setup](docs/self-hosting/server-container.mdx) ·
+[日本語](README.ja.md) · [Server setup](docs/self-hosting/server-container.mdx) ·
 [Source](https://github.com/nagisasaka/lucky-vibe-kanban) · [Apache-2.0](LICENSE)
 
 ## What you can do
