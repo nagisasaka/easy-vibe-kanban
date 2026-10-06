@@ -11,6 +11,8 @@ on:
 jobs:
   run-relay-deploy:
     name: Deploy Relay Dev
+    # Upstream infrastructure is not part of public-fork development.
+    if: github.repository == 'BloopAI/vibe-kanban'
     runs-on: ubuntu-latest
     permissions:
       contents: read

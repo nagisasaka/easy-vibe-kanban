@@ -1,4 +1,4 @@
-name: Build Easy NPX Linux/Windows Package
+name: Build LVK NPX Linux/Windows Package
 
 on:
   workflow_dispatch:

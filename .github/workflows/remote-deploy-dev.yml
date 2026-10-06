@@ -12,6 +12,8 @@ on:
 jobs:
   run-remote-deploy:
     name: Deploy Remote Dev
+    # Upstream infrastructure is not part of public-fork development.
+    if: github.repository == 'BloopAI/vibe-kanban'
     runs-on: ubuntu-latest
     permissions:
       contents: read
