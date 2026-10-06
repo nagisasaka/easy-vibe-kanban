@@ -23,6 +23,10 @@ provide included model usage or a public, unrestricted agent service.
 
 ## Run locally
 
+> The renamed npm package is awaiting its first publication. Until it appears on
+> [npm](https://www.npmjs.com/package/lucky-vibe-kanban), use the server image or
+> source-development setup below. The command below applies after publication.
+
 Install Node.js 20 or newer, install and authenticate the coding agent you want to
 use, then run:
 
