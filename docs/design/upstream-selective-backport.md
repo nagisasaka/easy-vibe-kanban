@@ -5,7 +5,7 @@ description: "LVKの既存契約を維持し、固定したEVK上流から五段
 
 ## 1. 目的と完了の単位
 
-LVK（このeasy-vibe-kanban fork）の製品モデルを維持したまま、上流EVKの実行・入力・設定・編集・操作性の改善を選別して取り込む。上流のコミット数、変更行数、新UIへの一致率を達成指標にしない。
+LVK（このlucky-vibe-kanban fork）の製品モデルを維持したまま、上流EVKの実行・入力・設定・編集・操作性の改善を選別して取り込む。上流のコミット数、変更行数、新UIへの一致率を達成指標にしない。
 
 第1〜第5弾を一つの実装ゴールとして進める。各段階で調査、実装、回帰テスト、レビュー、必要な修正、ローカルコミットを行い、その成果を含む次のブランチへ進む。途中のmainへの取り込みは不要。最後に全段階を含むコード状態で自動検証とChrome DevTools MCPによる実機受入を行う。
 
@@ -287,13 +287,13 @@ private remote backendのCargo checks/tests/lint/type generationは通常gates�
 
 ### 11.1 環境と資産の保護
 
-開始時にChrome DevTools MCP、Chrome、開発用EVK、既存Codex認証、既存OpenWikiのhost-driven経路を確認する。過去の成功を現在の接続証拠にしない。Dockerの利用形態を確認し、動いている既存CLIを理由なくDocker-in-Dockerへ置換しない。
+開始時にChrome DevTools MCP、Chrome、開発用LVK、既存Codex認証、既存OpenWikiのhost-driven経路を確認する。過去の成功を現在の接続証拠にしない。Dockerの利用形態を確認し、動いている既存CLIを理由なくDocker-in-Dockerへ置換しない。
 
 最終コードのbackend／frontendと対応するprocess-hostを、サンドボックス外から`localhost:4020`で確認できるようにする。実行revision・差分・binary build元を記録する。既存ユーザーrunを無断停止せず、必要なら終了を待つか安全な別環境で準備する。最終的な4020での確認を別portの成功へ読み替えない。
 
 専用の小さなテストrepository、または衝突しない`test/upstream-backport-*` branchを使用する。Wiki publicationと正式Integrationのtargetも隔離対象にする。main／開発branchへ試験変更を反映しない。実ユーザーの設定・資格情報を書き換えず、設定の保存・機密値試験には隔離した設定fixtureと架空の秘密値を用いる。
 
-実装依頼後は、この小規模受入に必要な既存認証済みCodex／OpenWikiの実モデル呼出しを許可する。別API-key経路、権限・認証の拡張、大規模なEVK Wiki再生成、品質比較は行わない。テスト資産と証拠は確認用に残す。
+実装依頼後は、この小規模受入に必要な既存認証済みCodex／OpenWikiの実モデル呼出しを許可する。別API-key経路、権限・認証の拡張、大規模なLVK Wiki再生成、品質比較は行わない。テスト資産と証拠は確認用に残す。
 
 ### 11.2 必須シナリオ
 
@@ -310,7 +310,7 @@ MCPで開始した実行の詳細確認にAudit、DBのread-only照会、server 
 
 ### 11.3 証拠と再実行
 
-- branch、EVK実行commitと差分、試験repo source OID、Workspace／Session／AgentRun／Workflow／IntegrationのID、時刻、Audit参照、publication commit、MCP操作記録または画面証拠を残す。秘密・全文会話を実装記録へ転載しない。
+- branch、LVK実行commitと差分、試験repo source OID、Workspace／Session／AgentRun／Workflow／IntegrationのID、時刻、Audit参照、publication commit、MCP操作記録または画面証拠を残す。秘密・全文会話を実装記録へ転載しない。
 - Goal、publication、Doneはそれぞれ正本の状態と対応証拠で判定する。Agentの「完了」という発言だけで成功としない。
 - 実行・入力伝達・永続化・完了証明・公開へ影響する修正後は、新しい試験runで影響するend-to-end経路を再確認する。古いserverや前段branchの成功を最終コードの成功として混ぜない。
 - 表示だけの修正は、影響しない理由を記録した上で既存成果物を使い、MCPで元の操作を再確認できる。
@@ -339,7 +339,7 @@ MCPで開始した実行の詳細確認にAudit、DBのread-only照会、server 
 | AC06 | CLI／provider／API／適用された遅延読込・版番号validation・Workflow編集操作のtestsが成功する                                    |
 | AC07 | 第7節のLVK固有契約を対応testsで維持し、Task移行・DBリセット・除外機能を持ち込んでいない                                        |
 | AC08 | 最終コードで必須quality gatesを実行し、今回の関連失敗・confirmed findingsを修正・再検証している                                |
-| AC09 | Chrome MCPから最終EVKで通常Session、Goal、Stop、Workflow編集・実行、設定／表示の受入を確認している                             |
+| AC09 | Chrome MCPから最終LVKで通常Session、Goal、Stop、Workflow編集・実行、設定／表示の受入を確認している                             |
 | AC10 | 小規模な実Codex／OpenWikiでBootstrapとManifest→正式Integration→Syncの公開経路が成功し、Viewerと実行専用閲覧をMCPで確認している |
 | AC11 | 段階branch／commitと最終結果を追跡でき、main・ユーザー変更・実データ・global設定を保護している                                 |
 | AC12 | 採否、適応、変更点、運用・互換性、試験結果、未検証範囲、残した試験資産を文書化している                                         |

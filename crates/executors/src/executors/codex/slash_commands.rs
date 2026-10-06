@@ -595,7 +595,7 @@ impl Codex {
         let (_, session_fast) = resolve_model(self.model.as_deref());
         let thread_start_params = self.build_thread_start_params_with_resources(current_dir, env);
         let current_dir_path = current_dir.to_path_buf();
-        let checkpoint_memory = env.get("EVK_REPOSITORY_MEMORY_INSTRUCTIONS").is_some();
+        let checkpoint_memory = env.get("LVK_REPOSITORY_MEMORY_INSTRUCTIONS").is_some();
 
         self.spawn_app_server(
             current_dir,

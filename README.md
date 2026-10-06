@@ -3,7 +3,7 @@
 **Plan work on a kanban board, run coding agents, and review their changes.**
 
 Lucky Vibe Kanban is a self-hosted development workspace built on the Vibe Kanban
-and Easy Vibe Kanban projects. Run it on your computer, or on your own server so
+and Lucky Vibe Kanban projects. Run it on your computer, or on your own server so
 agent sessions can continue while your laptop is disconnected.
 
 [日本語](README.ja.md) · [Server setup](docs/self-hosting/server-container.mdx) ·
@@ -86,8 +86,8 @@ checks and hot reload do not require a release build.
 
 ## Workspaces and repository memory
 
-Each registered repository can share local files through `.evk-shared/persistent`
-and `.evk-shared/cache`. These are Git-ignored links shared across its workspaces;
+Each registered repository can share local files through `.lvk-shared/persistent`
+and `.lvk-shared/cache`. These are Git-ignored links shared across its workspaces;
 configure language-specific caches explicitly and back up important local files.
 
 [OpenWiki](docs/workspaces/openwiki.mdx) is configured per repository. Coding
@@ -95,13 +95,12 @@ agents contribute change manifests; repository memory is reconciled after source
 integration. See the [integration operation guide](docs/design/parallel-integration-implementation.md#operation-and-recovery)
 for source reservations, validation, publication and recovery.
 
-## Naming and compatibility
+## Naming
 
 The product is **Lucky Vibe Kanban**, abbreviated **LVK**, and the repository
-is `lucky-vibe-kanban`. Historical storage names (`vibe-kanban`, `.evk-shared`),
-`EVK_*`/`VK_*` configuration keys and native binary names remain compatible.
-Renaming these identifiers requires a separate data migration. Existing
-`easy-vibe-kanban` npm installations do not automatically migrate to Docker.
+is `lucky-vibe-kanban`. Current settings and shared links use `LVK_*` and
+`.lvk-shared`. Original Vibe Kanban storage, `VK_*` keys and native binary names
+are unchanged.
 
 ## Acknowledgements and licence
 

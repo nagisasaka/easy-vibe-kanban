@@ -3,6 +3,11 @@ title: "Troubleshooting"
 description: "Common issues and solutions when using Vibe Kanban"
 ---
 
+<Note>
+LVK is distributed as Docker images. Use the [server guide](/self-hosting/server-container) for deployment. The `pnpm run dev` examples below require a source checkout with dependencies installed.
+</Note>
+
+
 ## Agent Reports Empty Codebase
 
 If your coding agent reports that the codebase is empty when you create a new task, you may have Git's sparse-checkout feature enabled in your repository.
@@ -24,7 +29,7 @@ If you need more detailed logs to help debug an issue, you can enable debug-leve
 **Usage:**
 
 ```bash
-RUST_LOG=debug npx easy-vibe-kanban
+RUST_LOG=debug pnpm run dev
 ```
 
 This will provide verbose logging output that can help identify the root cause of issues.

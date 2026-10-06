@@ -13,20 +13,20 @@ spec.loader.exec_module(acme)
 
 class Certificates(unittest.TestCase):
     def test_validation_and_certbot_arguments(self):
-        env = {"EVK_HOST": "8.8.8.8", "EVK_ACME_AGREE_TOS": "yes"}
+        env = {"LVK_HOST": "8.8.8.8", "LVK_ACME_AGREE_TOS": "yes"}
         command = acme.certbot_command(env)
         self.assertIn("--ip-address", command)
         self.assertIn("shortlived", command)
         self.assertNotIn("--force-renewal", command)
-        self.assertIn("--domains", acme.certbot_command({**env, "EVK_HOST": "evk.example.com"}))
-        self.assertIn("--ip-address", acme.certbot_command({**env, "EVK_HOST": "2606:4700:4700::1111"}))
+        self.assertIn("--domains", acme.certbot_command({**env, "LVK_HOST": "lvk.example.com"}))
+        self.assertIn("--ip-address", acme.certbot_command({**env, "LVK_HOST": "2606:4700:4700::1111"}))
         for host in ["", "127.0.0.1", "10.0.0.1", "192.168.1.2", "::1", "https://a.test", "a.test:443", "--staging", "a;id.test"]:
             with self.subTest(host=host), self.assertRaises(ValueError):
-                acme.certbot_command({**env, "EVK_HOST": host})
+                acme.certbot_command({**env, "LVK_HOST": host})
         with self.assertRaises(ValueError):
-            acme.certbot_command({**env, "EVK_ACME_AGREE_TOS": ""})
+            acme.certbot_command({**env, "LVK_ACME_AGREE_TOS": ""})
         with self.assertRaises(ValueError):
-            acme.certbot_command({**env, "EVK_PREVIEW_DOMAIN": "preview.example.com"})
+            acme.certbot_command({**env, "LVK_PREVIEW_DOMAIN": "preview.example.com"})
 
     def make_certificate(self, directory, serial):
         directory.mkdir()

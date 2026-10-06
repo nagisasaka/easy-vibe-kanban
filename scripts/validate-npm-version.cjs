@@ -1,4 +1,4 @@
-// This is the validator used by publish-easy-npx.yml, not a publish command.
+// Legacy npm version parser retained for old inputs; LVK distributes Docker images.
 const pattern =
   /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(beta|easy|lvk)\.(0|[1-9][0-9]*))?$/;
 

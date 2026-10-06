@@ -29,7 +29,7 @@ replacement specification.
 ## Implementation decisions
 
 - Use `persistent/knowledge` underneath the existing repository shared root.
-  Event and workspace IDs come from EVK, never from model-generated paths.
+  Event and workspace IDs come from LVK, never from model-generated paths.
 - Keep immutable semantic events separate from retryable receipts and durable
   reconciliation state. Failed receipts do not acknowledge events.
 - Extend the current executor context and completion/commit flow; do not add a
@@ -37,7 +37,7 @@ replacement specification.
   coding session; Git supplies revisions and changed paths.
 - OpenWiki 0.5.1 supports user-level `integrations install codex` and the public
   MCP sequence begin / submit_plan / next_page / submit_page / finish. Its
-  bundled host integration requires sequential page work. EVK does not supply a
+  bundled host integration requires sequential page work. LVK does not supply a
   competing page scheduler or modify upstream source.
 - Normal source work and manifest writes stay parallel. Only integrated Wiki
   publication is serialised. Maintenance must validate finalisation and source
@@ -90,7 +90,7 @@ replacement specification.
 | Scoped lint of new settings component and machine API                       | Passed using the existing local-web ESLint configuration                                                                                         |
 | Real pinned npm package, public CLI/MCP smoke                               | Passed; installation/reinstallation, init, rejected premature finish, plan/page/Claims/finish, update/no-op, instruction and source preservation |
 | Docker image runtime                                                        | Unverified: Docker socket/daemon unavailable                                                                                                     |
-| Manual real-Codex run through EVK UI                                        | Documented, not executed; automated checks make no paid model calls                                                                              |
+| Manual real-Codex run through LVK UI                                        | Documented, not executed; automated checks make no paid model calls                                                                              |
 | Local development API through `localhost:4020/api/info`                     | HTTP 200 after final validation                                                                                                                  |
 
 The user's updated completion policy treats unavailable Docker-daemon and private
@@ -114,7 +114,7 @@ test configuration or assertions.
 - Upstream 0.5.1 does **not** support `--version` (even returning success for the
   unknown flag). Compatibility therefore reads its public `--help` version banner.
 - Upstream init writes an optional native-provider Actions workflow and managed
-  agent-instruction blocks. EVK excludes the Actions workflow and installation
+  agent-instruction blocks. LVK excludes the Actions workflow and installation
   artifacts from publication; it validates preservation of user text around blocks.
 - Baseline Workflow tests expected legacy process identities and mutable run
   graphs. Fixtures now provide canonical identities, preserve immutable graph
@@ -139,7 +139,7 @@ test configuration or assertions.
   checking static and dynamic frontend consumers. The existing unused-key gate
   now passes; no translated visible label was removed.
 - Source completion now has an immutable pre-commit checkpoint, expected Git
-  tree and `EVK-Memory-Source` identity. A per-workspace lock prevents duplicate
+  tree and `LVK-Memory-Source` identity. A per-workspace lock prevents duplicate
   finalisation without serialising independent worktrees. Recovery tests cover
   crashes both before and after source commit, later edits and draft changes.
   Before a later coding launch, successful prior runs are finalised/recovered;
@@ -151,7 +151,7 @@ test configuration or assertions.
 - The final review rejected timestamp-based PR membership: an unpushed later
   change in the same workspace must not be acknowledged with an earlier PR.
   External PRs now use verified source ancestry as a conservative fallback,
-  including delayed events. EVK direct squash integrations retain explicit IDs.
+  including delayed events. LVK direct squash integrations retain explicit IDs.
   External squash/rebase PRs without retained merged-head/event metadata require
   explicit source-only Sync; unverified manifests remain unconsumed. A future
   extension can persist pushed-head/event sets and provider merged-head identity
@@ -176,7 +176,7 @@ test configuration or assertions.
 - Searched the new feature paths for TODO/FIXME, `todo!`, `unimplemented!`, stub
   implementations and ignored tests. No incomplete feature path or placeholder
   implementation remains. The language-input placeholder is a UI example only.
-- Section 20 is implemented with explicit event sets for EVK-owned source
+- Section 20 is implemented with explicit event sets for LVK-owned source
   integrations, including squash. The permitted ancestry fallback applies only
   to external PR observations lacking explicit membership. Unknown external
   squash/cherry-pick events are not falsely acknowledged; source-only manual Sync
@@ -255,11 +255,11 @@ do not create release packages on this sandbox machine.
 
 ```bash
 docker info --format '{{.ServerVersion}}'
-docker build --target runtime --tag evk-openwiki:validation .
+docker build --target runtime --tag lvk-openwiki:validation .
 docker run --rm --entrypoint /bin/sh \
   --mount "type=bind,src=$PWD/scripts/test-openwiki-host.mjs,dst=/validation/scripts/test-openwiki-host.mjs,readonly" \
   --mount "type=bind,src=$PWD/assets/openwiki-version,dst=/validation/assets/openwiki-version,readonly" \
-  evk-openwiki:validation -ec '
+  lvk-openwiki:validation -ec '
     node -e "if (Number(process.versions.node.split(\".\")[0]) < 22) process.exit(1)"
     test "$OPENWIKI_TELEMETRY_DISABLED" = 1
     command -v server agent-process-host openwiki
@@ -268,7 +268,7 @@ docker run --rm --entrypoint /bin/sh \
 ```
 
 Expected result: the image builds; all commands run successfully as its default
-non-root user; Node is at least 22, telemetry is disabled, both EVK binaries are
+non-root user; Node is at least 22, telemetry is disabled, both LVK binaries are
 installed, and the smoke test reports `PASS: OpenWiki 0.5.1`. The smoke test uses
 only the upstream public CLI/MCP, installs/reinstalls the project integration in
 a disposable Git repository, validates init/finalisation and update/no-op, and
@@ -282,12 +282,12 @@ found no remaining wiring defect; that does not establish runtime image success.
 
 ### Optional real-Codex end-to-end smoke
 
-Prerequisites: a running EVK development or verified Docker instance, the pinned
+Prerequisites: a running LVK development or verified Docker instance, the pinned
 OpenWiki CLI, existing authorised Codex host authentication, and permission to
 consume model tokens. Configure credentials only at runtime. No additional OpenAI
 API key is required. Use a disposable Git repository, not an active user project.
 
-1. Add the test repository in EVK, enable repository memory and select its local
+1. Add the test repository in LVK, enable repository memory and select its local
    `main` branch and language. Select **Initialize Wiki**.
 2. Inspect the dedicated maintenance session for successful public OpenWiki
    begin/plan/page/Claims/finish calls. Confirm **Current** and a separate
@@ -295,7 +295,7 @@ API key is required. Use a disposable Git repository, not an active user project
 3. Create two ordinary workspaces, A and B, and request independent semantic
    source changes. Confirm unchanged `openwiki/`, distinct immutable shared events
    and per-workspace memory files; commit text uses each semantic summary.
-4. Integrate A through EVK's merge UI. Confirm the source commit precedes its Wiki
+4. Integrate A through LVK's merge UI. Confirm the source commit precedes its Wiki
    commit, the receipt names A's event, and status becomes **Current**.
 5. Rebase B onto the new `main`, then integrate it. Confirm B receives A's Wiki
    snapshot and the next maintenance run reads the final A+B source state.
@@ -313,7 +313,7 @@ they are not represented as a real authenticated model session.
 No schema migration is required: new version-1 records occupy a namespace under
 the existing shared-folder abstraction. No existing AgentRun event or Wiki data
 is deleted. Keep audit streams and failed maintenance workspaces for diagnosis.
-External Git operations are not serialised by EVK's lock: source revision checks
+External Git operations are not serialised by LVK's lock: source revision checks
 fail closed, and unknown squash/cherry-pick membership is not guessed.
 
 ## Final local evidence
@@ -321,26 +321,26 @@ fail closed, and unknown squash/cherry-pick membership is not guessed.
 The final completion audit records stdout/stderr in these sandbox-local files.
 They are not committed artifacts or prerequisites for reproducing the tests:
 
-- `/tmp/evk-memory-tests-final-acceptance.log`: full Rust suites, 789 passed.
-- `/tmp/evk-memory-sequential-wiki-test.log`: successive A/B Wiki publications.
-- `/tmp/evk-memory-vitest-completion-audit.log`: 53 files, 297 passed.
-- `/tmp/evk-memory-workflow-e2e-chrome.log`: all 18 browser tests passed.
-- `/tmp/evk-memory-public-smoke-completion-audit.log`: real upstream public MCP,
+- `/tmp/lvk-memory-tests-final-acceptance.log`: full Rust suites, 789 passed.
+- `/tmp/lvk-memory-sequential-wiki-test.log`: successive A/B Wiki publications.
+- `/tmp/lvk-memory-vitest-completion-audit.log`: 53 files, 297 passed.
+- `/tmp/lvk-memory-workflow-e2e-chrome.log`: all 18 browser tests passed.
+- `/tmp/lvk-memory-public-smoke-completion-audit.log`: real upstream public MCP,
   no paid model calls.
-- `/tmp/evk-memory-types-completion-audit.log`: generated types are current.
-- `/tmp/evk-memory-build-completion-audit.log`: local frontend build passed.
-- `/tmp/evk-memory-remote-web-build-completion.log`: Remote frontend build passed.
-- `/tmp/evk-memory-npx-check-final.log`: NPX CLI typecheck passed. Its initially
+- `/tmp/lvk-memory-types-completion-audit.log`: generated types are current.
+- `/tmp/lvk-memory-build-completion-audit.log`: local frontend build passed.
+- `/tmp/lvk-memory-remote-web-build-completion.log`: Remote frontend build passed.
+- `/tmp/lvk-memory-npx-check-final.log`: NPX CLI typecheck passed. Its initially
   missing `cac` dependency was installed from the existing NPX lockfile with
   `npm ci --prefix npx-cli --ignore-scripts`; no manifest or lockfile change.
-- `/tmp/evk-memory-clippy-final-acceptance.log`: standalone strict local Clippy
+- `/tmp/lvk-memory-clippy-final-acceptance.log`: standalone strict local Clippy
   also exits zero, independently of the aggregate Remote access failure.
-- `/tmp/evk-memory-check-completion-audit.log` and
-  `/tmp/evk-memory-lint-completion-audit.log`: local stages passed; Remote stopped
+- `/tmp/lvk-memory-check-completion-audit.log` and
+  `/tmp/lvk-memory-lint-completion-audit.log`: local stages passed; Remote stopped
   at private dependency resolution, aggregate exit 101.
-- `/tmp/evk-memory-remote-tests-completion-audit.log`: the same pre-compilation
+- `/tmp/lvk-memory-remote-tests-completion-audit.log`: the same pre-compilation
   Remote dependency failure, not an executed test failure.
-- `/tmp/evk-memory-i18n-completion-audit.log`: unused-translation check passed.
+- `/tmp/lvk-memory-i18n-completion-audit.log`: unused-translation check passed.
 
 The complete diff is whitespace-clean. No release/publish/push/PR operation was
 performed; no existing user Wiki, source change or uncommitted prompt edit was

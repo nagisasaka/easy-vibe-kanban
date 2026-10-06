@@ -162,7 +162,7 @@ Validation of the phase-completion revision:
 The 2026-09-16 regeneration exposed a startup gap: the fresh Refiner's tool-catalog
 query returned no OpenWiki tools even though Native Audit recorded successful
 server startup. It launched its own stdio MCP bridge, so its changes could not
-produce the registered root-thread MCP events required by EVK's completion proof. Publication
+produce the registered root-thread MCP events required by LVK's completion proof. Publication
 correctly failed. The optional-server startup grace is the suspected trigger,
 not a reproduced Codex internal failure; a ready notification alone does not prove
 that the model received the tools.
@@ -173,7 +173,7 @@ uses Codex's supported required-server startup contract rather than lengthening
 the optional grace for every user MCP server. The independent Reviewer remains
 ReadOnly with OpenWiki disabled. User configuration and OpenWiki are not modified.
 
-After thread start/resume and before the first turn or Goal activation, EVK queries
+After thread start/resume and before the first turn or Goal activation, LVK queries
 `mcpServerStatus/list` with the exact thread ID and `toolsAndAuthOnly`. All six
 pinned lifecycle tools must be present on the `openwiki` server. Pagination is
 supported, with cycle/page-count protection and a fifteen-second overall discovery
@@ -224,7 +224,7 @@ model run returned only four findings.
 
 The independent Reviewer remains ReadOnly, with no writer MCP, extra file-writing
 tool, or Generator conversation. It returns its full schema-valid final JSON.
-EVK validates the response and existing evidence-file checks before atomically
+LVK validates the response and existing evidence-file checks before atomically
 publishing `knowledge/bootstrap-reports/<workflow-run-id>/review.json` in the
 repository-scoped persistent shared folder. The file contains `identity` and
 `report`; the latter contains the original validated findings in their stable
@@ -233,7 +233,7 @@ array order. This is not a source-repository file or a Wiki publication change.
 NodeExecution stores only a versioned reference: repository, workspace, source
 SHA, Workflow run, phase, Session and AgentRun identity; SHA-256 of the stored
 bytes; verdict and counts. The router reads the compact verdict. At actual Refine
-dispatch EVK verifies that reference against DB phase identities and the file,
+dispatch LVK verifies that reference against DB phase identities and the file,
 then supplies a JSON-encoded absolute file path instead of embedding the findings.
 The Refiner must read every finding in bounded sections, not assume that one
 possibly truncated tool response is complete, and must not modify the input.
@@ -254,7 +254,7 @@ Both JSON input and stored reports have a 1 MiB resource guard (stored metadata
 and JSON formatting also count towards the file limit). This is not a target
 report size or a coverage quota. Oversized output fails explicitly; nothing is
 silently truncated. Provider output/context limits still exist. These changes
-remove EVK's small handoff-derived budget, not every model or resource limit.
+remove LVK's small handoff-derived budget, not every model or resource limit.
 
 ### Model-visible ceilings and host-only defences
 
@@ -405,13 +405,13 @@ Workflow handoff policy remain unchanged.
 
 You can continue setting repository-specific priorities in
 `openwiki/INSTRUCTIONS.md`. This supplement neither overwrites existing instructions
-nor changes the seed file. EVK-specific entities such as Workspace and Session
+nor changes the seed file. LVK-specific entities such as Workspace and Session
 are not hard-coded as required concepts for other repositories. No upstream
 OpenWiki Skill or prompt is copied, patched or replaced.
 
 Prompt and runner regressions check shared-policy injection, Generator-only
 examples, role isolation, unchanged JSON contracts and existing PASS/REFINE,
-no-change and publication behaviour. They verify EVK's inputs and control paths,
+no-change and publication behaviour. They verify LVK's inputs and control paths,
 not model comprehension or generated Wiki quality. No real-model regeneration,
 Chrome MCP acceptance run or matched-source quality comparison is part of this
 revision. For a later comparison, hold the source SHA, model/effort and report

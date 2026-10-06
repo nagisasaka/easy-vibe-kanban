@@ -31,7 +31,7 @@ describe('OpenWiki-only Viewer', () => {
   });
   it('ignores obsolete format storage on reload', () => {
     const getItem = vi.fn((key: string) =>
-      key === 'evk-wiki-viewer-format:workspace-one' ? 'llm-wiki' : null
+      key === 'retired-wiki-viewer-format:workspace-one' ? 'llm-wiki' : null
     );
     vi.stubGlobal('sessionStorage', { getItem });
     const html = renderToStaticMarkup(

@@ -14,7 +14,7 @@
     },
     {
       "id": "claim_9fdbb94f8cd5455e8487f70b8e077872",
-      "statement": "READMEの配布版入口はagent認証後のnpx easy-vibe-kanbanである。",
+      "statement": "READMEの配布版入口はagent認証後のnpx lucky-vibe-kanbanである。",
       "evidence": [
         {
           "resource": "repo://README.md#L66-L72",
@@ -81,20 +81,6 @@
       ]
     },
     {
-      "id": "claim_a49158b062be42afacab0c8678a355e3",
-      "statement": "現行Easy NPX同梱buildはLinux/Windows x64を対象にする。",
-      "evidence": [
-        {
-          "resource": "repo://.github/workflows/publish-easy-npx.yml#L150-L217",
-          "version": "repo-lines-v1:sha256:187120897066fef409c0d9684c3a442daa0bd75f35aa0b4e60cffee9874c13ec:eyJzZWxlY3RlZExpbmVDb3VudCI6NjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkMjhjYmEzZDYyYzc5NTNjMDU3MTQ3ZmM4YjcxNTdkOTNjYjFhYzlkMmJkMzNkMTQ5YmFhOWU0YjA5NjAzMmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwYjUzNGY0NzFlMDE3ZmEzODA1MTVkNTcwNmNmZmViYTZjMzJlZDFlYmRkMjkxOGUyYThjNzExMTViMDlhYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMyMGFiZmJmODA1NGU2YmU4Y2M5YmE1N2ExYjM5MTcxYWIwYjI4MTA3M2Q1OTFlMDBhY2EwZDVlNTNlYzFmZDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhODJjNjNiNzVmODFmODljNzU2MmE2NDI2ZDJhMmU4NGZhODQwZDk0NGY3ZTNiN2I4NzIzY2E3N2Y5YjBkMTEifQ"
-        },
-        {
-          "resource": "repo://npx-cli/src/download.ts#L155-L174",
-          "version": "repo-lines-v1:sha256:890d266913aa391052e8c67c9cc9f76c040f8c7b1087b7dd72b141d5296ee29c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3Yzg2NzgwOTBmZTIzMDUzNmNjNDdkZDY1OGNiYzdjOWYyMWNjOGMwYTk2MTkyYTk1ZjYyZTQ1Y2ZhMGJkOGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJkMGYyZDNhM2FhZGEyNzU4NjQ1NzhkMGE0MzkxNTYzOGQ1NDNmZWNhMmM5NDg1OGRiOTQxMjExZTg2Y2VmMmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI2ZTJhZTI5YmQ3NzllMzgxOTc2MDZiNjBjMjcyMjgxOGU0YmJhZTEwMzA3MTE2M2UzNWI4MWVmMjI4ZTgyZGEifQ"
-        }
-      ]
-    },
-    {
       "id": "claim_bb53ba318e9e4719a0273a1761a8f153",
       "statement": "Cloud Reviewは公開uploadまたは組織GitHub Appから外部workerへ依頼するRemote機能であり、詳細は専用の一次説明へ集約した。",
       "evidence": [
@@ -146,7 +132,7 @@
     },
     {
       "id": "claim_e987d5bdda6e47f1ab516a770c481fc2",
-      "statement": "単一サーバーコンテナーは local EVK を遠隔配置する HTTPS 構成で、Cloud/relay と別であり volume が実行プロセスを永続化するものではない。",
+      "statement": "単一サーバーコンテナーは local LVK を遠隔配置する HTTPS 構成で、Cloud/relay と別であり volume が実行プロセスを永続化するものではない。",
       "evidence": [
         {
           "resource": "repo://deploy/server/compose.yaml#L1-L21",

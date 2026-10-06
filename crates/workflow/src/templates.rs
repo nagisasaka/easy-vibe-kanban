@@ -57,7 +57,7 @@ pub fn openwiki_bootstrap() -> WorkflowTemplate {
         };
         if kind == WorkflowNodeKind::Agent {
             data.executor_config = Some(json!({"executor":"CODEX", "execution_mode":"code"}));
-            data.prompt_template = Some(format!("EVK-managed OpenWiki {id} phase"));
+            data.prompt_template = Some(format!("LVK-managed OpenWiki {id} phase"));
         }
         if kind == WorkflowNodeKind::Condition {
             data.decision_source = Some(ConditionDecisionSource::OpenWikiCoverageReview);

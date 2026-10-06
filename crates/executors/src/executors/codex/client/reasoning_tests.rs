@@ -16,7 +16,7 @@ use crate::{
 #[ignore = "subprocess fixture, invoked by reasoning transport tests"]
 fn reasoning_stdio_fixture() {
     let inherited: Value =
-        serde_json::from_str(&std::env::var("EVK_REASONING_FIXTURE").unwrap()).unwrap();
+        serde_json::from_str(&std::env::var("LVK_REASONING_FIXTURE").unwrap()).unwrap();
     let mut resolved = Value::Null;
     for line in std::io::stdin().lock().lines() {
         let request: Value = serde_json::from_str(&line.unwrap()).unwrap();
@@ -95,7 +95,7 @@ async fn resolved_reasoning_survives_start_resume_and_mode_selection() {
                             "--ignored",
                             "--nocapture",
                         ])
-                        .env("EVK_REASONING_FIXTURE", inherited)
+                        .env("LVK_REASONING_FIXTURE", inherited)
                         .stdin(std::process::Stdio::piped())
                         .stdout(std::process::Stdio::piped())
                         .stderr(std::process::Stdio::inherit())

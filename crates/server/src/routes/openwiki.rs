@@ -1,4 +1,4 @@
-//! Repository maintenance uses ordinary EVK workspace/session/AgentRun owners.
+//! Repository maintenance uses ordinary LVK workspace/session/AgentRun owners.
 //! The shared durable pointer and OS lock fence writers across server restarts.
 pub(crate) mod completion;
 use std::{

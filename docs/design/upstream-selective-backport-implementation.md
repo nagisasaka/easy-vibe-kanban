@@ -20,8 +20,8 @@ description: "固定した上流からの五段階移植の対応表、設計判
 - Chrome DevTools MCPの`list_pages`成功。Chromeは9222、既存frontendは0.0.0.0:4020、backendは0.0.0.0:4021。
 - 既存backendはこのcheckoutの`target/debug/server`。cargo-watchは動いていない。まだ再起動・ユーザーrun停止をしていない。
 - Codex CLI 0.154.0、`codex login status`はChatGPT認証済み。資格情報本文は表示・変更しない。
-- OpenWiki CLIは0.5.1のhelpを返す。ただし非TTYのhelp末尾にInk raw-mode errorが出る。host-driven MCPの実実行成功とは扱わず、EVK既存preflightと小規模UI受入で別途確認する。
-- `openwiki` Skillを全文参照した。標準のqueue／Claims／finish契約を尊重し、今回のWiki試験はEVK UI起動に限定する。
+- OpenWiki CLIは0.5.1のhelpを返す。ただし非TTYのhelp末尾にInk raw-mode errorが出る。host-driven MCPの実実行成功とは扱わず、LVK既存preflightと小規模UI受入で別途確認する。
+- `openwiki` Skillを全文参照した。標準のqueue／Claims／finish契約を尊重し、今回のWiki試験はLVK UI起動に限定する。
 
 ## 対応表と実装順序
 
@@ -385,4 +385,4 @@ Syncは00:33:13ZにAgent成功、00:33:18.675Zにpublication／receipt記録を�
 
 試験project／repo、両`test/upstream-backport-*` branch、通常／内部Workspace、Native Audit、shared receipts／索引、MCP操作記録と最終確認用browser profileを残す。失敗した旧Workflow runも原因・修正の証拠として保持し、履歴を削除しない。停止済み／成功済みでactive AgentRunは0。LVKサーバーは引き続きlocalhost:4020で利用できる。
 
-後片付けは、確認後にEVKでこの専用projectの試験Workspaceと依存する内部実行が不要か確認し、通常の削除導線を使う。shared領域とAuditはworkspace削除で必ず消えるとは限らない。branch／repo／assetを削除する場合も本記録の明示ID／pathだけを対象とし、広いworktrees／shared／DB全体を削除しない。今回は削除を実行しない。
+後片付けは、確認後にLVKでこの専用projectの試験Workspaceと依存する内部実行が不要か確認し、通常の削除導線を使う。shared領域とAuditはworkspace削除で必ず消えるとは限らない。branch／repo／assetを削除する場合も本記録の明示ID／pathだけを対象とし、広いworktrees／shared／DB全体を削除しない。今回は削除を実行しない。

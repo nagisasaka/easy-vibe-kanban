@@ -40,28 +40,6 @@ const wiki: Pipeline = {
 };
 
 describe('card context', () => {
-  it('refreshes old shared paths only when the preset is explicitly toggled', () => {
-    const oldShared = SHARED_DIRECTORIES_CONTEXT.replaceAll(
-      '.evk-shared/',
-      '.evk/'
-    );
-    const wikiBlock = composePipelineBlock(wiki, ['recall']);
-    const oldCard = withCardContext('Task', `${wikiBlock}\n\n${oldShared}`);
-    expect(defaultCardContext(oldCard, [wiki])).toBe(oldCard);
-    const context = splitCardContext(oldCard).context;
-    const refreshed = toggleSharedDirectories(
-      toggleSharedDirectories(context, false),
-      true
-    );
-    expect(refreshed).toContain('.evk-shared/cache/');
-    expect(refreshed).toContain('.evk-shared/persistent/');
-    expect(refreshed).not.toContain('.evk/');
-    expect(refreshed).toContain(wikiBlock);
-    expect(
-      splitCardContext(withCardContext(oldCard, refreshed)).description
-    ).toBe('Task');
-  });
-
   it('passes shared directories without reactivating Wiki through the existing initial workspace request', () => {
     const stored = defaultCardContext('Implement CRUD', [wiki]);
     const prompt = buildWorkspaceCreatePrompt('Feature', stored);
@@ -138,8 +116,8 @@ describe('card context', () => {
 
   it('does not interpret inline marker mentions or incomplete blocks as context', () => {
     for (const description of [
-      'Explain <!-- evk:card-context:start --> here',
-      '<!-- evk:card-context:start -->\nUnfinished',
+      'Explain <!-- lvk:card-context:start --> here',
+      '<!-- lvk:card-context:start -->\nUnfinished',
     ]) {
       expect(splitCardContext(description)).toEqual({
         description,

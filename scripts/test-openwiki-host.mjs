@@ -23,7 +23,7 @@ const pin = (
   await readFile(new URL("../assets/openwiki-version", import.meta.url), "utf8")
 ).trim();
 const binary = process.env.OPENWIKI_BIN ?? "openwiki";
-const evkSetup = process.argv.includes("--evk-setup");
+const lvkSetup = process.argv.includes("--lvk-setup");
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const env = {
   ...process.env,
@@ -31,7 +31,7 @@ const env = {
   FORCE_COLOR: "0",
   NO_COLOR: "1",
 };
-// Exercise both EVK's normalised child environment and the colour-forcing
+// Exercise both LVK's normalised child environment and the colour-forcing
 // environment inherited from concurrently. NO_COLOR alone is insufficient.
 for (const forceColor of ["0", "1"]) {
   const help = spawnSync(binary, ["--help"], {
@@ -46,17 +46,17 @@ for (const forceColor of ["0", "1"]) {
     `OpenWiki version pin with FORCE_COLOR=${forceColor}`,
   );
 }
-const root = await mkdtemp(path.join(tmpdir(), "evk-openwiki-host-"));
-const persistent = evkSetup
-  ? await mkdtemp(path.join(tmpdir(), "evk-openwiki-memory-"))
+const root = await mkdtemp(path.join(tmpdir(), "lvk-openwiki-host-"));
+const persistent = lvkSetup
+  ? await mkdtemp(path.join(tmpdir(), "lvk-openwiki-memory-"))
   : undefined;
 const originalAgents =
   "# Fixture repository rules\n\nPreserve these original instructions.\n";
 const instructions =
   "# User instructions\nPreserve evidence and write concise fixture documentation.\n";
 let workspaceId = randomUUID();
-function evk(operation, source) {
-  if (!evkSetup) return;
+function lvk(operation, source) {
+  if (!lvkSetup) return;
   const result = spawnSync(
     "cargo",
     [
@@ -80,7 +80,7 @@ function evk(operation, source) {
       timeout: 300000,
     },
   );
-  assert.equal(result.status, 0, `EVK ${operation}: ${result.stderr}`);
+  assert.equal(result.status, 0, `LVK ${operation}: ${result.stderr}`);
 }
 function git(...args) {
   const output = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
@@ -98,7 +98,7 @@ await writeFile(
   path.join(root, "index.js"),
   "export function add(a, b) { return a + b; }\n",
 );
-if (evkSetup) {
+if (lvkSetup) {
   await writeFile(path.join(root, "AGENTS.md"), originalAgents);
   await symlink("AGENTS.md", path.join(root, "CLAUDE.md"));
   await mkdir(path.join(root, "openwiki"));
@@ -107,8 +107,8 @@ if (evkSetup) {
 git("add", ".");
 git("commit", "-m", "fixture source");
 const head = git("rev-parse", "HEAD");
-evk("prepare", head);
-if (evkSetup) {
+lvk("prepare", head);
+if (lvkSetup) {
   assert.equal(
     (await lstat(path.join(root, "CLAUDE.md"))).isSymbolicLink(),
     false,
@@ -184,7 +184,7 @@ try {
   await call("initialize", {
     protocolVersion: "2024-11-05",
     capabilities: {},
-    clientInfo: { name: "evk-openwiki-smoke", version: "1" },
+    clientInfo: { name: "lvk-openwiki-smoke", version: "1" },
   });
   child.stdin.write(
     `${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`,
@@ -242,9 +242,9 @@ try {
   const finished = await tool("openwiki_finish", { runId });
   assert.equal(finished.status, "complete");
   assert.notEqual(finished.sourceChanged, true);
-  evk("restore", head);
-  evk("restore", head);
-  if (evkSetup) {
+  lvk("restore", head);
+  lvk("restore", head);
+  if (lvkSetup) {
     assert.equal(await readlink(path.join(root, "CLAUDE.md")), "AGENTS.md");
     assert.equal(
       await readFile(path.join(root, "AGENTS.md"), "utf8"),
@@ -287,10 +287,10 @@ try {
   }
   git(
     "add",
-    ...(evkSetup ? ["openwiki"] : ["openwiki", "AGENTS.md", "CLAUDE.md"]),
+    ...(lvkSetup ? ["openwiki"] : ["openwiki", "AGENTS.md", "CLAUDE.md"]),
   );
   git("commit", "-m", "fixture wiki publication");
-  if (evkSetup) {
+  if (lvkSetup) {
     assert.ok(
       git("diff", "--name-only", head, "HEAD")
         .split("\n")
@@ -299,7 +299,7 @@ try {
   }
   const updateHead = git("rev-parse", "HEAD");
   workspaceId = randomUUID();
-  evk("prepare", updateHead);
+  lvk("prepare", updateHead);
   const update = await tool("openwiki_begin", {
     root,
     mode: "update",
@@ -318,8 +318,8 @@ try {
       "complete",
     );
   }
-  evk("restore", updateHead);
-  if (evkSetup) {
+  lvk("restore", updateHead);
+  if (lvkSetup) {
     assert.equal(await readlink(path.join(root, "CLAUDE.md")), "AGENTS.md");
     assert.equal(
       await readFile(path.join(root, "AGENTS.md"), "utf8"),
@@ -331,7 +331,7 @@ try {
     instructions,
   );
   console.log(
-    `PASS: OpenWiki ${pin}; plain/coloured CLI version, install/reinstall, host MCP, init, rejected premature finish, plan/page/claims/finalisation, user instructions and source preservation.${evkSetup ? " EVK production alias isolation, duplicate restoration and Wiki-only publication guards passed." : ""} Update begin status=${update.status}; supported no-change finalisation verified, not a guarantee of begin-noop. No model call.`,
+    `PASS: OpenWiki ${pin}; plain/coloured CLI version, install/reinstall, host MCP, init, rejected premature finish, plan/page/claims/finalisation, user instructions and source preservation.${lvkSetup ? " LVK production alias isolation, duplicate restoration and Wiki-only publication guards passed." : ""} Update begin status=${update.status}; supported no-change finalisation verified, not a guarantee of begin-noop. No model call.`,
   );
   succeeded = true;
 } finally {

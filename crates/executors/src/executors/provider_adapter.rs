@@ -2204,10 +2204,10 @@ pub fn prompt_with_repository_memory(
 ) -> String {
     if provider != DirectProvider::Codex
         && !prompt.trim_start().starts_with('/')
-        && let Some(instructions) = env.get("EVK_REPOSITORY_MEMORY_INSTRUCTIONS")
+        && let Some(instructions) = env.get("LVK_REPOSITORY_MEMORY_INSTRUCTIONS")
     {
         return format!(
-            "{prompt}\n\n{}\n\n## EVK repository memory context\n{instructions}",
+            "{prompt}\n\n{}\n\n## LVK repository memory context\n{instructions}",
             crate::legacy_wiki::RETIREMENT_NOTICE
         );
     }

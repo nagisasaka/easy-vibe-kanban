@@ -2,7 +2,7 @@
 
 > Status: v0.1 draft
 > Date: 2026-07-06
-> Scope: mobile web/PWA and remote access design for easy-vibe-kanban.
+> Scope: mobile web/PWA and remote access design for lucky-vibe-kanban.
 
 ## 1. Decision
 

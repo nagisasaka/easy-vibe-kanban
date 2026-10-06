@@ -16,7 +16,7 @@ env:
 
 concurrency:
   # All releases share one registry cache; serialize writers across tags.
-  group: evk-server-image
+  group: lvk-server-image
   cancel-in-progress: false
 
 jobs:
@@ -38,9 +38,9 @@ jobs:
           docker compose -f deploy/server/compose.yaml -f deploy/server/compose.acme.yaml config --quiet
           docker compose -f deploy/server/compose.yaml -f deploy/server/compose.acme.yaml -f deploy/server/compose.development.yaml --profile development config --quiet
         env:
-          EVK_IMAGE: ghcr.io/example/evk:test
-          EVK_HOST: 192.0.2.1
-          EVK_ACME_AGREE_TOS: "yes"
+          LVK_IMAGE: ghcr.io/example/lvk:test
+          LVK_HOST: 192.0.2.1
+          LVK_ACME_AGREE_TOS: "yes"
       - name: Choose image reference
         id: image
         shell: bash
@@ -79,29 +79,27 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.image.outputs.version }}
             org.opencontainers.image.licenses=Apache-2.0
-          # Import the pre-rename cache as a migration fallback.
           cache-from: |
             type=registry,ref=${{ steps.image.outputs.cache }}
-            type=registry,ref=ghcr.io/nagisasaka/easy-vibe-kanban:buildcache
           cache-to: type=registry,ref=${{ steps.image.outputs.cache }},mode=max
       - name: Check the built image before publishing
         env:
-          EVK_SMOKE_IMAGE: ${{ steps.image.outputs.reference }}
-        run: bash deploy/server/smoke-image.sh "$EVK_SMOKE_IMAGE"
+          LVK_SMOKE_IMAGE: ${{ steps.image.outputs.reference }}
+        run: bash deploy/server/smoke-image.sh "$LVK_SMOKE_IMAGE"
       - name: Check repository formatting with the bundled toolchain
         env:
-          EVK_FORMAT_IMAGE: ${{ steps.image.outputs.reference }}
+          LVK_FORMAT_IMAGE: ${{ steps.image.outputs.reference }}
         run: |
           docker run --rm --user "$(id -u):$(id -g)" \
             --entrypoint bash --mount "type=bind,src=$PWD,dst=/workspace" \
-            --workdir /workspace "$EVK_FORMAT_IMAGE" -lc 'pnpm run format'
+            --workdir /workspace "$LVK_FORMAT_IMAGE" -lc 'pnpm run format'
           git diff --exit-code
       - name: Publish the tested image
         if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
-          EVK_PUBLISH_IMAGE: ${{ steps.image.outputs.reference }}
+          LVK_PUBLISH_IMAGE: ${{ steps.image.outputs.reference }}
         run: |
           set -euo pipefail
-          docker push "$EVK_PUBLISH_IMAGE"
-          echo "Published: $EVK_PUBLISH_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          docker push "$LVK_PUBLISH_IMAGE"
+          echo "Published: $LVK_PUBLISH_IMAGE" >> "$GITHUB_STEP_SUMMARY"
           echo 'Use the digest printed by docker push for immutable deployment pinning.' >> "$GITHUB_STEP_SUMMARY"

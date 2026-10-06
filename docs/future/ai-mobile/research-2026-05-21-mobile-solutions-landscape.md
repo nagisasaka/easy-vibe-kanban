@@ -9,7 +9,7 @@
 回答两个问题：
 
 1. **生态里手机远程使用 AI coding 都有哪些方案？**（用户已知二维码方案，需补全其它形态）
-2. **当前项目（easy-vibe-kanban）应该走哪条路径做手机端？**
+2. **当前项目（lucky-vibe-kanban）应该走哪条路径做手机端？**
 
 调研覆盖：搜索引擎深度查询 + 上游 BloopAI/vibe-kanban PR/Issue 盘点 + 当前 fork 结构核对。
 

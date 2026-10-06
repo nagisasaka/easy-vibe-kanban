@@ -114,7 +114,7 @@
     },
     {
       "id": "claim_8d54a40638b84057864c766b8aa74839",
-      "statement": "実行時の旧 Wiki filter は識別できる EVK 生成 stage のみを省き、手書き補足や他 Pipeline を保持し、曖昧な旧 stage を拒否する。旧 EVK Skill path だけを選択から外し、保存済みカードや disk 上のファイルは変更しない。",
+      "statement": "実行時の旧 Wiki filter は識別できる LVK 生成 stage のみを省き、手書き補足や他 Pipeline を保持し、曖昧な旧 stage を拒否する。旧 LVK Skill path だけを選択から外し、保存済みカードや disk 上のファイルは変更しない。",
       "evidence": [
         {
           "resource": "repo://crates/executors/src/legacy_wiki.rs#L132-L152",

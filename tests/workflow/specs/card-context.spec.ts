@@ -27,11 +27,11 @@ test("context is collapsed, read-only and independent of the task description", 
     exact: true,
   });
   await expect(shared).toBeChecked();
-  await expect(preview).toHaveValue(/\.evk-shared\/cache/);
-  await expect(preview).toHaveValue(/\.evk-shared\/persistent/);
-  await expect(preview).not.toHaveValue(/\.evk\//);
+  await expect(preview).toHaveValue(/\.lvk-shared\/cache/);
+  await expect(preview).toHaveValue(/\.lvk-shared\/persistent/);
+  await expect(preview).not.toHaveValue(/\.lvk\//);
   await shared.uncheck();
-  await expect(preview).not.toHaveValue(/\.evk-shared\/persistent/);
+  await expect(preview).not.toHaveValue(/\.lvk-shared\/persistent/);
   await expect(preview).toHaveValue(/Consult prior knowledge/);
   await page
     .getByRole("textbox", { name: "Task description" })

@@ -1,13 +1,13 @@
 # OpenWiki Bootstrap Workflow
 ## Simplified Design Specification
 
-Target: easy-vibe-kanban (EVK)  
+Target: lucky-vibe-kanban (LVK)
 Scope: OpenWiki初期生成フローのみ  
 Path: `docs/design/openwiki-bootstrap-workflow.md`
 
 # 1. 目的
 
-Repository Settings の `Initialize Wiki` を、EVK既存Workflow/DAG runtimeを利用した以下の処理へ変更する。
+Repository Settings の `Initialize Wiki` を、LVK既存Workflow/DAG runtimeを利用した以下の処理へ変更する。
 
 ```text
 Generate
@@ -56,7 +56,7 @@ OpenWiki = repository knowledge backend
 
 一回のBootstrapでは対象repository用の専用Workspace/worktreeを一つだけ使用する。
 
-Generate / Review / Refineは同じworktreeを共有するが、すべて別のEVK Session / AgentRunとする。
+Generate / Review / Refineは同じworktreeを共有するが、すべて別のLVK Session / AgentRunとする。
 
 conversation historyは共有しない。
 

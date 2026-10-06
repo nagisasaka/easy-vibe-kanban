@@ -3,7 +3,7 @@ title: "Legacy LLM Wiki retirement"
 description: "Use OpenWiki without deleting existing Wiki or card data."
 ---
 
-EVK no longer activates the independent `.llm-wiki/` Pipeline. Use
+LVK no longer activates the independent `.llm-wiki/` Pipeline. Use
 [OpenWiki repository memory](/workspaces/openwiki) for initial generation and
 updates after source integration. There is no automatic data conversion.
 
@@ -13,21 +13,21 @@ Viewer now reads only `openwiki/`; it does not expose legacy initialisation,
 language writes, generation or format switching.
 
 New cards no longer receive the `wikillm` preset. Previously seeded definitions
-are left on disk but are not offered. At execution, EVK omits recognised generated
+are left on disk but are not offered. At execution, LVK omits recognised generated
 legacy stages while retaining manual notes and unrelated Pipeline text. Edited
 stages that cannot be identified safely produce an actionable error; remove that
 retired Pipeline from the card context while preserving your own instructions.
 Historical card text is not rewritten.
 
-EVK no longer materialises or automatically attaches its bundled
+LVK no longer materialises or automatically attaches its bundled
 `knowledge-recall` and `knowledge-enrich` Skills. Saved selections under the old
-EVK-owned materialisation directory are ignored; custom Skills elsewhere remain
+LVK-owned materialisation directory are ignored; custom Skills elsewhere remain
 available, even with the same names. Existing provider conversation is not erased:
 new execution instructions explain retirement and the current OpenWiki policy.
 
 Enable OpenWiki at repository level, choose an integrated local branch and
 language, then initialise explicitly. If canonical OpenWiki was imported through
-Git, run **Sync Wiki** once to establish a verified EVK maintenance baseline.
+Git, run **Sync Wiki** once to establish a verified LVK maintenance baseline.
 Normal development reads its own checkout, writes workspace-local semantic memory
 and produces a Change Manifest. Only a dedicated maintenance workspace writes
 canonical Wiki after source integration.

@@ -917,7 +917,7 @@ impl Codex {
             return params;
         }
         let reviewer = env
-            .get("EVK_OPENWIKI_REVIEWER")
+            .get("LVK_OPENWIKI_REVIEWER")
             .is_some_and(|value| value == "1");
         if reviewer {
             // A trusted server role, not a prompt or user profile preference.
@@ -934,7 +934,7 @@ impl Codex {
                 serde_json::json!([{"name":"openwiki", "enabled":false}]),
             );
         } else if env
-            .get("EVK_OPENWIKI_MAINTENANCE")
+            .get("LVK_OPENWIKI_MAINTENANCE")
             .is_some_and(|value| value == "1")
         {
             // Public Codex MCP configuration, scoped to this maintenance
@@ -965,7 +965,7 @@ impl Codex {
         }
         if !reviewer
             && env
-                .get("EVK_OPENWIKI_MAINTENANCE")
+                .get("LVK_OPENWIKI_MAINTENANCE")
                 .is_none_or(|value| value != "1")
         {
             params
@@ -980,7 +980,7 @@ impl Codex {
             });
         }
         if let Some(memory) = env
-            .get("EVK_REPOSITORY_MEMORY_INSTRUCTIONS")
+            .get("LVK_REPOSITORY_MEMORY_INSTRUCTIONS")
             .filter(|_| !reviewer)
         {
             params.developer_instructions = Some(match params.developer_instructions.take() {
@@ -1874,7 +1874,7 @@ mod tests {
 
         let mut env = ExecutionEnv::new(RepoContext::default(), false, String::new());
         env.insert("LVK_RESOURCE_MEDIATOR", "1");
-        env.insert("EVK_SHARED_RESOURCE_ROOTS", r#"["/tmp/shared"]"#);
+        env.insert("LVK_SHARED_RESOURCE_ROOTS", r#"["/tmp/shared"]"#);
         let params = test_executor()
             .build_thread_start_params_with_resources(Path::new("/tmp/mediation"), &env);
         let value = serde_json::to_value(params).unwrap();
@@ -1913,7 +1913,7 @@ mod tests {
                 .is_none()
         );
         env.insert(
-            "EVK_SHARED_RESOURCE_ROOTS",
+            "LVK_SHARED_RESOURCE_ROOTS",
             serde_json::to_string(&vec![&shared]).unwrap(),
         );
         executor.sandbox = Some(super::SandboxMode::ReadOnly);
@@ -2122,13 +2122,13 @@ mod goal_skill_tests {
         let codex: Codex =
             serde_json::from_value(serde_json::json!({"sandbox":"danger-full-access"})).unwrap();
         let mut env = ExecutionEnv::new(RepoContext::default(), false, String::new());
-        env.insert("EVK_OPENWIKI_REVIEWER", "1");
-        env.insert("EVK_OPENWIKI_MAINTENANCE", "1");
+        env.insert("LVK_OPENWIKI_REVIEWER", "1");
+        env.insert("LVK_OPENWIKI_MAINTENANCE", "1");
         env.insert(
-            "EVK_REPOSITORY_MEMORY_INSTRUCTIONS",
+            "LVK_REPOSITORY_MEMORY_INSTRUCTIONS",
             "previous task memory must not leak",
         );
-        env.insert("EVK_SHARED_RESOURCE_ROOTS", r#"["/shared/writable"]"#);
+        env.insert("LVK_SHARED_RESOURCE_ROOTS", r#"["/shared/writable"]"#);
         let params = codex.build_thread_start_params_with_resources(Path::new("/workspace"), &env);
         assert_eq!(params.sandbox, Some(V2SandboxMode::ReadOnly));
         assert_eq!(params.approval_policy, Some(V2AskForApproval::Never));
@@ -2152,7 +2152,7 @@ mod goal_skill_tests {
     fn repository_memory_is_persistent_for_initial_and_resumed_threads() {
         let codex: Codex = serde_json::from_value(serde_json::json!({})).unwrap();
         let mut env = ExecutionEnv::new(RepoContext::default(), false, String::new());
-        env.insert("EVK_REPOSITORY_MEMORY_INSTRUCTIONS", "Read the workspace-specific memory after context compaction. Canonical openwiki/ is read-only.");
+        env.insert("LVK_REPOSITORY_MEMORY_INSTRUCTIONS", "Read the workspace-specific memory after context compaction. Canonical openwiki/ is read-only.");
         let params = codex.build_thread_start_params_with_resources(Path::new("/workspace"), &env);
         assert!(
             params
@@ -2183,7 +2183,7 @@ mod goal_skill_tests {
                 .as_ref()
                 .is_some_and(|config| config.contains_key("mcp_servers.openwiki.command"))
         );
-        env.insert("EVK_OPENWIKI_MAINTENANCE", "1");
+        env.insert("LVK_OPENWIKI_MAINTENANCE", "1");
         let maintenance =
             codex.build_thread_start_params_with_resources(Path::new("/workspace"), &env);
         assert_eq!(

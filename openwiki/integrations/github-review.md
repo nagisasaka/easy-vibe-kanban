@@ -34,7 +34,7 @@ generated: { by: "codex", at: "2026-09-15T17:45:17.356Z" }
 
 # Cloud Review と GitHub App
 
-Cloud Review は、PR のコードを別の review worker に渡して結果を公開する Remote の機能である。組織に接続した **GitHub App** は、installation とアクセス可能な Repository を管理し、GitHub イベントからこの機能を起動する。EVK の Workspace 内で coding agent を動かす [Agent review](../workflows/task-to-integration.md#3-会話を続け成果物を確認する) や、[Workflow の graph 実行](../concepts/workflow-attempt.md) とは実行主体・保存モデルが異なる。[Remote の公開・保護 router](../../crates/remote/src/routes/mod.rs#L103-L140)、[App の入口](../../crates/remote/src/routes/github_app.rs#L26-L56)
+Cloud Review は、PR のコードを別の review worker に渡して結果を公開する Remote の機能である。組織に接続した **GitHub App** は、installation とアクセス可能な Repository を管理し、GitHub イベントからこの機能を起動する。LVK の Workspace 内で coding agent を動かす [Agent review](../workflows/task-to-integration.md#3-会話を続け成果物を確認する) や、[Workflow の graph 実行](../concepts/workflow-attempt.md) とは実行主体・保存モデルが異なる。[Remote の公開・保護 router](../../crates/remote/src/routes/mod.rs#L103-L140)、[App の入口](../../crates/remote/src/routes/github_app.rs#L26-L56)
 
 ## 組織への接続と設定の寿命
 
@@ -42,7 +42,7 @@ GitHub App のサーバー設定には app ID、秘密鍵、webhook secret、slu
 
 接続開始と repository ごとの review 有効化・無効化、接続削除は [Organization の Admin](../concepts/organization-and-membership.md) を要求する。個人用 organization へのインストールは拒否する。開始時に 10 分有効の state と pending installation を保存し、callback は state の形式・期限・保存済み pending を確認して GitHub から installation 情報を取得し、組織との対応を保存する。[開始条件](../../crates/remote/src/routes/github_app.rs#L124-L184)、[callback 検証](../../crates/remote/src/routes/github_app.rs#L494-L566)、[review 設定変更](../../crates/remote/src/routes/github_app.rs#L283-L340)
 
-組織設定の接続削除は **EVK 側の installation record の削除**であり、GitHub 側の App uninstall を行わない。GitHub の deleted / suspend / unsuspend イベントは保存状態を更新し、repository 追加・除外イベントはアクセス対象を同期する。これらの後処理にはログを残して 200 を返す失敗経路もある。[削除の範囲](../../crates/remote/src/routes/github_app.rs#L252-L280)、[installation 更新](../../crates/remote/src/routes/github_app.rs#L667-L710)、[repository 同期](../../crates/remote/src/routes/github_app.rs#L713-L799)
+組織設定の接続削除は **LVK 側の installation record の削除**であり、GitHub 側の App uninstall を行わない。GitHub の deleted / suspend / unsuspend イベントは保存状態を更新し、repository 追加・除外イベントはアクセス対象を同期する。これらの後処理にはログを残して 200 を返す失敗経路もある。[削除の範囲](../../crates/remote/src/routes/github_app.rs#L252-L280)、[installation 更新](../../crates/remote/src/routes/github_app.rs#L667-L710)、[repository 同期](../../crates/remote/src/routes/github_app.rs#L713-L799)
 
 ## 起動イベントとスキップ条件
 

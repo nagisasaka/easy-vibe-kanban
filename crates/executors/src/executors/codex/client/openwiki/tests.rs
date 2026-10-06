@@ -31,7 +31,7 @@ fn emit(value: Value) {
 #[test]
 #[ignore = "subprocess fixture, invoked by OpenWiki transport tests"]
 fn mcp_stdio_fixture() {
-    let case = std::env::var("EVK_OPENWIKI_MCP_FIXTURE").unwrap();
+    let case = std::env::var("LVK_OPENWIKI_MCP_FIXTURE").unwrap();
     let mut calls = Vec::new();
     let mut verified = false;
     let mut queries = 0;
@@ -187,7 +187,7 @@ impl Harness {
                 "--ignored",
                 "--nocapture",
             ])
-            .env("EVK_OPENWIKI_MCP_FIXTURE", case)
+            .env("LVK_OPENWIKI_MCP_FIXTURE", case)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::inherit())
@@ -215,10 +215,10 @@ impl Harness {
         let codex: Codex = serde_json::from_value(json!({"sandbox":"danger-full-access"})).unwrap();
         let mut env = ExecutionEnv::new(RepoContext::default(), false, String::new());
         if case != "ordinary" {
-            env.insert("EVK_OPENWIKI_MAINTENANCE", "1");
+            env.insert("LVK_OPENWIKI_MAINTENANCE", "1");
         }
         if case == "reviewer" {
-            env.insert("EVK_OPENWIKI_REVIEWER", "1");
+            env.insert("LVK_OPENWIKI_REVIEWER", "1");
         }
         let params =
             codex.build_thread_start_params_with_resources(std::path::Path::new("/tmp"), &env);
@@ -399,7 +399,7 @@ async fn installed_openwiki_mcp_preflight() {
     let temp = tempfile::tempdir().unwrap();
     let codex: Codex = serde_json::from_value(json!({"sandbox":"read-only"})).unwrap();
     let mut env = ExecutionEnv::new(RepoContext::default(), false, String::new());
-    env.insert("EVK_OPENWIKI_MAINTENANCE", "1");
+    env.insert("LVK_OPENWIKI_MAINTENANCE", "1");
     let mut params = codex.build_thread_start_params_with_resources(temp.path(), &env);
     params.ephemeral = Some(true);
     codex

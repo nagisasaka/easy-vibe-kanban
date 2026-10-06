@@ -4,10 +4,32 @@ title: 開発・検証・運用文書の使い分け
 description: 起動形態、検証の適用範囲、型と SQLx の更新、DB 回復の制約、リリース文書の位置づけを整理する。
 tags: [development, testing, database, releases]
 sources:
-  - id: openwiki-source-9c10153f85a40a7543c8914e
-    resource: repo://.github/workflows/pre-release.yml
-  - id: openwiki-source-0d0b05d2fac028aecd3be162
-    resource: repo://.github/workflows/publish-easy-npx.yml
+  - id: openwiki-source-eaf96aacdc40d6db8dae4f8e
+    resource: repo://deploy/server/acme.py
+  - id: openwiki-source-df6b7819295f53fc2381f23d
+    resource: repo://deploy/server/compose.yaml
+  - id: openwiki-source-8fd7f4fe2d73e778cc63c256
+    resource: repo://crates/local-deployment/src/process_host.rs
+  - id: openwiki-source-42facea377bb55dbd5d67a80
+    resource: repo://deploy/server/compose.test.mjs
+  - id: openwiki-source-ddf0f7c06298de76526a4f7c
+    resource: repo://packages/web-core/src/features/pipeline/model/cardContext.ts
+  - id: openwiki-source-da8c4a13aea0bac33b3f0a35
+    resource: repo://crates/services/src/services/openwiki.rs
+  - id: openwiki-source-6067be8d6f85caa8ac03638f
+    resource: repo://crates/services/src/services/repository_memory.rs
+  - id: openwiki-source-d40a52c39b8604505b97c3e9
+    resource: repo://crates/git/src/publication.rs
+  - id: openwiki-source-19419edea1d312cc9f07ef2d
+    resource: repo://crates/utils/src/path.rs
+  - id: openwiki-source-7d5590729f3e0f42d994b0e8
+    resource: repo://crates/workspace-manager/src/shared_resources.rs
+  - id: openwiki-source-b50585f67dac89cd8eecc75d
+    resource: repo://crates/executors/default_mcp.json
+  - id: openwiki-source-a3956271cbf62ae0786e7fc7
+    resource: repo://crates/executors/src/env.rs
+  - id: openwiki-source-b28e4ff9d0efb53d7fe91df4
+    resource: repo://.github/workflows/publish-server.yml
   - id: openwiki-source-651d1fb6c9e49916a916ab51
     resource: repo://Cargo.toml
   - id: openwiki-source-b41a0c4c19395b75cde58592
@@ -124,34 +146,68 @@ Remote の manifest は `default = []` でも、SSH Git URL の private `billing
 
 なお過去の checkpoints は root の check/lint も Remote へ進んだと記録するが、現在の [root script](../../package.json#L13-L15) は上表の範囲であり、Remote Rust は独立 script に分かれている。記録された当時の制約と、現在のコマンド範囲を分けて読む。
 
-## NPX 配布経路と同梱 binary
+## Docker 配布と同梱 binary
 
-NPX wrapper の platform 名を解決できることと、その配布物に binary が存在することは別である。現在の追跡済み release 設定には次の二経路がある。
+LVK の配布先は GHCR の Docker image のみ。`.github/workflows/publish-server.yml`
+が root Dockerfile の `server` target を build・検証し、version tag で公開する。
+手動 dispatch は公開せず検証する。`server` と `agent-process-host`、
+`vibe-kanban-mcp` を同じ image に同梱する。既定 MCP 設定は同梱バイナリを直接起動し、
+npm から別バージョンを取得しない。
 
-| 経路 | この checkout にある build / package の契約 |
-| --- | --- |
-| `publish-easy-npx.yml` | Linux x64（musl）と Windows x64 を build し、`npx-cli/dist/{platform}/*.zip` を npm package に同梱する |
-| `pre-release.yml` | Linux・Windows・macOS の x64/arm64 を対象にし、version ごとの manifest と binary を R2 に upload。NPX の bundled JS に R2 URL と binary tag を埋め込む |
+`npx-cli/` と旧 version validator は upstream 由来の保管コードであり、
+現在の LVK の公開手順ではない。旧 NPX 文書も廃止案内へ置き換えた。
+配布 image と Compose の更新・旧名 volume の引継ぎは
+[サーバーコンテナー](server-container.md)を参照する。
 
-[Easy build/package](../../.github/workflows/publish-easy-npx.yml#L145-L227)、[npm に含める files](../../npx-cli/package.json#L32-L35)、[pre-release matrix](../../.github/workflows/pre-release.yml#L213-L237)、[R2 manifest](../../.github/workflows/pre-release.yml#L655-L695)、[URL/tag の注入](../../.github/workflows/pre-release.yml#L1168-L1175)
+## LVK の名称
 
-`download.ts` は dist directory の存在、または `VIBE_KANBAN_LOCAL=1` で local/bundled mode に入る。このとき対象 zip がなければエラーとなり、**R2 へ fallback しない**。そのため CLI が macOS/ARM64 を認識していても、上記 Easy 同梱 package でそれらを提供する証明にはならない。dist がない R2 経路では tag/platform 別 cache と manifest を使い、取得した zip の checksum を検査する。[mode 選択](../../npx-cli/src/download.ts#L7-L17)、[取得分岐](../../npx-cli/src/download.ts#L155-L197)、[platform の解決](../../npx-cli/src/cli.ts#L66-L94)、[取得時検証](../../npx-cli/src/download.ts#L126-L143)
+製品表記・AI 指示・設定・CI fixture は LVK に統一する。
+移行元の旧環境・データはないというユーザーの確認に基づき、名称変更用の
+別名対応・二重ロック・旧パスのリンク・Docker 移行 overlay は設けない。
+オリジナル Vibe Kanban の `VK_*`、native binary、保存先、外部サービスの識別子は
+変更対象ではない。上流への帰属表記と実際の過去の記録は保持する。
 
-アプリ用 `vibe-kanban.zip` は server に加えて **`agent-process-host`（Windows は .exe）を同梱**する。wrapper は archive 全体を同じ directory に展開し、server の起動解決は環境指定、build 時指定、実行ファイルの隣などから process host を探す。server 単体の差し替えでこの companion を欠くと AgentRun の起動は Unavailable になり得る。[同梱と検査](../../.github/workflows/publish-easy-npx.yml#L189-L212)、[展開](../../npx-cli/src/cli.ts#L126-L180)、[host 解決](../../crates/local-deployment/src/agent_run_port.rs#L3122-L3163)。これは [Agent Runtime の独立 process host](../architecture/agent-runtime.md) が配布へ課す依存である。
+| 境界 | 現在の契約 | 根拠 |
+| --- | --- | --- |
+| 実行設定 | `LVK_*` を読み書きし、process host へそのまま渡す。旧接頭辞への変換はしない。 | [ExecutionEnv](../../crates/executors/src/env.rs)、[HostExecutionEnv](../../crates/local-deployment/src/process_host.rs) |
+| Card Context | `lvk:` marker を読み書きする。説明の編集では保存済み指示と明示的 opt-out を維持する。 | [Card Context](../../packages/web-core/src/features/pipeline/model/cardContext.ts) |
+| 共有ファイル | `.lvk-shared` から repository storage を参照する。追跡済み mount・別 repository 向きのリンク・ユーザーファイルを上書きしない。watcher、Git diff、Docker context から除外する。 | [共有リンク](../../crates/workspace-manager/src/shared_resources.rs)、[除外](../../crates/utils/src/path.rs) |
+| Git publication | `LVK-Memory-Source` / `LVK-Memory-Integration` / `LVK-Wiki-Publication` trailer を記録し、復旧時も同じ marker を検索して重複 commit を防ぐ。 | [Memory 復旧](../../crates/services/src/services/repository_memory.rs)、[Wiki 公開](../../crates/services/src/services/openwiki.rs) |
+| publication lock | repository 共通の `lvk-publication.lock` 一つを保持する。この lock は外部の任意 Git 操作までは制御しない。 | [GitPublicationGuard](../../crates/git/src/publication.rs) |
+| サーバー | Compose project/service は `lvk-server` / `lvk`。接続先は IP・DNS 共通で `LVK_HOST`、Certbot lineage は `lvk`。 | [Compose](../../deploy/server/compose.yaml)、[ACME](../../deploy/server/acme.py) |
+| MCP・配布 | 既定 MCP は image に同梱した `vibe-kanban-mcp` を直接実行する。LVK の npm package を取得する preset は提供しない。 | [既定 MCP](../../crates/executors/default_mcp.json)、[接続手順](../../docs/integrations/vibe-kanban-mcp-server.mdx) |
 
-廃止表示のない [Easy NPX 発行文書](../../docs/easy-npx-npm-publish.md) は Trusted Publishing と dry-run の手順を記録するが、build 対象の記述は Windows x64 のみで、現在の Linux x64 追加を反映していない。手順の意図を残し、対象 platform は実際の workflow と package contents を優先する。ここでは npm registry、公開済み archive、R2 の稼働状態を検査していないため、現在配信されている版の対応を断定しない。
+### 名称統一の検証記録（2026-10-06）
 
-廃止表示のない [NPX README の Supported Platforms](../../npx-cli/README.md#supported-platforms) は Linux/Windows x64 と macOS x64/arm64 を列挙するが、配布経路を分けていない。この一覧を Easy 同梱 package の対応表として使うと macOS を過大に解釈する一方、pre-release の Linux/Windows arm64 は一覧に含まれない。導入判断では README の名前だけでなく、上表のどの経路で作られた成果物かを確認する。
+ユーザー依頼に基づくローカル作業差分の検証。基点は `0f7f7fc3`。
+旧名の互換処理を削除した未コミット差分に対する結果であり、過去の release image の結果ではない。
+
+- `cargo test --workspace --locked -j 3`: 994 passed、0 failed、8 ignored。
+- `pnpm run server:check`: 22 passed、0 skipped。`LVK_TEST_NGINX` と
+  `LVK_TEST_COMPOSE` に実行ファイルを指定し、nginx の HTTPS/Basic 認証・WS/SSE と
+  Compose の LVK 設定・volume を実際に検査した。
+- `pnpm --filter @vibe/web-core run test:wiki`: 32 passed。
+- `pnpm run check`、`pnpm run lint`、`pnpm run format` は成功。
+- 旧名用の互換テストは削除した。実行コード・設定・テストに旧製品名の文字列は残っていない。
+  上流への帰属・過去の記録、および lockfile のハッシュ内の偶然の一致は対象外。
+
+この検証では Docker release image の build・公開・稼働サーバーの更新は行っていない。
+独立した private remote backend の Cargo 検証も実行していない。
+既存 claim evidence の version と生成時刻は以前の検証を示すため、名称の手動更新を
+OpenWiki の新たなモデル検証・再生成成功として扱わない。
 
 ## サーバー配布 kit の検証
 
-`pnpm run server:check` は `node --test deploy/server/*.test.mjs` を実行する。設定・証明書・process supervision 等の検査と、nginx を実際に起動する TLS/Basic 認証・WebSocket・SSE・preview 境界の検査を含む。nginx がなければ後者は skip するため、全 subtest が実行されたかを結果で確認する。`EVK_TEST_NGINX` で実行ファイルを指定でき、`EVK_REQUIRE_NGINX_TEST=1` は欠落を失敗にする。[script](../../package.json#L22)、[native test の前提](../../deploy/server/nginx.test.mjs)
+`pnpm run server:check` は `node --test deploy/server/*.test.mjs` を実行する。設定・証明書・process supervision 等の検査と、nginx を実際に起動する TLS/Basic 認証・WebSocket・SSE・preview 境界の検査を含む。nginx がなければ後者は skip するため、全 subtest が実行されたかを結果で確認する。`LVK_TEST_NGINX` で実行ファイルを指定でき、`LVK_REQUIRE_NGINX_TEST=1` は欠落を失敗にする。[script](../../package.json#L22)、[native test の前提](../../deploy/server/nginx.test.mjs)
 
 この確認だけで Docker image の build・実配置・live agent 認証が成功したことにはならない。配布済み binary と作業 checkout の分離、永続 volume、停止・更新・復旧の契約は [サーバーコンテナー](server-container.md)に置く。[記録された検証限界](../../docs/self-hosting/server-container.mdx#validation-boundaries)
 
 ## 版番号の検証と選別移植の追跡
 
-Easy NPX の版番号は stable `0.1.44`、`0.1.44-beta.1`、`0.1.44-easy.1` の形式を許し、空白・数値の先頭ゼロ・別 prerelease 形式を拒否する。実際の発行 workflow が共通 validator を呼ぶため、単なる UI の入力補助ではない。validator test は公開済み package の動作や発行成功を証明しない。[validator](../../scripts/validate-npm-version.cjs)、[CI の呼出し](../../.github/workflows/publish-easy-npx.yml#L57-L64)
+旧 npm 用の version parser は過去の `easy` 入力も互換用に受け付ける。
+そのテストは現在の Docker image の build・公開成功を証明しない。
+現在の配布検証は `.github/workflows/publish-server.yml` と
+`deploy/server/release.test.mjs` を参照する。
 
 上流変更の採否・LVK 向け適応・故障注入・実 Codex を使った MCP 受入は [選別移植の実装記録](../../docs/design/upstream-selective-backport-implementation.md)にある。各試験の source revision と実行対象を識別し、過去の成功を別 revision の成功と取り違えない。特に server と `agent-process-host` を同じソースから更新し、旧 Host の互換接続と新 Host の journal 回復を分けて試す。[Host の回復契約](../architecture/agent-runtime.md#接続断と確認済み終了を分ける)
 
@@ -168,7 +224,7 @@ prepare-db は一時 SQLite を作り、migration を適用してから cargo sq
 ## 文書の適用範囲
 
 - [CONTRIBUTORS](../../CONTRIBUTORS.md) は maintainer review、変更管理、生成ファイルを直接編集しないという方針を記録する。実装の挙動の証拠とは分けて読む。[変更管理](../../CONTRIBUTORS.md)・[生成物の方針](../../CONTRIBUTORS.md)
-- [Easy NPX npm 発行](../../docs/easy-npx-npm-publish.md) は Trusted Publishing、dry-run、版番号運用の記録された手順である。ここでは registry の公開状況や外部 publisher 設定を検証していないため、文書中の実例が現在の外部設定と一致するとは限らない。[文書の目的](../../docs/easy-npx-npm-publish.md)・[dry-run](../../docs/easy-npx-npm-publish.md)
+- [LVK release distribution](../../docs/easy-npx-npm-publish.md) は旧 npm 手順の廃止案内である。現行の Docker 公開・検証は [サーバー配布手順](../../docs/self-hosting/server-container.mdx)を参照する。
 - [Mobile testing](../../mobile-testing.md) は remote-web をスマートフォンから試すための Tailscale/Caddy 手順。手元の local-web への直接接続とは対象が異なる。[対象](../../mobile-testing.md)・[直接接続の説明](../integrations/remote-access.md#self-hosting-と直接接続)
 - [OpenWiki maintenance](openwiki-maintenance.md) は、通常開発の tests や release と別の生成・レビュー・公開 checkpoint を説明する。
 

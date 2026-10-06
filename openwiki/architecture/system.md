@@ -28,7 +28,7 @@ verified:
 
 # システム境界と起動順序
 
-EVK は、作業要求を管理する画面と、実際のファイル・Git・coding agent を動かすホストを組み合わせる。ローカルサーバーの `DeploymentImpl` は現在 `LocalDeployment` に固定されている。Remote は同じ型の差し替え実装ではなく、独立したサーバーである。[型の結線](../../crates/server/src/lib.rs#L9-L12)、[workspace 境界](../../Cargo.toml#L1-L36)
+LVK は、作業要求を管理する画面と、実際のファイル・Git・coding agent を動かすホストを組み合わせる。ローカルサーバーの `DeploymentImpl` は現在 `LocalDeployment` に固定されている。Remote は同じ型の差し替え実装ではなく、独立したサーバーである。[型の結線](../../crates/server/src/lib.rs#L9-L12)、[workspace 境界](../../Cargo.toml#L1-L36)
 
 ## 責任の配置
 

@@ -39,7 +39,7 @@ async function fixture() {
     repo_display_name: 'Repository One',
     source: 'current_workspace',
     source_links: [
-      { source: 'EVK-1', project_id: 'project-one', issue_id: 'issue-one' },
+      { source: 'LVK-1', project_id: 'project-one', issue_id: 'issue-one' },
     ],
     wiki: {
       exists: true,
@@ -60,7 +60,7 @@ async function fixture() {
             summary: 'Job contract',
             language: 'ja',
             tags: ['Job'],
-            sources: ['EVK-1'],
+            sources: ['LVK-1'],
             repos: ['repo'],
             created: '',
             updated: '2026-09-16',

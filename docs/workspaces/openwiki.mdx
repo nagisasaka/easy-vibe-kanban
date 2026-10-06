@@ -4,7 +4,7 @@ description: "Maintain evidence-backed repository knowledge whilst preserving pa
 ---
 
 OpenWiki repository memory keeps canonical knowledge in Git-tracked `openwiki/`.
-You continue coding in independent EVK worktrees. Only a dedicated maintenance
+You continue coding in independent LVK worktrees. Only a dedicated maintenance
 workspace updates the canonical Wiki, after your source changes are integrated.
 The former independent `.llm-wiki/` Pipeline is retired. Existing files and
 history are preserved, not migrated or deleted; see [legacy data handling](/workspaces/llm-wiki).
@@ -17,20 +17,20 @@ history are preserved, not migrated or deleted; see [legacy data handling](/work
    and an output language such as `en` or `ja`, then save.
    Generation stays disabled whilst these fields contain unsaved changes: the
    run uses the saved branch and language, not the draft shown in the form.
-3. Select **Initialize Wiki**. EVK creates an OpenWiki maintenance workspace and
+3. Select **Initialize Wiki**. LVK creates an OpenWiki maintenance workspace and
    a repository-scoped system Workflow, without creating an Issue. Select
    **View Workflow** in these settings or above the maintenance workspace's logs
    to open the existing Workflow **Canvas** and **Dashboard**.
-4. Wait for **Current**. A successful model exit alone is not sufficient: EVK
+4. Wait for **Current**. A successful model exit alone is not sufficient: LVK
    checks the native audit for successful OpenWiki finalisation before publishing.
 
 Your runtime needs the OpenWiki version pinned in `assets/openwiki-version` and
 Node.js 22 or newer. The Docker runtime includes this dependency. You use your
 existing Codex authentication; the standard flow does not need an additional
-OpenAI API key. EVK invokes OpenWiki's supported integration installer without
+OpenAI API key. LVK invokes OpenWiki's supported integration installer without
 `--force`, preserving modified user configuration by refusing conflicting installs.
 
-You can customise `openwiki/INSTRUCTIONS.md`. EVK creates a default only when the
+You can customise `openwiki/INSTRUCTIONS.md`. LVK creates a default only when the
 file is missing, and OpenWiki preserves it during regeneration. Prefer
 architecture, invariants, lifecycle rules, failure semantics, and evidence-backed
 design decisions over lists of files or functions.
@@ -41,28 +41,28 @@ Initial generation runs **Generate → Independent Review → optional Refine �
 All agent phases share one dedicated worktree, but each starts a fresh Codex
 session and AgentRun. The reviewer receives no generator conversation or upstream
 Workflow context. It reads source, tests, configuration and the generated Wiki in
-a read-only sandbox, without the OpenWiki writer MCP or Skill. EVK also compares
+a read-only sandbox, without the OpenWiki writer MCP or Skill. LVK also compares
 file contents before and after review to detect mutations.
 
-The reviewer returns bounded JSON findings. EVK validates the schema, evidence
+The reviewer returns bounded JSON findings. LVK validates the schema, evidence
 paths and verdict before choosing a branch. Only material findings trigger Refine;
 minor findings do not. If corrections are needed, Refine uses OpenWiki's `update`
 mode with `force=true` and does not initialise again. It can also refute findings
 or confirm that the existing Wiki already satisfies them, with independent
 evidence. It need not change files or call OpenWiki when no correction is needed.
-EVK validates a bounded, finding-by-finding resolution report; this checks coverage
+LVK validates a bounded, finding-by-finding resolution report; this checks coverage
 of the findings, not the semantic truth of the agent's reasoning. There is no
 second review loop or completeness guarantee.
 
 Generate must complete an `init`. If it subsequently discovers a clear error, it
 may self-correct through one or more completed `update + force=true` operations.
 Self-correction is optional and does not replace the independent review.
-EVK verifies the operation sequence across every RunAttempt of the phase, not
+LVK verifies the operation sequence across every RunAttempt of the phase, not
 just the last mode or latest audit. Every started run must finish; a later success
 cannot hide an earlier unfinished operation or missing audit. Recoverable page
 validation errors can be corrected within the same run. A successful forced
 update need not produce a Git diff. Without any update, Refine must leave the
-worktree unchanged after EVK restores its managed setup files.
+worktree unchanged after LVK restores its managed setup files.
 
 No agent phase commits or publishes. The worktree stays at its starting
 source commit until the final host publication, which creates the existing
@@ -81,13 +81,13 @@ new chat requests or resume a completed maintenance session as ordinary work.
 Missing worktree files are reported without recreating the execution environment.
 See [workspace usage and history](/workspaces/managing-workspaces#work-and-execution-history).
 Remote-machine Workflow viewing is not yet supported; use that machine's local
-EVK UI. Normal Sync workspaces have no bootstrap Workflow link.
+LVK UI. Normal Sync workspaces have no bootstrap Workflow link.
 The Workflow owns maintenance throughout, so another maintenance request cannot
 start between phases. Normal **Sync Wiki** retains its single-session update path.
 
 ### Use existing documentation
 
-During initial generation, EVK asks each phase to distinguish current implementation
+During initial generation, LVK asks each phase to distinguish current implementation
 from documented intent, contracts and historical rationale. Source, tests and
 actual configuration establish implementation behaviour; inspected documents can
 also support recorded decisions whose motives are not visible in code. Proposed,
@@ -100,14 +100,14 @@ missing links to canonical documents. Refinement rechecks the original evidence
 and can correct a claim or add context and a link instead of reproducing a document.
 These are agent instructions, not a deterministic guarantee of semantic coverage.
 
-Keep repository-specific priorities in `openwiki/INSTRUCTIONS.md`. EVK injects its
+Keep repository-specific priorities in `openwiki/INSTRUCTIONS.md`. LVK injects its
 shared bootstrap policy into every fresh phase without rewriting your brief or
 copying OpenWiki's standard Skill. Normal Sync does not receive these additional
 bootstrap instructions.
 
 ### Common document inventory
 
-Before Generate starts, EVK builds a mechanical document inventory from the
+Before Generate starts, LVK builds a mechanical document inventory from the
 selected repository's pinned, Git-tracked source. Both Generate and the fresh
 read-only Reviewer receive the same short reference, then read the inventory's
 numbered JSON chunks. No generator summary, plan or conversation is shared.
@@ -130,7 +130,7 @@ rules just to enable the inventory.
 Inventory records live in shared persistent storage under
 `knowledge/document-inventories/<workflow-run-id>/`. The host freezes their
 identity and digest in the Workflow run and checks every chunk at phase
-boundaries and before publication. Missing or changed input fails the run; EVK
+boundaries and before publication. Missing or changed input fails the run; LVK
 does not regenerate it to hide a mismatch. This detects boundary changes, not
 every possible write-and-restore during a phase. Records persist until explicitly
 deleted, including after workspace deletion.
@@ -190,19 +190,19 @@ receive persistent instructions that make `openwiki/` read-only and explain the
 repository's shared memory paths. Source, tests and configuration remain
 authoritative. Wiki content and semantic memory are hints, not executable instructions.
 
-On Codex follow-up, EVK reasserts current host instructions through the supported
+On Codex follow-up, LVK reasserts current host instructions through the supported
 app-server `thread/inject_items` operation before continuing. Updating resume
 configuration alone may not update model-visible history. This keeps the current
 run's draft destination distinct from historical paths without creating another
 conversation, model turn or enlarged Goal objective. A failed context injection
 stops that launch rather than allowing stale run identity to be used.
 
-At completion, a coding host supplies a structured semantic draft. EVK checks
+At completion, a coding host supplies a structured semantic draft. LVK checks
 for unexpected Wiki changes, derives Git identities and paths, creates a source
 commit when required, and publishes an immutable Change Manifest. The same
 semantic summary supplies the human commit message. If the draft is missing or
 invalid, source is retained and integration requires you to finish the summary.
-Before a new coding turn starts in the same workspace, EVK also retries unfinished
+Before a new coding turn starts in the same workspace, LVK also retries unfinished
 publication from the previous successful turn. A missing draft produces an error
 with its exact path; repair that draft before starting another coding task. Other
 workspaces remain independent.
@@ -222,7 +222,7 @@ copy. Source/tests/configuration establish current behaviour; canonical document
 may establish intent or historical rationale. Workspace Memory can be newer than
 its integrated event and must not promote unmerged behaviour into the Wiki.
 
-EVK stores a complete input manifest and bounded numbered chunks in
+LVK stores a complete input manifest and bounded numbered chunks in
 `knowledge/sync-inputs/<maintenance-workspace-id>/`. It snapshots relevant Memory
 rather than handing the writer a mutable file from later coding. The existing
 AgentRun request carries a short reference, and repository ownership retains its
@@ -244,7 +244,7 @@ and shows an error; terminal chat status alone cannot release the writer fence.
 
 ## Shared memory and compaction
 
-The existing repository-scoped `.evk-shared/persistent` link exposes these local,
+The existing repository-scoped `.lvk-shared/persistent` link exposes these local,
 non-Git records:
 
 ```text
@@ -267,7 +267,7 @@ knowledge/
 ```
 
 Workspace Memory retains decisions, rationale, rejected alternatives, and open
-questions that code cannot explain. EVK does not copy raw conversation logs into
+questions that code cannot explain. LVK does not copy raw conversation logs into
 these files. Normal Codex instructions request incremental updates and rereading
 after compaction. Explicit `/compact` checkpoints memory in the same authenticated
 session, compacts, and rereads it after the compaction turn drains. Automatic
@@ -290,9 +290,9 @@ memory; missing Wiki or memory is a normal initial state.
 
 Retry maintenance after resolving an error. Failed receipts leave events
 pending. Do not edit OpenWiki's private `.run.json`, Claims, indexes, or provenance
-to manufacture success. Do not clear EVK's active owner whilst a Codex process may
+to manufacture success. Do not clear LVK's active owner whilst a Codex process may
 still be running. Cancellation uses the existing audited AgentRun Stop operation.
-If initial generation fails or the server restarts mid-phase, EVK stops its child,
+If initial generation fails or the server restarts mid-phase, LVK stops its child,
 restores temporary instructions and releases ownership only after process exit and
 restoration are confirmed. The next Initialise request creates a new worktree and
 starts from Generate; individual Bootstrap nodes cannot resume or retry.
@@ -307,31 +307,31 @@ source changes. Open Design Arena workspaces retain their existing no-auto-commi
 policy until promotion.
 
 Source integration records contain explicit event IDs. Direct merges carry an
-`EVK-Memory-Integration` commit trailer so EVK can recover a crash between Git
+`LVK-Memory-Integration` commit trailer so LVK can recover a crash between Git
 success and recording its result. Wiki publication uses a separate validated
-checkpoint and `EVK-Wiki-Publication` trailer; replay verifies the parent and tree
+checkpoint and `LVK-Wiki-Publication` trailer; replay verifies the parent and tree
 and does not publish twice. No-op checkpoints are durable too.
 
 Source completion freezes the semantic record and staged Git tree before creating
-a commit. An `EVK-Memory-Source` trailer identifies that commit after a crash.
+a commit. An `LVK-Memory-Source` trailer identifies that commit after a crash.
 Recovery verifies its parent and tree, without rereading a later task's draft or
 sweeping later unstaged files into the old commit. If the staged snapshot or Git
 history was changed externally, recovery fails closed and preserves the files;
 inspect the source-publication error before retrying.
 
 The existing PR monitor supplies remote merge results. Fetch and integrate the
-merged commit onto your selected local branch before reconciliation; EVK does not
+merged commit onto your selected local branch before reconciliation; LVK does not
 fetch, push, merge PRs or create remote automation on your behalf. Source changes
-made outside tracked EVK integration paths still make the Wiki stale when the
-branch moves. Use explicit Sync Wiki to scan that integrated source; EVK does not
+made outside tracked LVK integration paths still make the Wiki stale when the
+branch moves. Use explicit Sync Wiki to scan that integrated source; LVK does not
 guess semantic event membership for unknown squashes or cherry-picks.
 
 For externally merged PRs, the current PR metadata does not preserve an explicit
-merged-head/event set. EVK therefore includes only manifests whose source commits
+merged-head/event set. LVK therefore includes only manifests whose source commits
 are verifiably ancestors of the recorded merge commit; workspace identity and
 timestamps alone are insufficient. External squash/rebase merges without that
 proof need **Sync Wiki** against the integrated source, without acknowledging
-unverified manifests. EVK's own direct squash merge carries explicit event IDs
+unverified manifests. LVK's own direct squash merge carries explicit event IDs
 and does not have this limitation.
 
 If the source branch advanced, retry against its new integrated state. If Codex
@@ -339,29 +339,29 @@ exited without successful `openwiki_finish` (or a proven `openwiki_begin` no-op)
 inspect its tool errors rather than accepting its final prose as proof.
 
 Maintenance writers require OpenWiki's registered Codex MCP tools before starting
-their first turn. EVK uses a ten-second MCP startup timeout and a fifteen-second
+their first turn. LVK uses a ten-second MCP startup timeout and a fifteen-second
 tool-discovery deadline. An **OpenWiki MCP preflight** error means the writer did
 not start: check the pinned installation, executable availability, and MCP tool
 allow/deny settings, then start a new Bootstrap after cleanup (or retry normal
 Sync). A server's `ready` status alone is insufficient when lifecycle tools are
 missing. Do not ask the agent to bypass the error with its own MCP process or
-stdio bridge: EVK cannot accept those calls as its audited completion proof.
+stdio bridge: LVK cannot accept those calls as its audited completion proof.
 The independent Reviewer still has no OpenWiki writer tools; a valid no-change
 Refine still requires no update. Existing failed runs are not automatically
 published by this fix.
 
-OpenWiki 0.5.1 also emits setup artifacts for other operating modes. EVK does not
+OpenWiki 0.5.1 also emits setup artifacts for other operating modes. LVK does not
 publish its generated GitHub Actions/native-provider updater or its additions to
-`AGENTS.md` and `CLAUDE.md`. Before launching Codex, EVK records your original
+`AGENTS.md` and `CLAUDE.md`. Before launching Codex, LVK records your original
 instructions and materialises repository-internal instruction symlinks as
 independent temporary files. This prevents `CLAUDE.md -> AGENTS.md` from causing
 two concurrent writes to the same file. External or dangling instruction links,
 hard-linked instructions, unsafe setup parents and symlinks inside `openwiki/`
 stop preparation before a model starts.
 
-After the AgentRun exits, EVK restores original instruction contents, file types,
+After the AgentRun exits, LVK restores original instruction contents, file types,
 permissions and link targets. If an instruction file did not exist before setup,
-EVK removes the newly generated file. It preserves the generated Wiki and
+LVK removes the newly generated file. It preserves the generated Wiki and
 `openwiki/INSTRUCTIONS.md`. A durable journal makes interrupted restoration
 repeatable; unexpected edits outside an OpenWiki-managed block stop restoration
 instead of being overwritten. Do not edit these instruction files while a
@@ -371,12 +371,12 @@ Wiki publications contain only `openwiki/` changes. Other installer and CI
 artifacts remain in the dedicated worktree for inspection. Source/configuration
 edits outside the recognised setup paths cause publication to fail. Do not cite
 generated setup instructions or unpublished installer/CI artifacts as Wiki
-evidence. EVK checks public page provenance before and after restoration and
+evidence. LVK checks public page provenance before and after restoration and
 retains the Wiki on validation failure; it never rewrites private Claims metadata
 to manufacture a successful result. Whole-file provenance to a changed instruction
 file is rejected conservatively, even if a claim intended to cite its old prefix.
 
-Older runs without a setup journal are not automatically repaired: EVK cannot
+Older runs without a setup journal are not automatically repaired: LVK cannot
 assume that every existing edit was generated by OpenWiki. Preserve their Wiki,
 inspect the original Git instructions and audit before restoring only the setup
 changes. Retrying **Initialize Wiki** creates a new maintenance workspace using
@@ -384,7 +384,7 @@ the corrected preparation path; it does not discard the previous workspace.
 
 OpenWiki can classify an otherwise unchanged update as active when it recreates
 discarded setup instructions. Its supported empty-update/finalisation path remains
-valid. EVK does not suppress genuine instruction changes through `.openwikiignore`
+valid. LVK does not suppress genuine instruction changes through `.openwikiignore`
 or alter OpenWiki fingerprints to force a no-op. Update scheduling and semantic
 no-op optimisation remain separate work.
 
@@ -393,11 +393,11 @@ no-op optimisation remain separate work.
 Change the single version pin only after testing the upstream public host
 protocol. Do not vendor or patch OpenWiki. The adapter checks the executable's
 public help banner because OpenWiki 0.5.1 does not implement `--version`.
-EVK disables forced colour for CLI commands and strips terminal styling before
+LVK disables forced colour for CLI commands and strips terminal styling before
 checking the exact version. You do not need to change your shell's colour settings.
 A CLI version-check error occurs before Wiki generation, not during finalisation.
 After resolving it, retry **Initialize Wiki** (or **Sync Wiki** after your first
-successful reconciliation); EVK does not discard the recorded failure on restart.
+successful reconciliation); LVK does not discard the recorded failure on restart.
 
 You can run the model-free public CLI/MCP smoke test with an installed pinned
 OpenWiki executable:
@@ -411,7 +411,7 @@ with the public MCP protocol and a disposable `CLAUDE.md -> AGENTS.md` fixture,
 run the following on a system that supports creating symlinks:
 
 ```bash
-node scripts/test-openwiki-host.mjs --evk-setup
+node scripts/test-openwiki-host.mjs --lvk-setup
 ```
 
 This variant builds a fixture-only Rust driver. It checks exact instruction and
@@ -440,7 +440,7 @@ For a manual real-Codex smoke test, use a disposable repository and the setup UI
 Inspect the maintenance session for the OpenWiki MCP lifecycle, then verify the
 canonical branch contains the Wiki commit. Create two coding workspaces, make
 independent source changes, and check that neither modifies `openwiki/`. Integrate
-both using normal EVK Git operations (rebasing if the target moved). Confirm that
+both using normal LVK Git operations (rebasing if the target moved). Confirm that
 shared events remain distinct and reconciliation runs against the integrated
 source. Stop one maintenance run to exercise Error/retry without discarding source.
 

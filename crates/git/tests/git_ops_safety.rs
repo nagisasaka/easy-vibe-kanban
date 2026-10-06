@@ -71,7 +71,7 @@ fn temporary_diff_includes_new_files_without_staging_excluded_resources() {
     write_file(tmp.path(), "openwiki/index.md", "New Wiki\n");
     write_file(tmp.path(), "openwiki/pages/[topic].md", "Literal path\n");
     write_file(tmp.path(), "openwiki/node_modules/hidden.txt", "excluded\n");
-    write_file(tmp.path(), ".evk-shared/private.txt", "excluded\n");
+    write_file(tmp.path(), ".lvk-shared/private.txt", "excluded\n");
     let paths = svc.get_diff_file_paths(tmp.path(), &head).unwrap();
     assert_eq!(
         paths,

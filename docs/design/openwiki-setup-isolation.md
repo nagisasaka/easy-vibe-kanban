@@ -4,7 +4,7 @@
 
 Keep the unmodified, pinned OpenWiki host integration and the existing dedicated
 maintenance workspace. OpenWiki's root `AGENTS.md` / `CLAUDE.md` additions are not
-EVK instructions and must not enter a Wiki publication. Existing repository
+LVK instructions and must not enter a Wiki publication. Existing repository
 instructions, their file types and link targets belong to the user.
 
 OpenWiki 0.5.1 writes both instruction files during `openwiki_begin`, before its

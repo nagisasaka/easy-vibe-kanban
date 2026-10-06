@@ -3,8 +3,8 @@
 # and a container. Never run this against an existing deployment/container name.
 set -euo pipefail
 image=${1:?Pass the locally built image reference}
-fixture=$(mktemp -d /tmp/evk-image-smoke.XXXXXX)
-name="evk-smoke-$(basename "$fixture" | tr '[:upper:]' '[:lower:]')"
+fixture=$(mktemp -d /tmp/lvk-image-smoke.XXXXXX)
+name="lvk-smoke-$(basename "$fixture" | tr '[:upper:]' '[:lower:]')"
 cleanup() {
   docker logs "$name" 2>/dev/null || true
   docker rm -f "$name" >/dev/null 2>&1 || true
@@ -15,11 +15,11 @@ trap cleanup EXIT
 chmod 755 "$fixture"
 mkdir "$fixture/tls"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
-  -subj /CN=evk.example.test \
-  -addext 'subjectAltName=DNS:evk.example.test,DNS:*.preview.example.test,IP:127.0.0.1' \
+  -subj /CN=lvk.example.test \
+  -addext 'subjectAltName=DNS:lvk.example.test,DNS:*.preview.example.test,IP:127.0.0.1' \
   -keyout "$fixture/tls/privkey.pem" -out "$fixture/tls/fullchain.pem" 2>/dev/null
 # Test-only credentials; production instructions use an interactive prompt.
-printf '%s\n' evk-smoke-only | docker run --rm -i --entrypoint htpasswd "$image" -niB test > "$fixture/htpasswd"
+printf '%s\n' lvk-smoke-only | docker run --rm -i --entrypoint htpasswd "$image" -niB test > "$fixture/htpasswd"
 chmod 644 "$fixture/tls/privkey.pem" "$fixture/htpasswd"
 docker run --rm --entrypoint sh "$image" -ec '
   test "$(id -u)" = 10001
@@ -34,14 +34,14 @@ docker run --rm --entrypoint sh "$image" -ec '
   bash -lc "cargo --version && rustc --version && pnpm --version && codex --version"
 '
 docker run --rm --entrypoint node \
-  -e EVK_REQUIRE_NGINX_TEST=1 \
+  -e LVK_REQUIRE_NGINX_TEST=1 \
   --mount "type=bind,src=$PWD/deploy/server,dst=/tests,readonly" \
   "$image" --test /tests/nginx.test.mjs
 for suffix in home repos work; do docker volume create "$name-$suffix" >/dev/null; done
 start() {
   docker run -d --name "$name" \
-    -e EVK_HOST="${1:-evk.example.test}" \
-    --mount "type=bind,src=$fixture,dst=/run/evk-secrets,readonly" \
+    -e LVK_HOST="${1:-lvk.example.test}" \
+    --mount "type=bind,src=$fixture,dst=/run/lvk-secrets,readonly" \
     -v "$name-home:/home/appuser" -v "$name-repos:/repos" -v "$name-work:/var/tmp" \
     "$image" >/dev/null
   for _ in $(seq 1 90); do
@@ -53,8 +53,8 @@ start() {
 }
 start
 docker exec "$name" sh -ec '
-  test "$(curl -ks -o /dev/null -w "%{http_code}" --resolve evk.example.test:8443:127.0.0.1 https://evk.example.test:8443/api/info)" = 401
-  curl -kfsS --user test:evk-smoke-only --resolve evk.example.test:8443:127.0.0.1 https://evk.example.test:8443/api/info >/dev/null
+  test "$(curl -ks -o /dev/null -w "%{http_code}" --resolve lvk.example.test:8443:127.0.0.1 https://lvk.example.test:8443/api/info)" = 401
+  curl -kfsS --user test:lvk-smoke-only --resolve lvk.example.test:8443:127.0.0.1 https://lvk.example.test:8443/api/info >/dev/null
   touch /home/appuser/smoke-persistence /repos/smoke-persistence /var/tmp/smoke-persistence
   test -f /home/appuser/.local/share/vibe-kanban/db.v2.sqlite
 '
@@ -67,9 +67,9 @@ docker rm "$name" >/dev/null
 start 127.0.0.1
 docker exec "$name" sh -ec 'test -f /home/appuser/smoke-persistence && test -f /repos/smoke-persistence && test -f /var/tmp/smoke-persistence'
 # Verify IP SANs with normal TLS verification, then replace the pair just as an
-# issuer would. The running supervisor must reload nginx without recreating EVK.
-docker exec "$name" curl -fsS --cacert /run/evk-secrets/tls/fullchain.pem \
-  --user test:evk-smoke-only https://127.0.0.1:8443/api/info >/dev/null
+# issuer would. The running supervisor must reload nginx without recreating LVK.
+docker exec "$name" curl -fsS --cacert /run/lvk-secrets/tls/fullchain.pem \
+  --user test:lvk-smoke-only https://127.0.0.1:8443/api/info >/dev/null
 started=$(docker inspect -f '{{.State.StartedAt}}' "$name")
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -set_serial 42 \
   -subj /CN=ip-renewal -addext 'subjectAltName=IP:127.0.0.1' \
@@ -79,8 +79,8 @@ mv "$fixture/tls/new-key.pem" "$fixture/tls/privkey.pem"
 mv "$fixture/tls/new-cert.pem" "$fixture/tls/fullchain.pem"
 renewed=false
 for _ in $(seq 1 30); do
-  if docker exec "$name" curl -fsS --cacert /run/evk-secrets/tls/fullchain.pem \
-    --user test:evk-smoke-only https://127.0.0.1:8443/api/info >/dev/null 2>&1; then
+  if docker exec "$name" curl -fsS --cacert /run/lvk-secrets/tls/fullchain.pem \
+    --user test:lvk-smoke-only https://127.0.0.1:8443/api/info >/dev/null 2>&1; then
     renewed=true
     break
   fi

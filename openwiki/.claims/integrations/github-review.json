@@ -18,7 +18,7 @@
     },
     {
       "id": "claim_819090c84348464cb10ee77a8cac0936",
-      "statement": "App設定、Adminと非personal組織、10分state/pendingの検証を要し、EVKの接続削除はGitHub側uninstallではない。",
+      "statement": "App設定、Adminと非personal組織、10分state/pendingの検証を要し、LVKの接続削除はGitHub側uninstallではない。",
       "evidence": [
         {
           "resource": "repo://crates/remote/src/config.rs#L156-L202",

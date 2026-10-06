@@ -38,7 +38,7 @@
     },
     {
       "id": "claim_be2584d6229c4001870388b8bb27ec00",
-      "statement": "Coding run の識別と base は EVK が固定し、semantic draft と Git 由来の paths/revisions から run ID を event ID とする Manifest を作る。",
+      "statement": "Coding run の識別と base は LVK が固定し、semantic draft と Git 由来の paths/revisions から run ID を event ID とする Manifest を作る。",
       "evidence": [
         {
           "resource": "repo://crates/services/src/services/repository_memory.rs#L14-L68",

@@ -92,7 +92,7 @@ The feature touches several layers, but they are not independent products. The b
 ### Validation
 
 - Use GitHub Actions workflow `.github/workflows/test.yml` for full checks.
-- Use GitHub Actions workflow `.github/workflows/publish-easy-npx.yml` for npm packaging validation.
+- Use `.github/workflows/publish-server.yml` for Docker image validation; LVK does not publish npm packages.
 - Use Playwright MCP against the installed npm package for runtime validation.
 - Do not require local machine verification.
 
@@ -1584,11 +1584,11 @@ git commit -m "fix(arena): keep promote scoped to implementation mode"
 
 ---
 
-## Task 9: Remote Validation and npm/Playwright Acceptance
+## Task 9: Remote Validation and Docker/Playwright Acceptance
 
 **Files:**
 - No production files unless validation exposes bugs.
-- Use existing workflows: `.github/workflows/test.yml`, `.github/workflows/publish-easy-npx.yml`
+- Use existing workflows: `.github/workflows/test.yml`, `.github/workflows/publish-server.yml`
 
 - [ ] **Step 1: Push branch and run GitHub Actions**
 
@@ -1601,36 +1601,21 @@ Expected:
 - `Test` workflow passes, especially frontend checks, backend schema checks, backend tests.
 - If SQLx/types drift exists, run the existing `regen-sqlx-and-types.yml` workflow or commit regenerated files.
 
-- [ ] **Step 2: Publish npm package through workflow**
+- [ ] **Step 2: Validate the server image through GitHub Actions**
 
-Use `.github/workflows/publish-easy-npx.yml` with the next version, for example:
+Use `.github/workflows/publish-server.yml`. Manual dispatch builds and validates
+without publishing. For a release, a version tag publishes the tested image to
+GHCR. Do not publish an npm package.
 
-```text
-version: 0.1.44-easy.3
-npm_tag: latest
-publish_mode: publish
-```
+- [ ] **Step 3: Deploy the image on the test machine**
 
-Expected:
-
-- Windows x64 package builds.
-- npm publish succeeds.
-- `npm view easy-vibe-kanban@0.1.44-easy.3 version` returns `0.1.44-easy.3`.
-
-- [ ] **Step 3: Install package on test machine**
-
-On the test machine:
-
-```bash
-npm install -g easy-vibe-kanban@0.1.44-easy.3
-easy-vibe-kanban
-```
-
-Expected: app starts and prints or opens the local URL.
+Follow `docs/self-hosting/server-container.mdx`, using the published immutable
+image digest and persistent volumes. Confirm the authenticated HTTPS endpoint
+and `/api/info` before browser acceptance.
 
 - [ ] **Step 4: Playwright acceptance test**
 
-Use Playwright MCP against the npm-installed app and test repo:
+Use Playwright MCP against the Docker-deployed app and test repo:
 
 ```text
 F:\Mydev2023\devSpace\opensource\arthas_mcp_server
@@ -1696,7 +1681,7 @@ Run via GitHub Actions unless the local environment is known-good:
 - [ ] `cargo test -p server design_arena_initial_prompt_contains_no_commit_guard`
 - [ ] `cargo test -p server promote_rejects_open_design_arena`
 - [ ] Full `.github/workflows/test.yml` passes.
-- [ ] npm package publishes through `.github/workflows/publish-easy-npx.yml`.
+- [ ] Docker image publishes through `.github/workflows/publish-server.yml`.
 - [ ] Playwright acceptance passes against installed npm package.
 
 ## Implementation Notes

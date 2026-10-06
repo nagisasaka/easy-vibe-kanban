@@ -143,7 +143,7 @@ language: ja
 summary: Short reusable summary
 tags: [parser, pipeline]
 sources: [EASY-123]
-repos: [easy-vibe-kanban]
+repos: [lucky-vibe-kanban]
 created: 2026-09-09
 updated: 2026-09-09
 ---

@@ -2,7 +2,7 @@
 
 通过看板规划任务，运行编码代理，并审查代码变更。
 
-LVK 基于 Easy Vibe Kanban 和 Vibe Kanban，支持 Git 工作树、多会话、可视化代理工作流、
+LVK 基于 Lucky Vibe Kanban 和 Vibe Kanban，支持 Git 工作树、多会话、可视化代理工作流、
 变更整合验证以及 OpenWiki 仓库记忆。可以在本机运行，也可以部署到自己的服务器。
 代理账户及模型费用需要单独配置。
 
@@ -35,10 +35,10 @@ pnpm run dev
 开发和验证范围见 [AGENTS.md](AGENTS.md)。独立的 `crates/remote` Rust 工作区包含上游私有依赖，
 本地 LVK 开发不需要运行该工作区。
 
-## 兼容性与来源
+## 名称与来源
 
-产品名称已变更为 Lucky Vibe Kanban。历史数据路径、`.evk-shared`、`EVK_*`/`VK_*`
-环境变量和底层二进制名称保留，以维护兼容性。旧 npm 安装不会自动迁移到 Docker。
+产品名称为 Lucky Vibe Kanban。当前配置和共享目录使用 `LVK_*` 和 `.lvk-shared`。
+原版 Vibe Kanban 的数据路径、`VK_*` 配置和二进制名称保持不变。
 
 感谢 [Easy Vibe Kanban](https://github.com/toby1123yjh/easy-vibe-kanban)
 和 [Vibe Kanban](https://github.com/BloopAI/vibe-kanban) 的贡献者。

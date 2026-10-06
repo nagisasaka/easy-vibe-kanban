@@ -56,13 +56,13 @@ Repository Memory は、将来の coding agent が設計境界・判断理由・
 
 ## Change Manifest は変更理由を運ぶイベント
 
-Coding host が書くのは goal、summary、振る舞い・構造・不変条件への影響、判断、テスト結果などの **semantic draft**。EVK が run 開始時に Repo/Workspace/run ID と Git base を固定し、完了時に Git から changed paths と source commit を求めて **Change Manifest** にする。モデルが書いた任意の revision や membership を採用しない。[固定 context](../../crates/services/src/services/repository_memory.rs#L14-L68)、[Manifest 組み立て](../../crates/services/src/services/repository_memory.rs#L200-L234)
+Coding host が書くのは goal、summary、振る舞い・構造・不変条件への影響、判断、テスト結果などの **semantic draft**。LVK が run 開始時に Repo/Workspace/run ID と Git base を固定し、完了時に Git から changed paths と source commit を求めて **Change Manifest** にする。モデルが書いた任意の revision や membership を採用しない。[固定 context](../../crates/services/src/services/repository_memory.rs#L14-L68)、[Manifest 組み立て](../../crates/services/src/services/repository_memory.rs#L200-L234)
 
 イベント ID は coding run ID で、一イベント一 JSON の outbox として公開される。イベント本体と、後から更新可能な receipt/state は別である。同じイベントを再処理して新しい source commit を無制限に作る設計ではない。[イベント保存](../../crates/utils/src/repository_memory.rs#L709-L719)、[完了の再入](../../crates/services/src/services/repository_memory.rs#L152-L168)、[判断の記録](../../docs/design/openwiki-implementation-checkpoints.md#implementation-decisions)
 
 source に変更がなければ無変更 checkpoint で終わる。変更があるのに有効な draft がなければ、完了時の source/Manifest 公開は失敗し、修復可能な診断を残す。制御用 run など `finalize_source=false` の場合も変更を自動 commit しない。[分岐と検証](../../crates/services/src/services/repository_memory.rs#L152-L224)
 
-Git 変更前には Manifest と staged tree を固定した publication 記録を書く。復旧時は `EVK-Memory-Source` marker、親 commit、tree を照合する。後から追加された変更や書き換えた draft を前のタスクの結果として取り込まないための境界である。次の coding run を開始する前にも、同じ Workspace の前回成功 run の未完了公開を回復する。[公開と検証](../../crates/services/src/services/repository_memory.rs#L239-L294)、[次回起動前の回復](../../crates/services/src/services/repository_memory.rs#L104-L149)、[後続編集保持のテスト](../../crates/services/src/services/repository_memory.rs#L1128-L1146)
+Git 変更前には Manifest と staged tree を固定した publication 記録を書く。復旧時は `LVK-Memory-Source` marker、親 commit、tree を照合する。後から追加された変更や書き換えた draft を前のタスクの結果として取り込まないための境界である。次の coding run を開始する前にも、同じ Workspace の前回成功 run の未完了公開を回復する。[公開と検証](../../crates/services/src/services/repository_memory.rs#L239-L294)、[次回起動前の回復](../../crates/services/src/services/repository_memory.rs#L104-L149)、[後続編集保持のテスト](../../crates/services/src/services/repository_memory.rs#L1128-L1146)
 
 ## Source 統合と Wiki 反映を分ける
 
@@ -83,7 +83,7 @@ flowchart LR
 
 [正式統合](formal-integration.md)は別の契約で、選択した source の履歴を保持した検証済み commit を公開する。Memory が有効な場合だけ、受付時に固定した source event と、統合固有の変更があればその event を明示的な統合記録に結び付ける。Git 公開やカードの Done が Wiki receipt の成功を意味するわけではない。[統合側の記録](../../crates/server/src/routes/integrations/runtime.rs#L1093-L1159)
 
-外部 PR の観測は EVK 所有の統合 transaction を持たない。保守的に source commit の祖先関係で証明できるイベントだけを対応付け、同じ Workspace・近い時刻という理由では未 push の変更を処理済みにしない。外部 squash/rebase の所属が証明できなければ未消費のまま残る。[外部統合の契約](../../crates/services/src/services/repository_memory.rs#L368-L427)
+外部 PR の観測は LVK 所有の統合 transaction を持たない。保守的に source commit の祖先関係で証明できるイベントだけを対応付け、同じ Workspace・近い時刻という理由では未 push の変更を処理済みにしない。外部 squash/rebase の所属が証明できなければ未消費のまま残る。[外部統合の契約](../../crates/services/src/services/repository_memory.rs#L368-L427)
 
 ## Sync の入力は統合済み source に結び付く凍結 snapshot
 

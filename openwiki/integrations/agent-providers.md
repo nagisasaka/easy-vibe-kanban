@@ -1,7 +1,7 @@
 ---
 type: reference
 title: Agent provider・設定・MCP・Skill
-description: EVK の provider adapter が保証する能力、設定の解決、Skill の注入、MCP の二つの接続方向と変更時の境界。
+description: LVK の provider adapter が保証する能力、設定の解決、Skill の注入、MCP の二つの接続方向と変更時の境界。
 tags: [providers, capabilities, mcp, skills, configuration]
 sources:
   - id: openwiki-source-a5b446edff482bd8a00e1a92
@@ -50,7 +50,7 @@ verified:
 
 # Agent provider・設定・MCP・Skill
 
-EVK は provider ごとの通信を adapter で解釈し、共通の [AgentRun](../concepts/session-and-agent-run.md) として実行する。現行の通常ビルドの CodingAgent は ClaudeCode、Gemini、Codex、OhMyPi の4種類である。provider を追加するときは enum と起動処理だけでなく、能力の解決、制御の符号化、native event の正規化を一緒に扱う。[対象 enum](../../crates/executors/src/executors/mod.rs#L130-L137)・[adapter 境界](../../crates/executors/src/executors/provider_adapter.rs#L1-L6)
+LVK は provider ごとの通信を adapter で解釈し、共通の [AgentRun](../concepts/session-and-agent-run.md) として実行する。現行の通常ビルドの CodingAgent は ClaudeCode、Gemini、Codex、OhMyPi の4種類である。provider を追加するときは enum と起動処理だけでなく、能力の解決、制御の符号化、native event の正規化を一緒に扱う。[対象 enum](../../crates/executors/src/executors/mod.rs#L130-L137)・[adapter 境界](../../crates/executors/src/executors/provider_adapter.rs#L1-L6)
 
 ## Profile と実行能力
 
@@ -75,9 +75,9 @@ Approval が Native という capability snapshot と、host に人の応答を�
 
 ### Codex の override と解決済み effort を分ける
 
-EVK の profile/実行 override が空でも、app-server は利用者・project 設定から model と reasoning effort を解決できる。client は `thread/start` / `thread/resume` の応答を採用してから collaboration mode と turn を構築する。したがって依頼の JSON の `reasoning_effort: null` だけで「設定ファイルの effort が無視された」と結論しない。逆に provider が返した `None` も解決結果として採用し、前回の明示値を残さない。[採用処理](../../crates/executors/src/executors/codex/client.rs#L183-L190)、[start/resume と turn](../../crates/executors/src/executors/codex/client.rs#L257-L322)
+LVK の profile/実行 override が空でも、app-server は利用者・project 設定から model と reasoning effort を解決できる。client は `thread/start` / `thread/resume` の応答を採用してから collaboration mode と turn を構築する。したがって依頼の JSON の `reasoning_effort: null` だけで「設定ファイルの effort が無視された」と結論しない。逆に provider が返した `None` も解決結果として採用し、前回の明示値を残さない。[採用処理](../../crates/executors/src/executors/codex/client.rs#L183-L190)、[start/resume と turn](../../crates/executors/src/executors/codex/client.rs#L257-L322)
 
-実際の値を診断するときは、依頼 override と native の thread 応答・後続 turn の設定を分けて確認する。継承の回帰テストは [reasoning_tests](../../crates/executors/src/executors/codex/client/reasoning_tests.rs#L67-L205) にある。EVK の型が値を表現できることを、任意の provider/model がその値に対応する保証とは扱わない。
+実際の値を診断するときは、依頼 override と native の thread 応答・後続 turn の設定を分けて確認する。継承の回帰テストは [reasoning_tests](../../crates/executors/src/executors/codex/client/reasoning_tests.rs#L67-L205) にある。LVK の型が値を表現できることを、任意の provider/model がその値に対応する保証とは扱わない。
 
 ## Skill と Tool Manager
 
@@ -92,7 +92,7 @@ Codex の selected_skills は name/path の参照であり、渡し方は実行�
 
 この区別の理由は、Goal activation に UserInput 配列がないこと、余分な推論 turn を発生させず、永続する 4,000 文字上限の objective を Skill 参照で膨らませないことである。これはソースコメントと [Control and skills の設計説明](../../docs/future/agent-runtime/delegated-agent-display.md#control-and-skills) に記録された理由である。同文書は明示的な承認・廃止ステータスを持たず Validation plan も含むが、この Skill の節は現行コードおよび [通常 chat の順序テスト](../../crates/executors/src/executors/codex.rs#L1915-L1942)、[Goal の初回・再開・既存指示保持テスト](../../crates/executors/src/executors/codex.rs#L2031-L2054) と整合する。文書内の将来の再投影構想まで実装済みとは扱わない。
 
-両経路とも、旧 EVK 同梱 `skills/llm-wiki` 配下の参照を除外する。同じ名前でも利用者が別の場所に置いた Skill は残し、既存ファイルを削除しない。旧 Pipeline の互換処理は [Card context と LLM Wiki の終了](../concepts/card-context-and-llm-wiki.md)に置く。[選択のフィルター](../../crates/executors/src/legacy_wiki.rs#L101-L119)
+両経路とも、旧 LVK 同梱 `skills/llm-wiki` 配下の参照を除外する。同じ名前でも利用者が別の場所に置いた Skill は残し、既存ファイルを削除しない。旧 Pipeline の互換処理は [Card context と LLM Wiki の終了](../concepts/card-context-and-llm-wiki.md)に置く。[選択のフィルター](../../crates/executors/src/legacy_wiki.rs#L101-L119)
 
 PlanWithGoal の承認後の遷移は [Session の承認・質問](../concepts/session-and-agent-run.md#承認質問と現在の接続状態)、resume 時に現在の host context を会話へ反映する順序と失敗は [Provider session の継続](../concepts/session-and-agent-run.md#provider-session-の継続と取り込み)を参照する。
 
@@ -118,19 +118,19 @@ adapter は provider の nested message / tool block も解釈するが、raw fr
 
 ### Coding agent → 外部 MCP server
 
-EVK の設定操作は agent の native config を更新する。Codex は TOML の mcp_servers、他の現行 provider は JSON の mcpServers を用いる。advanced editor は明示的な機密読取確認と expected_revision を要し、既存 enclosing config の対象 server map を置換する。同じ provider を EVK 外で使う場合にも設定が及ぶ。[config 形式](../../crates/executors/src/executors/mod.rs#L139-L171)・[書き込み](../../crates/server/src/routes/config.rs#L363-L443)
+LVK の設定操作は agent の native config を更新する。Codex は TOML の mcp_servers、他の現行 provider は JSON の mcpServers を用いる。advanced editor は明示的な機密読取確認と expected_revision を要し、既存 enclosing config の対象 server map を置換する。同じ provider を LVK 外で使う場合にも設定が及ぶ。[config 形式](../../crates/executors/src/executors/mod.rs#L139-L171)・[書き込み](../../crates/server/src/routes/config.rs#L363-L443)
 
 接続例と通常の設定手順は [Connecting MCP Servers](../../docs/integrations/mcp-server-configuration.mdx) を参照する。そこに示す JSON 例を Codex の保存形式そのものと解釈しない。
 
-OpenWiki maintenance writer は例外的に、登録 MCP が実行の前提である。EVK は該当 thread だけに `openwiki mcp --host codex` を設定し、`enabled=true` / `required=true` と 10 秒の startup timeout を指定する。thread 登録後、通常 turn / Goal activation の前に、その thread の MCP catalog で六つの lifecycle tool が揃うことを確認する。server 名や ready 状態だけでは十分としない。欠落・不正な pagination・15 秒の preflight timeout は writer 起動失敗として返し、この確認自体では Wiki run を開始しない。[thread 設定](../../crates/executors/src/executors/codex.rs#L922-L949)、[起動順](../../crates/executors/src/executors/codex.rs#L1160-L1188)、[tool 検査](../../crates/executors/src/executors/codex/client/openwiki.rs#L9-L89)
+OpenWiki maintenance writer は例外的に、登録 MCP が実行の前提である。LVK は該当 thread だけに `openwiki mcp --host codex` を設定し、`enabled=true` / `required=true` と 10 秒の startup timeout を指定する。thread 登録後、通常 turn / Goal activation の前に、その thread の MCP catalog で六つの lifecycle tool が揃うことを確認する。server 名や ready 状態だけでは十分としない。欠落・不正な pagination・15 秒の preflight timeout は writer 起動失敗として返し、この確認自体では Wiki run を開始しない。[thread 設定](../../crates/executors/src/executors/codex.rs#L922-L949)、[起動順](../../crates/executors/src/executors/codex.rs#L1160-L1188)、[tool 検査](../../crates/executors/src/executors/codex/client/openwiki.rs#L9-L89)
 
 通常 coding の thread は OpenWiki MCP を無効にし、旧 `.llm-wiki` の生成停止と canonical OpenWiki の読取専用契約を developer instructions に追加する。保守 writer に設定する required MCP とは異なる所有境界である。[通常 thread の設定](../../crates/executors/src/executors/codex.rs#L952-L966)
 
-Reviewer は別の信頼済み role で、ReadOnly / approval Never を設定し、OpenWiki MCP と Skill を thread 内で無効化する。writer の可用性確認を Reviewer に適用して、書込道具を復活させてはいけない。[Reviewer override](../../crates/executors/src/executors/codex.rs#L905-L921)。登録 MCP ではなく自作の shell/stdin bridge で OpenWiki を呼んでも、EVK の [完了証明](../operations/openwiki-maintenance.md)を代替しない。
+Reviewer は別の信頼済み role で、ReadOnly / approval Never を設定し、OpenWiki MCP と Skill を thread 内で無効化する。writer の可用性確認を Reviewer に適用して、書込道具を復活させてはいけない。[Reviewer override](../../crates/executors/src/executors/codex.rs#L905-L921)。登録 MCP ではなく自作の shell/stdin bridge で OpenWiki を呼んでも、LVK の [完了証明](../operations/openwiki-maintenance.md)を代替しない。
 
-### 外部 MCP client → EVK
+### 外部 MCP client → LVK
 
-EVK の MCP server は stdio で動き、HTTP backend に要求を転送する。Global は Issue、Project、Repo、Workspace、Session などを扱い、Orchestrator は実行 context を必須とする限定 router で、list_workspaces と delete_workspace を公開しない。[起動](../../crates/mcp/src/bin/vibe_kanban_mcp.rs#L23-L49)・[context の取得](../../crates/mcp/src/task_server/mod.rs#L87-L119)・[公開 router](../../crates/mcp/src/task_server/tools/mod.rs#L52-L73)
+LVK の MCP server は stdio で動き、HTTP backend に要求を転送する。Global は Issue、Project、Repo、Workspace、Session などを扱い、Orchestrator は実行 context を必須とする限定 router で、list_workspaces と delete_workspace を公開しない。[起動](../../crates/mcp/src/bin/vibe_kanban_mcp.rs#L23-L49)・[context の取得](../../crates/mcp/src/task_server/mod.rs#L87-L119)・[公開 router](../../crates/mcp/src/task_server/tools/mod.rs#L52-L73)
 
 backend の解決は VIBE_BACKEND_URL が優先され、続いて host/port の環境変数と port file を用いる。したがって「stdio client で接続する」ことと「backend が必ず localhost に固定される」ことは別である。導入例は [Vibe Kanban MCP Server](../../docs/integrations/vibe-kanban-mcp-server.mdx) を参照する。[backend URL の解決](../../crates/mcp/src/bin/vibe_kanban_mcp.rs#L100-L133)
 

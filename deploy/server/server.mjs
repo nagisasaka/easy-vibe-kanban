@@ -21,9 +21,7 @@ export function domain(value, name) {
 }
 
 export function serverSettings(env) {
-  if (env.EVK_HOST && env.EVK_DOMAIN && env.EVK_HOST !== env.EVK_DOMAIN)
-    throw new Error("Set EVK_HOST or EVK_DOMAIN, not conflicting values");
-  const value = env.EVK_HOST || env.EVK_DOMAIN;
+  const value = env.LVK_HOST;
   const version = isIP(value ?? "");
   // Browsers canonicalise IPv6 literals in Host and Origin headers.
   const app =
@@ -31,12 +29,12 @@ export function serverSettings(env) {
       ? new URL(`https://[${value}]`).hostname.slice(1, -1)
       : version === 4
         ? value
-        : domain(value, "EVK_HOST");
-  const preview = env.EVK_PREVIEW_DOMAIN
-    ? domain(env.EVK_PREVIEW_DOMAIN, "EVK_PREVIEW_DOMAIN")
+        : domain(value, "LVK_HOST");
+  const preview = env.LVK_PREVIEW_DOMAIN
+    ? domain(env.LVK_PREVIEW_DOMAIN, "LVK_PREVIEW_DOMAIN")
     : null;
   if (preview && (app === preview || app.endsWith(`.${preview}`))) {
-    throw new Error("EVK_DOMAIN must be outside the preview wildcard domain");
+    throw new Error("LVK_HOST must be outside the preview wildcard domain");
   }
   return { app, preview };
 }
@@ -49,7 +47,7 @@ export function renderNginx(template, settings) {
     ? `server {
         listen 8443 ssl;
         server_name "~^(?<preview_target>102[4-9]|10[3-9][0-9]|1[1-9][0-9]{2}|[2-9][0-9]{3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])[.]${preview.replaceAll(".", "[.]")}$";
-        # Only unprivileged development ports, excluding EVK and nginx ports.
+        # Only unprivileged development ports, excluding LVK and nginx ports.
         if ($preview_target ~ "^(3000|3001|8443)$") { return 403; }
         location / { proxy_pass http://127.0.0.1:3001; }
     }`
@@ -218,7 +216,7 @@ export function supervise(
 
 async function main() {
   const settings = serverSettings(process.env);
-  const secrets = "/run/evk-secrets";
+  const secrets = "/run/lvk-secrets";
   const readSecrets = async () => {
     const [certificate, key, passwords] = await Promise.all([
       readFile(`${secrets}/tls/fullchain.pem`),
@@ -237,8 +235,8 @@ async function main() {
   for (const dir of ["/home/appuser", "/repos", "/var/tmp"])
     await access(dir, constants.W_OK);
   for (const name of ["client", "proxy", "fastcgi", "uwsgi", "scgi"])
-    await mkdir(`/tmp/evk-server/${name}`, { recursive: true, mode: 0o700 });
-  const config = "/tmp/evk-server/nginx.conf";
+    await mkdir(`/tmp/lvk-server/${name}`, { recursive: true, mode: 0o700 });
+  const config = "/tmp/lvk-server/nginx.conf";
   const template = await readFile(
     new URL("./nginx.conf.template", import.meta.url),
     "utf8",
@@ -288,7 +286,7 @@ async function main() {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
-    console.error(`EVK startup failed: ${error.message}`);
+    console.error(`LVK startup failed: ${error.message}`);
     process.exitCode = 1;
   });
 }

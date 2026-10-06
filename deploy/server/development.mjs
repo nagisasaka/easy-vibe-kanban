@@ -53,9 +53,9 @@ async function main() {
   process.chdir(repo);
   const read = async () => {
     const [certificate, key, passwords] = await Promise.all([
-      readFile("/run/evk-secrets/tls/fullchain.pem"),
-      readFile("/run/evk-secrets/tls/privkey.pem"),
-      readFile("/run/evk-secrets/htpasswd", "utf8"),
+      readFile("/run/lvk-secrets/tls/fullchain.pem"),
+      readFile("/run/lvk-secrets/tls/privkey.pem"),
+      readFile("/run/lvk-secrets/htpasswd", "utf8"),
     ]);
     return { certificate, key, passwords };
   };
@@ -67,12 +67,12 @@ async function main() {
     settings,
   );
   for (const name of ["client", "proxy", "fastcgi", "uwsgi", "scgi"])
-    await mkdir(`/tmp/evk-server/${name}`, { recursive: true, mode: 0o700 });
+    await mkdir(`/tmp/lvk-server/${name}`, { recursive: true, mode: 0o700 });
   const template = await readFile(
     new URL("./nginx.conf.template", import.meta.url),
     "utf8",
   );
-  const config = "/tmp/evk-server/nginx.conf";
+  const config = "/tmp/lvk-server/nginx.conf";
   await writeFile(
     config,
     renderNginx(template, settings)

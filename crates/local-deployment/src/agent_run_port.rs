@@ -925,19 +925,19 @@ impl LocalAgentRunPort {
             env.insert("LVK_RESOURCE_MEDIATOR", "1");
         }
         if openwiki_maintenance {
-            env.insert("EVK_OPENWIKI_MAINTENANCE", "1");
+            env.insert("LVK_OPENWIKI_MAINTENANCE", "1");
         }
         if openwiki_reviewer {
-            env.insert("EVK_OPENWIKI_REVIEWER", "1");
+            env.insert("LVK_OPENWIKI_REVIEWER", "1");
         }
         if !memory_instructions.is_empty() {
             env.insert(
-                "EVK_REPOSITORY_MEMORY_INSTRUCTIONS",
+                "LVK_REPOSITORY_MEMORY_INSTRUCTIONS",
                 memory_instructions.join("\n\n"),
             );
         }
         env.insert(
-            "EVK_SHARED_RESOURCE_ROOTS",
+            "LVK_SHARED_RESOURCE_ROOTS",
             serde_json::to_string(&shared_roots)
                 .map_err(|error| AgentRunPortError::Rejected(error.to_string()))?,
         );

@@ -135,7 +135,7 @@ This is a separate Rust workspace, excluded from the public fork's default
 `pnpm run check`, `pnpm run lint`, and root `cargo test --workspace` gates.
 Direct Cargo validation requires access to the private billing dependency;
 disabling `vk-billing` or installing SSH alone does not make that dependency
-public. Do not attempt these commands as routine local EVK validation when the
+public. Do not attempt these commands as routine local LVK validation when the
 required access is unavailable.
 
 For remote backend work in an environment with dependency access:

@@ -1579,7 +1579,7 @@ impl ContainerService for LocalContainerService {
         env.insert("VK_WORKSPACE_ID", workspace.id.to_string());
         env.insert("VK_WORKSPACE_BRANCH", &workspace.branch);
         env.insert(
-            "EVK_SHARED_RESOURCE_ROOTS",
+            "LVK_SHARED_RESOURCE_ROOTS",
             serde_json::to_string(
                 &repos
                     .iter()

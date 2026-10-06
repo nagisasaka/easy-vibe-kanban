@@ -5,7 +5,7 @@ description: "原資料の機械索引を共有し、既存の独立レビュー
 
 # OpenWiki Bootstrap：共通ドキュメント索引と文書範囲照合
 
-## EVK実装仕様 — Compatibility Review反映版
+## LVK実装仕様 — Compatibility Review反映版
 
 - 状態：**Compatibility Review反映済み／実装・実行検証は未実施**
 - 想定保存先：`docs/design/openwiki-document-inventory.md`
@@ -74,7 +74,7 @@ description: "原資料の機械索引を共有し、既存の独立レビュー
 - symlinkは自動追跡しない。対象候補ならその状態を記録する。
 - 今回生成するOpenWiki出力ディレクトリは、独立した原資料として索引へ含めない。
 - `openwiki/INSTRUCTIONS.md`は既存のrepository固有brief経路で扱い、この索引で置き換えない。
-- 現行EVKがinstructionとして扱い、Wiki evidenceへの利用を禁止している`AGENTS.md`／`CLAUDE.md`等は、通常の文書照合対象から分離する。所在を残す場合は`instruction_only`等とし、見出し抽出・Wikiへの収録要求・findingの根拠には使わない。既存instruction経路は維持する。
+- 現行LVKがinstructionとして扱い、Wiki evidenceへの利用を禁止している`AGENTS.md`／`CLAUDE.md`等は、通常の文書照合対象から分離する。所在を残す場合は`instruction_only`等とし、見出し抽出・Wikiへの収録要求・findingの根拠には使わない。既存instruction経路は維持する。
 
 ### snapshotと読取本文の対応
 
@@ -124,7 +124,7 @@ OpenWiki 0.5.1の独自matcherを、一般的なGitignore parserと同一とは�
 
 ## 4. Markdown／MDX索引の生成
 
-Markdown文法を正規表現だけで再実装しない。EVKが既に使う適切なパーサーを優先し、なければ保守されている既存パーサーを小さな依存として利用する。
+Markdown文法を正規表現だけで再実装しない。LVKが既に使う適切なパーサーを優先し、なければ保守されている既存パーサーを小さな依存として利用する。
 
 ### 共通の抽出要件
 
@@ -193,7 +193,7 @@ L97  H3 再接続できない条件
 - 候補数、Markdown／MDX解析済み数、ファイル単位掲載数、読取・解析問題数。
 - 各対象ファイルのパス・処理状態・抽出できた構造情報。
 
-識別情報はEVK側で付与し、LLMに生成させない。既存Workflow metadataに同等の情報があれば重複保存は不要。
+識別情報はLVK側で付与し、LLMに生成させない。既存Workflow metadataに同等の情報があれば重複保存は不要。
 
 索引利用不可の場合は利用不可理由とidentityだけでよく、空の索引ファイルを作らない。候補数は未列挙を表す値とし、正常に列挙した結果のゼロと区別する。
 
@@ -276,7 +276,7 @@ ignoreによる利用不可の場合も同じWorkflowを実行し、索引利用
 >
 > 索引はhostが用意した共通入力です。変更しないでください。instruction専用資料は既存instruction経路で扱い、通常文書の網羅対象やWiki evidenceへ昇格させないでください。原文位置の対応を確認できない資料はファイル単位で読み、索引にない行番号を推測しないでください。
 
-共通指示はEVK側の小さな共通helper等に一元化する。OpenWiki標準Skillをコピーして維持しない。repository所有者の既存`INSTRUCTIONS.md`を自動上書きしない。
+共通指示はLVK側の小さな共通helper等に一元化する。OpenWiki標準Skillをコピーして維持しない。repository所有者の既存`INSTRUCTIONS.md`を自動上書きしない。
 
 ## 8. Generatorの仕事
 
@@ -463,7 +463,7 @@ Reviewerに全文書本文の独立した再通読は要求しない。索引全
 
 ### 実装時に検証する事項
 
-MDXの静的解析はCompatibility Review後に追加した仕様であり、特定のパーサーやそのEVKへの接続を検証済みという意味ではない。実装時に依存・配布方法と第4節の抽出範囲を確認する。
+MDXの静的解析はCompatibility Review後に追加した仕様であり、特定のパーサーやそのLVKへの接続を検証済みという意味ではない。実装時に依存・配布方法と第4節の抽出範囲を確認する。
 
 新しい索引を渡した状態でのReviewerの読取、digest照合、分割読取、parserの位置対応、既存Workflowへの回帰、および品質効果は未検証である。実装時に第12節のテストと第13節の小さな比較で確認する。
 

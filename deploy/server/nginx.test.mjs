@@ -1,4 +1,4 @@
-// Native nginx integration: no Docker, no real EVK database or agent calls.
+// Native nginx integration: no Docker, no real LVK database or agent calls.
 import assert from "node:assert/strict";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { once } from "node:events";
@@ -14,9 +14,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import { test } from "node:test";
 import { authority, renderNginx, serverSettings } from "./server.mjs";
 
-const nginx = process.env.EVK_TEST_NGINX || "nginx";
+const nginx = process.env.LVK_TEST_NGINX || "nginx";
 const available = spawnSync(nginx, ["-v"]).status === 0;
-if (!available && process.env.EVK_REQUIRE_NGINX_TEST === "1") {
+if (!available && process.env.LVK_REQUIRE_NGINX_TEST === "1") {
   throw new Error("nginx is required for this CI gate");
 }
 
@@ -31,16 +31,16 @@ function verifyIdentity(host, certificate) {
   return checkServerIdentity(host, certificate);
 }
 
-for (const host of ["evk.example.test", "127.0.0.1", "2001:db8::1"])
+for (const host of ["lvk.example.test", "127.0.0.1", "2001:db8::1"])
   test(
     `HTTPS ingress protects HTTP/WS/SSE and isolates previews (${host})`,
     {
       skip:
-        !available && "nginx not installed (set EVK_TEST_NGINX to a binary)",
+        !available && "nginx not installed (set LVK_TEST_NGINX to a binary)",
       timeout: 20000,
     },
     async (t) => {
-      const dir = await mkdtemp(join(tmpdir(), "evk-nginx-integration-"));
+      const dir = await mkdtemp(join(tmpdir(), "lvk-nginx-integration-"));
       t.after(() => rm(dir, { recursive: true, force: true }));
       const sockets = new Set();
       let streamEnded = false;
@@ -96,9 +96,9 @@ for (const host of ["evk.example.test", "127.0.0.1", "2001:db8::1"])
           "-days",
           "1",
           "-subj",
-          "/CN=evk.example.test",
+          "/CN=lvk.example.test",
           "-addext",
-          "subjectAltName=DNS:evk.example.test,DNS:*.preview.example.test,IP:127.0.0.1,IP:2001:db8::1",
+          "subjectAltName=DNS:lvk.example.test,DNS:*.preview.example.test,IP:127.0.0.1,IP:2001:db8::1",
           "-keyout",
           keyPath,
           "-out",
@@ -106,15 +106,15 @@ for (const host of ["evk.example.test", "127.0.0.1", "2001:db8::1"])
         ],
         { stdio: "ignore" },
       );
-      // Password evk-test-only; this fixture is never used by the distribution.
+      // Password lvk-test-only; this fixture is never used by the distribution.
       await writeFile(
         join(dir, "htpasswd"),
-        "test:$2b$12$1ea3Q20isUydEeMVrwel0ePEoaznkgIHV3kX8vsbMCjuqzQvsTUki\n",
+        "test:$2b$12$1ea3Q20isUydEeMVrwel0ecS0vCXLuctohZs1RomnFmxiGGxyCAOC\n",
       );
       await writeFile(join(dir, "mime.types"), "types { text/html html; }\n");
       const settings = serverSettings({
-        EVK_HOST: host,
-        EVK_PREVIEW_DOMAIN: "preview.example.test",
+        LVK_HOST: host,
+        LVK_PREVIEW_DOMAIN: "preview.example.test",
       });
       const template = await readFile(
         new URL("./nginx.conf.template", import.meta.url),
@@ -124,11 +124,11 @@ for (const host of ["evk.example.test", "127.0.0.1", "2001:db8::1"])
         // Node child pipes are Unix sockets, unlike Docker's stdout pipe; nginx
         // cannot reopen them as /dev/stdout. Keep this test's access log in its tempdir.
         .replace("/dev/stdout", join(dir, "access.log"))
-        .replaceAll("/tmp/evk-server", dir)
+        .replaceAll("/tmp/lvk-server", dir)
         .replace("/etc/nginx/mime.types", join(dir, "mime.types"))
-        .replace("/run/evk-secrets/tls/fullchain.pem", certPath)
-        .replace("/run/evk-secrets/tls/privkey.pem", keyPath)
-        .replace("/run/evk-secrets/htpasswd", join(dir, "htpasswd"))
+        .replace("/run/lvk-secrets/tls/fullchain.pem", certPath)
+        .replace("/run/lvk-secrets/tls/privkey.pem", keyPath)
+        .replace("/run/lvk-secrets/htpasswd", join(dir, "htpasswd"))
         .replaceAll("listen 8443", `listen ${port}`)
         .replaceAll("127.0.0.1:3000", `127.0.0.1:${backendPort}`)
         .replaceAll("127.0.0.1:3001", `127.0.0.1:${backendPort}`);
@@ -160,7 +160,7 @@ for (const host of ["evk.example.test", "127.0.0.1", "2001:db8::1"])
         }
       });
       const ca = await readFile(certPath);
-      const authorization = `Basic ${Buffer.from("test:evk-test-only").toString("base64")}`;
+      const authorization = `Basic ${Buffer.from("test:lvk-test-only").toString("base64")}`;
       function request(path = "/", host = settings.app, headers = {}) {
         return new Promise((resolve, reject) => {
           const req = https.get(

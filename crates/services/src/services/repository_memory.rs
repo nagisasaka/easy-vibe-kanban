@@ -1,4 +1,4 @@
-//! Repository-memory lifecycle attached to EVK's existing Git and shared-folder
+//! Repository-memory lifecycle attached to LVK's existing Git and shared-folder
 //! services. No model client: semantic drafts come from the active coding host.
 use std::{collections::HashSet, path::Path};
 
@@ -256,7 +256,7 @@ fn finish_source_publication(
     }
     let root = &run.repository_path;
     let before = event.source_commit.clone();
-    let marker = format!("EVK-Memory-Source: {}", run.run_id);
+    let marker = format!("LVK-Memory-Source: {}", run.run_id);
     let original_tree = git_text(root, &["rev-parse", &format!("{before}^{{tree}}")])?;
     if original_tree != publication.staged_tree {
         let range = format!("{before}..HEAD");
@@ -362,10 +362,10 @@ pub fn prepare_integration(
 }
 
 pub fn integration_commit_message(summary: &str, integration_id: Uuid) -> String {
-    format!("{summary}\n\nEVK-Memory-Integration: {integration_id}")
+    format!("{summary}\n\nLVK-Memory-Integration: {integration_id}")
 }
 
-/// External PR observations have no EVK-owned merge transaction carrying an
+/// External PR observations have no LVK-owned merge transaction carrying an
 /// explicit event set. Use ancestry only as a conservative fallback: timestamps
 /// or shared workspace membership do not prove that a later/unpushed change was
 /// part of the PR. Unknown external squash/rebase membership remains unconsumed.
@@ -490,7 +490,7 @@ pub fn recover_integrations(store: &RepositoryMemoryStore, root: &Path) -> anyho
             continue;
         }
         let range = format!("{}..{}", record.before_commit, record.target_branch);
-        let marker = format!("EVK-Memory-Integration: {}", record.id);
+        let marker = format!("LVK-Memory-Integration: {}", record.id);
         let output = std::process::Command::new("git")
             .arg("-C")
             .arg(root)
@@ -537,7 +537,7 @@ pub fn unresolved_integration(store: &RepositoryMemoryStore) -> anyhow::Result<b
 }
 
 /// Selection uses explicit integration records, not original commit ancestry
-/// (EVK's direct merge is a squash). Failed receipts remain pending.
+/// (LVK's direct merge is a squash). Failed receipts remain pending.
 pub fn pending_events(
     store: &RepositoryMemoryStore,
     target_branch: &str,
@@ -587,7 +587,7 @@ mod tests {
         std::fs::create_dir_all(root.join("openwiki")).unwrap();
         git_command(root, &["init", "-b", "main"]);
         git_command(root, &["config", "user.email", "test@example.invalid"]);
-        git_command(root, &["config", "user.name", "EVK test"]);
+        git_command(root, &["config", "user.name", "LVK test"]);
         std::fs::write(root.join("source.txt"), "original source\n").unwrap();
         std::fs::write(root.join("openwiki/index.md"), "canonical snapshot\n").unwrap();
         git_command(root, &["add", "."]);
@@ -1068,7 +1068,7 @@ mod tests {
         GitService::new()
             .commit_staged_snapshot(
                 &root,
-                &format!("fix: first task\n\nEVK-Memory-Source: {}", context.run_id),
+                &format!("fix: first task\n\nLVK-Memory-Source: {}", context.run_id),
                 &context.base_commit,
                 &publication.staged_tree,
             )
@@ -1323,7 +1323,7 @@ mod tests {
         git_command(&root, &["merge", "--squash", &first_event.source_commit]);
         git_command(
             &root,
-            &["commit", "-m", "external squash without EVK membership"],
+            &["commit", "-m", "external squash without LVK membership"],
         );
         let squash = git_command(&root, &["rev-parse", "HEAD"]);
         let mut unknown = first_event;

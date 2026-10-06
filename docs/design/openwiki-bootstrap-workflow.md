@@ -1,8 +1,8 @@
 # OpenWiki Bootstrap Review Workflow
-## EVK 詳細設計仕様
+## LVK 詳細設計仕様
 
 Status: Implementation Ready  
-Target: easy-vibe-kanban (EVK)  
+Target: lucky-vibe-kanban (LVK)
 Depends on: existing OpenWiki integration  
 Canonical path: `docs/design/openwiki-bootstrap-workflow.md`
 
@@ -10,9 +10,9 @@ Canonical path: `docs/design/openwiki-bootstrap-workflow.md`
 
 # 1. 目的
 
-現在EVKでは、Repository SettingsでOpenWikiを有効化し、対象branchを指定して `Initialize Wiki` を実行すると、専用workspace/worktreeを作成し、CodexがOpenWiki MCPを利用して初期Wikiを生成する。
+現在LVKでは、Repository SettingsでOpenWikiを有効化し、対象branchを指定して `Initialize Wiki` を実行すると、専用workspace/worktreeを作成し、CodexがOpenWiki MCPを利用して初期Wikiを生成する。
 
-この仕組みを、EVK既存のサーバーサイドDAG / Workflow機能上で実行する方式へ変更する。
+この仕組みを、LVK既存のサーバーサイドDAG / Workflow機能上で実行する方式へ変更する。
 
 目的は、初期Wiki生成を一つのCodex sessionだけで完結させず、
 
@@ -30,7 +30,7 @@ Canonical path: `docs/design/openwiki-bootstrap-workflow.md`
 
 OpenWiki初期化1回につき、Wiki専用のWorkflow Attemptを1つ作成する。
 
-Workflow Attempt全体では、現在のEVK Workflow機能が持つ「1つの共有workspace/worktree」を利用する。
+Workflow Attempt全体では、現在のLVK Workflow機能が持つ「1つの共有workspace/worktree」を利用する。
 
 新しいworktree管理機構を作らない。
 
@@ -77,7 +77,7 @@ OpenWiki Bootstrap Workflow内部のCodex Agent StepではCodex `/goal` を使�
 理由:
 
 - 各stepはbounded jobである
-- 長時間継続性はEVK Workflow engineが担う
+- 長時間継続性はLVK Workflow engineが担う
 - retry / branch / condition / node stateはDAG側で管理する
 - Goal state machineとの二重管理を避ける
 - Reviewerをfresh contextで起動する必要がある
@@ -120,7 +120,7 @@ Initialize Wiki
 
 # 5. System Workflow Template
 
-EVK内部にsystem-managed workflow templateを定義する。
+LVK内部にsystem-managed workflow templateを定義する。
 
 例:
 
@@ -509,7 +509,7 @@ PASS経路、Refine経路ともFinal Validateを通す。
 既に実装済みの、
 
 ```text
-EVK development
+LVK development
 → Change Manifest
 → source integration
 → normal OpenWiki update
@@ -631,7 +631,7 @@ real model callをCI必須にしない。
 
 以下をすべて満たしたら完了。
 
-1. `Initialize Wiki` が既存EVK Workflow engine上のsystem workflowとして実行される。
+1. `Initialize Wiki` が既存LVK Workflow engine上のsystem workflowとして実行される。
 2. Workflow Attempt全体で1つのWiki worktreeを共有する。
 3. Generate / Review / Refineはそれぞれfresh Codex sessionである。
 4. `/goal`を使用しない。

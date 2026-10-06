@@ -19,7 +19,7 @@ The implementation goal resolves the scope choices in specifications 01 and 02:
   and one local target, with one explicitly adopted Workspace per Card.
 - Reject Cards with other unintegrated repository results. Preserve ordinary
   multi-repository development and repository-specific context.
-- One EVK service, with parallel Workspaces. Canonical Git common-directory
+- One LVK service, with parallel Workspaces. Canonical Git common-directory
   identity prevents duplicate registrations bypassing publication exclusion.
 - Cooperative local execution within existing permissions. Worktrees and
   prompt restrictions are not OS-level access control.
@@ -77,7 +77,7 @@ MCP evidence below are the acceptance record.
 ## Early environment checks
 
 - Chrome initially had no debugger listener. Started the existing Chrome wrapper
-  on port 9222; Chrome DevTools MCP successfully listed the EVK page and read its
+  on port 9222; Chrome DevTools MCP successfully listed the LVK page and read its
   accessibility snapshot on localhost:4020. No user run was stopped.
 - Existing Vite listens on `0.0.0.0:4020`; the backend executable and cwd resolve
   to this checkout. It is the baseline binary, not evidence for modified code.
@@ -139,7 +139,7 @@ Confirmed defects found and addressed in this implementation:
 The following is the initial fixture record; later subsections record formal
 Integration, update and subsequent-reader outcomes on specific revisions:
 
-- Root: `/var/tmp/evk-parallel-acceptance-9NGp68/repository`.
+- Root: `/var/tmp/lvk-parallel-acceptance-9NGp68/repository`.
 - Target: `test/parallel-integration-v1` (a separate disposable repository).
 - Initial source: `d265ae7973aaed7aa195efc22ce634c99714679a`.
 - Baseline `npm test`: 2 passed; `npm run check`: passed.
@@ -157,7 +157,7 @@ goal. Retain the trial repository and future run evidence for inspection.
 
 The development backend was rebuilt and restarted only after confirming no
 active AgentRun or Script. A SQLite backup is retained outside the repository at
-`/var/tmp/evk-parallel-acceptance-9NGp68/pre-feature-db.sqlite`. Migration
+`/var/tmp/lvk-parallel-acceptance-9NGp68/pre-feature-db.sqlite`. Migration
 `20260918000000` applied successfully. The server executable SHA-256 is
 `a445f950aa86961f3928a521d5713ee4afe1abf1b8abe055a6bfe2cada759661`.
 Subsequent changes before this trial were comments, generated type comments and
@@ -347,7 +347,7 @@ implementation branch nor main received trial commits.
 
 | Evidence | Value |
 | --- | --- |
-| EVK revision | `4f916e6b655324bc9ef0fdc1f25e0d73febc3d04` plus this uncommitted implementation |
+| LVK revision | `4f916e6b655324bc9ef0fdc1f25e0d73febc3d04` plus this uncommitted implementation |
 | Server executable SHA-256 | `59ca9937f439a33b84e3e602d22dd5bf3b48520781493743737ab015dc92b7fa` |
 | Integration | `341eed24-0fca-4801-a96a-3966d2f1b664` |
 | Integration Workspace / Session | `a1ccb4fb-0d9b-4a95-a90d-08db2950573b` / `b2bd35ea-ada2-4622-a7a0-91f72e813bc0` |
@@ -477,7 +477,7 @@ After F's read-only evaluation finished, attached a second isolated repository
 through the normal repository registration and Workspace attachment APIs. This
 does not alter the source state on which the earlier reader was evaluated:
 
-- Repository: `/var/tmp/evk-parallel-acceptance-9NGp68/secondary-admission`, ID
+- Repository: `/var/tmp/lvk-parallel-acceptance-9NGp68/secondary-admission`, ID
   `c3ca360f-9e18-4490-8eaf-c186d5a1c7f6`.
 - Secondary target: `test/parallel-integration-secondary` at
   `5dd0ce0109497d57540f75f426ebd5517cec0a5e`.
@@ -492,7 +492,7 @@ does not alter the source state on which the earlier reader was evaluated:
 
 The accessibility snapshot initially labelled a selectable native option as
 disabled. Read-only DOM inspection found `option.disabled=false`, and the normal
-MCP form-fill action successfully selected it. This was not confirmed as an EVK
+MCP form-fill action successfully selected it. This was not confirmed as an LVK
 selection defect; no product change or forced DOM interaction was used.
 
 ## Operation and recovery
@@ -513,7 +513,7 @@ are not part of this API. With Memory disabled or no Wiki, continue from source
 and the available mechanical information. A discovery error is not zero work.
 
 For a test-only combination, ask your Agent to use the supplied preview endpoint
-and fixed full source OIDs. EVK creates a detached worktree beside the ordinary
+and fixed full source OIDs. LVK creates a detached worktree beside the ordinary
 Workspace root (`worktrees-previews`), without setup or normal source-finaliser
 side effects. Commit your intended source first: dirty owner work is not silently
 omitted. Trials are retained, not automatically pruned or merged. Inspect a
@@ -529,7 +529,7 @@ requires a separate trial, never an in-place temporary merge/reset.
    source OID is retained when activity polling refreshes; a changed choice must
    be reselected.
 2. Finish source runs, active saved Goals, queued messages, scripts and source
-   finalisation first. Sources must be clean. EVK does not auto-commit, stash or
+   finalisation first. Sources must be clean. LVK does not auto-commit, stash or
    reset your source to make it eligible. Other unintegrated repositories on a
    selected Card prevent partial completion of that Card.
 3. Start once. The request identity makes HTTP retries idempotent. Sources and
@@ -576,7 +576,7 @@ or deleted, and existing manual merge and PR routes remain available.
   repository's configured Wiki target.
 
 This version supports one local Board repository/target per Integration and one
-EVK service. It does not provide remote Board automation, cross-repository atomic
+LVK service. It does not provide remote Board automation, cross-repository atomic
 completion, Delegation or protection against arbitrary external/full-access Agent
 writes. Required recovery/audit records are retained by existing foreign keys and
 reservations; do not promise automatic expiry or complete disk reclamation.
@@ -584,12 +584,12 @@ reservations; do not promise automatic expiry or complete disk reclamation.
 ### Preserve or remove the acceptance assets
 
 The isolated repositories, their `test/parallel-integration-v1` and
-`test/parallel-integration-secondary` branches, EVK project,
+`test/parallel-integration-secondary` branches, LVK project,
 source/Integration/Maintenance Workspaces and preview trial are intentionally
 retained for inspection. The development branch has received none of their source
 or Wiki commits. Evidence snapshots are local ignored files under
 `dev_assets/parallel-integration-acceptance/`; logs are under
-`/var/tmp/evk-parallel-acceptance-9NGp68/` and Native Audit stays in EVK's normal
+`/var/tmp/lvk-parallel-acceptance-9NGp68/` and Native Audit stays in LVK's normal
 runtime store. These are local evidence, not backups or a new artifact service.
 Clean them up only after explicitly choosing which test assets to discard and
 confirming no related run/process is active. Do not remove the development DB or
@@ -598,7 +598,7 @@ of a referenced Workspace.
 
 ### Final quality-gate run
 
-Logs are retained under `/var/tmp/evk-parallel-acceptance-9NGp68/`.
+Logs are retained under `/var/tmp/lvk-parallel-acceptance-9NGp68/`.
 
 | Command | Result / log |
 | --- | --- |
@@ -788,7 +788,7 @@ requirements so that prose-only constraints are not silently dropped:
 | A-39–A-42 | Existing orchestration/audit/Script logs plus minimal Integration product/receipt/lease-independent reservations; REC/RES/DONE. No new scheduler or third audit system. |
 
 Local-only formal Integration, one repository/target, one adopted Workspace per
-Card, one EVK service and cooperative permissions are the user's explicit scope
+Card, one LVK service and cooperative permissions are the user's explicit scope
 choices. Ordinary multi-repository Workspaces and repo-separated read context
 remain; their partial automatic Done is not introduced. Remote Board automation,
 cross-service exclusion guarantees, Delegation, OS-enforced peer isolation,

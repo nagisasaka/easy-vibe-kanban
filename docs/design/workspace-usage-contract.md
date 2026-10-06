@@ -14,7 +14,7 @@ Workspaceに汎用的な利用契約を導入する。通常の開発環境と�
 - 実行専用は通常一覧から既定で除外するが、明示的な実行・履歴の入口から閲覧できる。非表示はアクセス禁止や削除ではない。
 - 実行停止や承認などは、Workspaceの自由編集ではなく、所有する実行の正規の制御操作として扱う。
 
-今回の対象はlocal EVKと、そのWorkspaceを表示・操作する共有フロントエンド。remote Boardの新しい実行機能、独立remote backendへの同等機能追加は対象外とする。既存のhost-scopedな閲覧・通信とremote-webの動作は維持する。
+今回の対象はlocal LVKと、そのWorkspaceを表示・操作する共有フロントエンド。remote Boardの新しい実行機能、独立remote backendへの同等機能追加は対象外とする。既存のhost-scopedな閲覧・通信とremote-webの動作は維持する。
 
 本文はこれから実装する要求であり、実装・検証済みの報告ではない。調査、migration、実装、自動テスト、レビュー、Chrome DevTools MCPによる操作確認、関連不具合の修正、運用文書までを一つの実装ゴールとする。
 
@@ -55,7 +55,7 @@ Workspaceに汎用的な利用契約を導入する。通常の開発環境と�
 | Agent／scriptによる書込          | 現行の実行権限に従う         | 所有者が許可した実行だけ。phase固有の権限も維持 |
 | 完了後の扱い                     | 継続開発できる               | 閲覧専用のまま履歴に残る                        |
 
-`ReadOnly` は**人間からのEVK操作契約**を表す。CodexのsandboxをすべてReadOnlyにする指示ではない。OpenWikiのGenerator／Refiner、Integrationの実装・検証処理は必要な書込を続ける。一方、OpenWiki Reviewerの既存ReadOnly設定は維持する。
+`ReadOnly` は**人間からのLVK操作契約**を表す。CodexのsandboxをすべてReadOnlyにする指示ではない。OpenWikiのGenerator／Refiner、Integrationの実装・検証処理は必要な書込を続ける。一方、OpenWiki Reviewerの既存ReadOnly設定は維持する。
 
 `WorkspaceKind`、`ContainerOwnership`、archive状態、実行中か否かから利用契約を推論しない。単なる `visible` フラグで操作権限を表現しない。表示設定は利用契約に従うUIの選択であり、権限昇格の入力にはしない。
 
@@ -74,7 +74,7 @@ owner参照は履歴・帰属の情報であり、dispatchを許可する万能�
 
 ### 3.3 寿命と一時的な制約
 
-- 実行完了、失敗、取消、lease解放、EVK再起動によって `execution_only` を解除しない。
+- 実行完了、失敗、取消、lease解放、LVK再起動によって `execution_only` を解除しない。
 - Integrationが採用元A/Bを予約しても、A/Bの利用契約は `interactive` のまま。予約解除後は従来どおり開発を続けられる。
 - 未知のowner種別や、既知の実行専用Workspaceでownerが欠落・不整合の場合は、閲覧と診断を維持し、自由な開発や未証明の新規dispatchは許可しない。
 - 今回は利用契約の相互変換UI/APIを作らない。閲覧用に開く、URLを直接指定する、表示フィルターを変更することは変換ではない。
@@ -147,7 +147,7 @@ UIとバックエンドは同じ利用契約を参照する。UIのdisabled表�
 
 拒否時は、理由と実行詳細への参照を返す。拒否する要求がSession／AgentRun／script／queue項目を先に作成したり、worktreeを準備したりしないことをテストする。APIエラーやcapabilityの型は既存形式へ合わせ、生成TypeScriptを直接編集しない。
 
-これは協調的なローカル実行におけるEVKの操作契約である。外部shell、同じOSユーザーの別プロセス、danger-full-accessのAgentまで完全に隔離する保証はしない。別ユーザー／container／ACLによる新しいセキュリティ基盤は導入しない。
+これは協調的なローカル実行におけるLVKの操作契約である。外部shell、同じOSユーザーの別プロセス、danger-full-accessのAgentまで完全に隔離する保証はしない。別ユーザー／container／ACLによる新しいセキュリティ基盤は導入しない。
 
 ## 6. 所有する実行の制御を維持する
 
@@ -291,7 +291,7 @@ generated filesを手編集しない。通常検証の対象外であるprivate 
 
 ## 12. Chrome DevTools MCPによる受入確認
 
-修正版EVKをサンドボックス外から `localhost:4020` で利用できるようにし、Chrome DevTools MCPから通常UIを操作する。MCPの現在の接続、Chrome、起動中サーバーの実行コードを確認する。過去の接続実績を今回の証拠にしない。
+修正版LVKをサンドボックス外から `localhost:4020` で利用できるようにし、Chrome DevTools MCPから通常UIを操作する。MCPの現在の接続、Chrome、起動中サーバーの実行コードを確認する。過去の接続実績を今回の証拠にしない。
 
 ### 12.1 対象と検証規模
 
@@ -299,7 +299,7 @@ generated filesを手編集しない。通常検証の対象外であるprivate 
 
 正当なownerの新規作成と実行制御も確認するため、**少なくとも一つの新しい実行専用実行を、修正版の通常UIから開始する**。小さな隔離テストrepositoryを優先し、OpenWikiまたはFormal Integrationの既存導線を使う。三つの作成元すべての契約は自動テストで検証するが、実機で全経路の大規模再生成を繰り返すことは要求しない。
 
-この仕様を参照する実装Goalでは、隔離対象に限り、既存認証済みCodex／OpenWikiの必要最小限の実モデル呼出、試験source commit、既存機能による統合・Wiki publicationを許可する。別API-key経路は追加しない。Wikiの品質比較やEVK全体のWiki再生成は今回の達成条件ではない。
+この仕様を参照する実装Goalでは、隔離対象に限り、既存認証済みCodex／OpenWikiの必要最小限の実モデル呼出、試験source commit、既存機能による統合・Wiki publicationを許可する。別API-key経路は追加しない。Wikiの品質比較やLVK全体のWiki再生成は今回の達成条件ではない。
 
 ### 12.2 確認項目
 

@@ -1,22 +1,20 @@
-name: evk-server
+name: lvk-server
 services:
-  evk:
-    image: ${EVK_IMAGE:?Set EVK_IMAGE to a versioned GHCR image}
+  lvk:
+    image: ${LVK_IMAGE:?Set LVK_IMAGE to a versioned GHCR image}
     restart: unless-stopped
     ports:
       - "443:8443"
     environment:
-      # Validate the required host in the entrypoint. Older Compose v2 releases
-      # eagerly evaluate nested :? expressions even when EVK_HOST is set.
-      EVK_HOST: ${EVK_HOST:-${EVK_DOMAIN:-}}
-      EVK_PREVIEW_DOMAIN: ${EVK_PREVIEW_DOMAIN:-}
+      LVK_HOST: ${LVK_HOST:?Set LVK_HOST to a public IP or DNS hostname}
+      LVK_PREVIEW_DOMAIN: ${LVK_PREVIEW_DOMAIN:-}
     volumes:
       - home:/home/appuser
       - repos:/repos
       - work:/var/tmp
       - type: bind
         source: ./secrets
-        target: /run/evk-secrets
+        target: /run/lvk-secrets
         read_only: true
         bind:
           create_host_path: false

@@ -169,7 +169,7 @@ describe('shared Wiki viewer controller', () => {
   });
 
   it('ignores retired format preferences and keeps independent workspace read/scroll state', async () => {
-    const values = new Map([['evk-wiki-viewer-format:one', 'llm-wiki']]);
+    const values = new Map([['retired-wiki-viewer-format:one', 'llm-wiki']]);
     vi.stubGlobal('sessionStorage', {
       getItem: (key: string) => values.get(key),
       setItem: (key: string, value: string) => values.set(key, value),
@@ -191,6 +191,6 @@ describe('shared Wiki viewer controller', () => {
     expect(api.snapshot).toHaveBeenCalledWith('two', 'repo');
     one.rememberScroll('page', 100);
     expect(two.scrollPosition('page')).toBe(0);
-    expect(values.get('evk-wiki-viewer-format:one')).toBe('llm-wiki');
+    expect(values.get('retired-wiki-viewer-format:one')).toBe('llm-wiki');
   });
 });

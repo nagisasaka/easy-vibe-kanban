@@ -1,7 +1,7 @@
 """Obtain/renew public IP or DNS certificates with the official Certbot image.
 
-Only TLS files are shared with EVK; the ACME account stays in its own volume.
-The EVK supervisor validates and reloads nginx, without Docker socket access.
+Only TLS files are shared with LVK; the ACME account stays in its own volume.
+The LVK supervisor validates and reloads nginx, without Docker socket access.
 """
 
 import hashlib
@@ -17,13 +17,13 @@ import tempfile
 import threading
 
 
-TLS = Path("/run/evk-tls")
-LINEAGE = Path("/etc/letsencrypt/live/evk")
+TLS = Path("/run/lvk-tls")
+LINEAGE = Path("/etc/letsencrypt/live/lvk")
 PRODUCTION = "https://acme-v02.api.letsencrypt.org/directory"
 
 
 def certbot_command(env):
-    host = env.get("EVK_HOST", "")
+    host = env.get("LVK_HOST", "")
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
@@ -31,28 +31,28 @@ def certbot_command(env):
         label = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
         pattern = rf"(?:{label}\.)+[a-z](?:[a-z0-9-]{{0,61}}[a-z0-9])?"
         if len(host) > 253 or not re.fullmatch(pattern, host):
-            raise ValueError("EVK_HOST must be a public IP or lowercase DNS hostname")
+            raise ValueError("LVK_HOST must be a public IP or lowercase DNS hostname")
     if address and (not address.is_global or address.is_multicast or "%" in host):
         raise ValueError("Let's Encrypt requires a public IP address")
-    if env.get("EVK_ACME_AGREE_TOS") != "yes":
+    if env.get("LVK_ACME_AGREE_TOS") != "yes":
         raise ValueError(
-            "Read the Let's Encrypt subscriber agreement and set EVK_ACME_AGREE_TOS=yes"
+            "Read the Let's Encrypt subscriber agreement and set LVK_ACME_AGREE_TOS=yes"
         )
-    if env.get("EVK_PREVIEW_DOMAIN"):
+    if env.get("LVK_PREVIEW_DOMAIN"):
         raise ValueError(
-            "Automatic certificates cover the app only; leave EVK_PREVIEW_DOMAIN "
+            "Automatic certificates cover the app only; leave LVK_PREVIEW_DOMAIN "
             "empty or use externally managed wildcard TLS"
         )
     command = [
         "certbot", "certonly", "--non-interactive", "--agree-tos",
         "--standalone", "--preferred-challenges", "http",
-        "--server", PRODUCTION, "--cert-name", "evk",
+        "--server", PRODUCTION, "--cert-name", "lvk",
         "--preferred-profile", "shortlived", "--keep-until-expiring",
         "--renew-with-new-domains",
-        "--deploy-hook", "python /opt/evk-acme/acme.py publish",
+        "--deploy-hook", "python /opt/lvk-acme/acme.py publish",
     ]
     command += ["--ip-address" if address else "--domains", host]
-    email = env.get("EVK_ACME_EMAIL")
+    email = env.get("LVK_ACME_EMAIL")
     command += ["--email", email] if email else ["--register-unsafely-without-email"]
     return command
 

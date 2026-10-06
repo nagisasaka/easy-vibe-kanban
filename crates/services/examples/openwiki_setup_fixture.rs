@@ -1,4 +1,4 @@
-//! Model-free test driver for scripts/test-openwiki-host.mjs --evk-setup.
+//! Model-free test driver for scripts/test-openwiki-host.mjs --lvk-setup.
 //! Intentionally restricted to that script's disposable fixture directories.
 use std::path::{Path, PathBuf};
 
@@ -20,7 +20,7 @@ fn main() -> anyhow::Result<()> {
             && root
                 .file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("evk-openwiki-host-")),
+                .is_some_and(|name| name.starts_with("lvk-openwiki-host-")),
         "This driver only operates on disposable OpenWiki smoke fixtures"
     );
     let persistent = Path::new(&args[2]).canonicalize()?;
@@ -29,7 +29,7 @@ fn main() -> anyhow::Result<()> {
             && persistent
                 .file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("evk-openwiki-memory-")),
+                .is_some_and(|name| name.starts_with("lvk-openwiki-memory-")),
         "Fixture memory must be a separate temporary directory"
     );
     let store = RepositoryMemoryStore::at_persistent(&persistent)?;

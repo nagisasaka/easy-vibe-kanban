@@ -59,7 +59,7 @@ RUN apt-get update \
 COPY rust-toolchain.toml ./
 RUN cargo --version >/dev/null
 
-# Keep the compiler independent of EVK and of build-only helpers: the server
+# Keep the compiler independent of LVK and of build-only helpers: the server
 # image also uses it for development, but does not need cargo-chef.
 FROM rust-toolchain AS chef
 ARG CARGO_CHEF_VERSION=0.1.78
@@ -102,10 +102,10 @@ FROM node:22-bookworm-slim AS runtime-base
 
 # The adapter and image read the same version pin. Installation of the Codex
 # host integration happens at runtime, against the actual user's mounted home.
-COPY assets/openwiki-version /usr/local/share/evk/openwiki-version
+COPY assets/openwiki-version /usr/local/share/lvk/openwiki-version
 ENV OPENWIKI_TELEMETRY_DISABLED=1
-RUN npm install --global --omit=dev "openwiki@$(tr -d '\n' </usr/local/share/evk/openwiki-version)" \
- && node -e 'const p=require("node:fs").readFileSync("/usr/local/share/evk/openwiki-version","utf8").trim();const r=require("node:child_process").spawnSync("openwiki",["--help"],{encoding:"utf8"});if(r.status!==0||r.stdout.match(/OpenWiki v(\S+)/)?.[1]!==p)process.exit(1)'
+RUN npm install --global --omit=dev "openwiki@$(tr -d '\n' </usr/local/share/lvk/openwiki-version)" \
+ && node -e 'const p=require("node:fs").readFileSync("/usr/local/share/lvk/openwiki-version","utf8").trim();const r=require("node:child_process").spawnSync("openwiki",["--help"],{encoding:"utf8"});if(r.status!==0||r.stdout.match(/OpenWiki v(\S+)/)?.[1]!==p)process.exit(1)'
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -141,7 +141,7 @@ COPY --from=builder /usr/local/bin/server /usr/local/bin/server
 COPY --from=builder /usr/local/bin/agent-process-host /usr/local/bin/agent-process-host
 COPY --from=builder /usr/local/bin/vibe-kanban-mcp /usr/local/bin/vibe-kanban-mcp
 
-# Server distribution: prebuilt EVK plus a reusable development toolchain.
+# Server distribution: prebuilt LVK plus a reusable development toolchain.
 # The default final image is this target; --target runtime retains the small,
 # unauthenticated local image and must not be published directly to the Internet.
 FROM runtime-base AS server-tools
@@ -162,10 +162,10 @@ RUN apt-get update \
 COPY --from=rust-toolchain /usr/local/rustup /opt/rustup
 # Login shells may reset PATH: keep rustup proxies on the standard system PATH.
 COPY --from=rust-toolchain /usr/local/cargo/bin /usr/local/bin
-COPY rust-toolchain.toml /usr/local/share/evk/rust-toolchain.toml
+COPY rust-toolchain.toml /usr/local/share/lvk/rust-toolchain.toml
 ENV RUSTUP_HOME=/opt/rustup
 ENV PATH=/home/appuser/.cargo/bin:${PATH}
-RUN rustup default "$(sed -n 's/^channel = "\(.*\)"/\1/p' /usr/local/share/evk/rust-toolchain.toml)" \
+RUN rustup default "$(sed -n 's/^channel = "\(.*\)"/\1/p' /usr/local/share/lvk/rust-toolchain.toml)" \
  && rustup component add clippy rustfmt \
  && CARGO_BUILD_JOBS=2 cargo install cargo-watch --version "${CARGO_WATCH_VERSION}" --locked --root /opt/cargo-tools \
  && cp /opt/cargo-tools/bin/cargo-watch /usr/local/bin/cargo-watch \
@@ -177,7 +177,7 @@ FROM server-tools AS server
 COPY --from=builder /usr/local/bin/server /usr/local/bin/server
 COPY --from=builder /usr/local/bin/agent-process-host /usr/local/bin/agent-process-host
 COPY --from=builder /usr/local/bin/vibe-kanban-mcp /usr/local/bin/vibe-kanban-mcp
-COPY deploy/server/server.mjs deploy/server/healthcheck.mjs deploy/server/nginx.conf.template /opt/evk-server/
+COPY deploy/server/server.mjs deploy/server/healthcheck.mjs deploy/server/nginx.conf.template /opt/lvk-server/
 USER appuser
 ENV HOME=/home/appuser
 ENV CARGO_HOME=/home/appuser/.cargo
@@ -188,5 +188,5 @@ ENV BACKEND_PORT=3000
 ENV PREVIEW_PROXY_PORT=3001
 EXPOSE 8443
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD ["node", "/opt/evk-server/healthcheck.mjs"]
-ENTRYPOINT ["/usr/bin/tini", "--", "node", "/opt/evk-server/server.mjs"]
+  CMD ["node", "/opt/lvk-server/healthcheck.mjs"]
+ENTRYPOINT ["/usr/bin/tini", "--", "node", "/opt/lvk-server/server.mjs"]

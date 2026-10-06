@@ -11,7 +11,7 @@ Normative specification: [Workspace usage contract](workspace-usage-contract.md)
 - The only pre-existing uncommitted file was `docs/design/workspace-usage-contract.md`; preserve it. No implementation commit, stash, push or release is authorised.
 - Root, documentation and local-web guides and the full specification have been read. The remote backend's private billing dependency is outside routine validation scope.
 - Initial environment: frontend 4020/backend 4021 from this checkout; authenticated Codex via ChatGPT; installed OpenWiki 0.5.1. Plain CLI help also emits an Ink non-TTY warning; use the supported host-driven adapter for acceptance, not the interactive CLI.
-- Chrome was absent. Started an isolated headless profile `/tmp/evk-workspace-usage-chrome.sCy8NH` on loopback port 9222. Chrome DevTools MCP opened the existing EVK UI successfully. This is connectivity evidence, not acceptance of the new implementation.
+- Chrome was absent. Started an isolated headless profile `/tmp/lvk-workspace-usage-chrome.sCy8NH` on loopback port 9222. Chrome DevTools MCP opened the existing LVK UI successfully. This is connectivity evidence, not acceptance of the new implementation.
 
 ## Architecture decisions
 
@@ -92,7 +92,7 @@ Environment: Vite on `0.0.0.0:4020`, backend 4021, preview proxy 4022, from this
 
 Isolated fixture:
 
-- Repository `/var/tmp/evk-workspace-usage-BdRqCu`, repository ID `8513c35a-8ae3-4962-a72b-11d352c3cd4b`.
+- Repository `/var/tmp/lvk-workspace-usage-BdRqCu`, repository ID `8513c35a-8ae3-4962-a72b-11d352c3cd4b`.
 - Project `Workspace Usage Acceptance 20260921`, ID `4eaa87ff-6845-4d10-b3d8-abd076a57f19`, created and configured through the UI.
 - Frozen source **`a3f2776674615f26f2d230c8ffb6f9f8e5097282`**, four source/docs/test files, three Node tests. No baseline Wiki or ignore file. Two Markdown inventory candidates.
 - Targets `test/workspace-usage-complete` and `test/workspace-usage-stop`, created only in this isolated repository. No development-branch source commit or Wiki publication.
@@ -107,9 +107,9 @@ Successful Generator: Session `7f678fe7-a626-4c06-a770-47ca7d0ccb82`, AgentRun `
 
 Audit locations follow `dev_assets/runtime/native-audit/v1/sessions/{prefix}/{session}/agent-runs/{run}/attempts/{attempt}/manifest.json`. Attempt IDs are `73303462-2ec8-cbd0-ffc5-e5c05722f952` (Generate), `7fab27d7-7f44-8031-fcc9-41ddd3135498` (Review), `407bd0a7-2904-87cc-66d3-a8046944d044` (Stop).
 
-Publication commit **`d20b75c89e0f60750b5413b0729057aea0efa734`** changed only nine `openwiki/` files on the complete target (two authored pages plus indexes/managed metadata). Worktree `/var/tmp/vibe-kanban-dev/worktrees/be10-openwiki-evk-wor/evk-workspace-usage-BdRqCu`. The source files and test branch's non-Wiki contents were unchanged. A quality comparison or large-repository coverage claim is not part of this trial.
+Publication commit **`d20b75c89e0f60750b5413b0729057aea0efa734`** changed only nine `openwiki/` files on the complete target (two authored pages plus indexes/managed metadata). Worktree `/var/tmp/vibe-kanban-dev/worktrees/be10-openwiki-lvk-wor/lvk-workspace-usage-BdRqCu`. The source files and test branch's non-Wiki contents were unchanged. A quality comparison or large-repository coverage claim is not part of this trial.
 
-MCP evidence is retained in **`/tmp/evk-workspace-usage-evidence-ywo4qs`**:
+MCP evidence is retained in **`/tmp/lvk-workspace-usage-evidence-ywo4qs`**:
 
 - `01`–`04`: target settings, rejected first preparation, new owner progress and actual Generator logs.
 - `05-workflow-succeeded.txt`: Workflow Canvas with successful Generate/Review/Publish and skipped Refine.
@@ -155,7 +155,7 @@ No confirmed related finding is intentionally left unresolved. An old pending te
 | AC11 | New small owner run to publication and another to audited cancellation; MCP logs/files/diff/Wiki/internal links/reload and normal-workspace return. |
 | AC12 | This record, user guides, failure evidence and retained test assets. |
 
-Read-only is a cooperative product-operation contract, **not OS isolation**: users with direct filesystem access can still edit files outside EVK, and legitimate writer agents retain their existing permissions. Unknown historical Sync outcomes cannot be reconstructed reliably from the latest repository state. History has no new retention guarantee and does not automatically archive/delete; normal cleanup still protects active ownership and unconfirmed processes.
+Read-only is a cooperative product-operation contract, **not OS isolation**: users with direct filesystem access can still edit files outside LVK, and legitimate writer agents retain their existing permissions. Unknown historical Sync outcomes cannot be reconstructed reliably from the latest repository state. History has no new retention guarantee and does not automatically archive/delete; normal cleanup still protects active ownership and unconfirmed processes.
 
 The real trial exercised the PASS branch and Bootstrap Stop, not new real Integration/Sync/REFINE executions. Those paths use automated regression coverage and available historical inspection; this specification does not require three new paid generation runs. No fresh quality comparison was performed.
 

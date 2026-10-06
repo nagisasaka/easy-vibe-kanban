@@ -17,8 +17,8 @@ import {
 } from "./server.mjs";
 
 const settings = serverSettings({
-  EVK_DOMAIN: "evk.example.test",
-  EVK_PREVIEW_DOMAIN: "preview.example.test",
+  LVK_HOST: "lvk.example.test",
+  LVK_PREVIEW_DOMAIN: "preview.example.test",
 });
 // A test-only hash, never a production/default credential.
 const hash = "test:$2y$05$" + "a".repeat(53);
@@ -36,22 +36,22 @@ test("configuration rejects missing/unsafe hosts and same-origin preview collisi
     "-a.test",
     "a".repeat(64) + ".test",
   ]) {
-    assert.throws(() => serverSettings({ EVK_DOMAIN: value }));
+    assert.throws(() => serverSettings({ LVK_HOST: value }));
   }
   assert.throws(() =>
     serverSettings({
-      EVK_DOMAIN: "5173.preview.example.test",
-      EVK_PREVIEW_DOMAIN: "preview.example.test",
+      LVK_HOST: "5173.preview.example.test",
+      LVK_PREVIEW_DOMAIN: "preview.example.test",
     }),
   );
   assert.throws(() =>
     serverSettings({
-      EVK_DOMAIN: "preview.example.test",
-      EVK_PREVIEW_DOMAIN: "preview.example.test",
+      LVK_HOST: "preview.example.test",
+      LVK_PREVIEW_DOMAIN: "preview.example.test",
     }),
   );
-  assert.deepEqual(serverSettings({ EVK_DOMAIN: "evk.example.test" }), {
-    app: "evk.example.test",
+  assert.deepEqual(serverSettings({ LVK_HOST: "lvk.example.test" }), {
+    app: "lvk.example.test",
     preview: null,
   });
 });
@@ -63,14 +63,14 @@ test("all proxy routes inherit Basic auth and strip credentials; previews stay s
   );
   const config = renderNginx(template, settings);
   assert(!config.includes("@@"));
-  assert.match(config, /auth_basic_user_file \/run\/evk-secrets\/htpasswd/);
+  assert.match(config, /auth_basic_user_file \/run\/lvk-secrets\/htpasswd/);
   assert(!config.includes("auth_basic off"));
   assert.match(config, /proxy_set_header Authorization ""/);
   assert.match(config, /proxy_set_header X-VK-Relayed ""/);
   assert.match(config, /proxy_buffering off/);
   assert.match(config, /proxy_set_header Upgrade \$http_upgrade/);
   assert.match(config, /preview\(\?:\/\|\$\).*return 403/);
-  assert.match(config, /server_name evk.example.test/);
+  assert.match(config, /server_name lvk.example.test/);
   const pattern = config
     .match(/server_name "~\^(.*?)\$";/)[1]
     .replace("(?<preview_target>", "(");
@@ -107,23 +107,23 @@ test("backend stays on loopback with only the app origin allowed", () => {
   assert.equal(env.PORT, "");
   assert.equal(env.BACKEND_PORT, "3000");
   assert.equal(env.PREVIEW_PROXY_PORT, "3001");
-  assert.equal(env.VK_ALLOWED_ORIGINS, "https://evk.example.test");
+  assert.equal(env.VK_ALLOWED_ORIGINS, "https://lvk.example.test");
   assert.equal(env.VK_PREVIEW_DOMAIN, "preview.example.test");
 });
 
 test("IP hosts use IP SANs and correctly formatted origins", async (t) => {
   assert.equal(
-    serverSettings({ EVK_HOST: "2001:0DB8:0:0:0:0:0:10" }).app,
+    serverSettings({ LVK_HOST: "2001:0DB8:0:0:0:0:0:10" }).app,
     "2001:db8::10",
   );
   for (const host of ["192.0.2.10", "2001:db8::10"]) {
-    const config = serverSettings({ EVK_HOST: host });
+    const config = serverSettings({ LVK_HOST: host });
     assert.equal(config.app, host);
     assert.equal(
       backendEnvironment({}, config).VK_ALLOWED_ORIGINS,
       `https://${authority(host)}`,
     );
-    const dir = await mkdtemp(join(tmpdir(), "evk-ip-test-"));
+    const dir = await mkdtemp(join(tmpdir(), "lvk-ip-test-"));
     t.after(() => rm(dir, { recursive: true, force: true }));
     const certPath = join(dir, "cert.pem"),
       keyPath = join(dir, "key.pem");
@@ -156,16 +156,12 @@ test("IP hosts use IP SANs and correctly formatted origins", async (t) => {
       /does not cover/,
     );
   }
-  assert.throws(
-    () => serverSettings({ EVK_HOST: "192.0.2.1", EVK_DOMAIN: "other.test" }),
-    /conflicting/,
-  );
-  assert.throws(() => serverSettings({ EVK_HOST: "192.0.2.1:443" }));
-  assert.throws(() => serverSettings({ EVK_HOST: "[2001:db8::1]" }));
+  assert.throws(() => serverSettings({ LVK_HOST: "192.0.2.1:443" }));
+  assert.throws(() => serverSettings({ LVK_HOST: "[2001:db8::1]" }));
 });
 
 test("renewals validate before reload, retry failures and avoid duplicate reloads", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "evk-renew-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "lvk-renew-test-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   async function certificate(serial) {
     execFileSync(
@@ -179,9 +175,9 @@ test("renewals validate before reload, retry failures and avoid duplicate reload
         "-days",
         "1",
         "-subj",
-        "/CN=evk.example.test",
+        "/CN=lvk.example.test",
         "-addext",
-        "subjectAltName=DNS:evk.example.test",
+        "subjectAltName=DNS:lvk.example.test",
         "-set_serial",
         serial,
         "-keyout",
@@ -226,7 +222,7 @@ test("renewals validate before reload, retry failures and avoid duplicate reload
 });
 
 test("certificate and password preflight fails closed", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "evk-secrets-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "lvk-secrets-test-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const certPath = join(dir, "cert.pem"),
     keyPath = join(dir, "key.pem");
@@ -241,9 +237,9 @@ test("certificate and password preflight fails closed", async (t) => {
       "-days",
       "1",
       "-subj",
-      "/CN=evk.example.test",
+      "/CN=lvk.example.test",
       "-addext",
-      "subjectAltName=DNS:evk.example.test,DNS:*.preview.example.test",
+      "subjectAltName=DNS:lvk.example.test,DNS:*.preview.example.test",
       "-keyout",
       keyPath,
       "-out",
@@ -405,7 +401,7 @@ test("compose publishes HTTPS only and persists every runtime storage root", asy
   const compose = parse(
     await readFile(new URL("./compose.yaml", import.meta.url), "utf8"),
   );
-  const service = compose.services.evk;
+  const service = compose.services.lvk;
   assert.deepEqual(service.ports, ["443:8443"]);
   assert.equal(service.build, undefined);
   assert.equal(service.privileged, undefined);
@@ -413,8 +409,21 @@ test("compose publishes HTTPS only and persists every runtime storage root", asy
   assert(service.volumes.includes("home:/home/appuser"));
   assert(service.volumes.includes("repos:/repos"));
   assert(service.volumes.includes("work:/var/tmp"));
-  const secrets = service.volumes.find((v) => v.target === "/run/evk-secrets");
+  const secrets = service.volumes.find((v) => v.target === "/run/lvk-secrets");
   assert.equal(secrets.read_only, true);
   assert.equal(secrets.bind.create_host_path, false);
   assert.equal(service.restart, "unless-stopped");
+});
+
+test("default MCP uses the bundled binary without an npm download", async () => {
+  const config = JSON.parse(
+    await readFile(
+      new URL("../../crates/executors/default_mcp.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(config.vibe_kanban, {
+    command: "vibe-kanban-mcp",
+    args: [],
+  });
 });

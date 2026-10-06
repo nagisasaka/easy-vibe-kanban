@@ -1,6 +1,6 @@
-# Future Tasks — easy-vibe-kanban 差异化路线图
+# Future Tasks — lucky-vibe-kanban 差异化路线图
 
-> 本文档沉淀对 `easy-vibe-kanban`（BloopAI/vibe-kanban 的 Windows 本地化 fork）下一阶段差异化能力的调研结论与落地建议。
+> 本文档沉淀对 `lucky-vibe-kanban`（BloopAI/vibe-kanban 的 Windows 本地化 fork）下一阶段差异化能力的调研结论与落地建议。
 >
 > **调研基础**：2026-05 通过 super-search-skill（Exa + Tavily + Grok）对 GitHub 上同类「AI Coding Agent + Kanban + Worktree」开源项目做了 46 条结果的横向扫描；并对照本仓库 `crates/db/migrations/`、`crates/server/`、`crates/executors/` 的现状确认了上游已有 / 缺失能力。
 >
@@ -10,11 +10,11 @@
 
 ## 1. 定位与原则
 
-`easy-vibe-kanban` 在赛道中的天然护城河：
+`lucky-vibe-kanban` 在赛道中的天然护城河：
 
 - **Windows 优先**（同类几乎全是 macOS/Linux 优先）
 - **纯本地 SQLite + 免登录**（数据 100% 在 `%APPDATA%\bloop\vibe-kanban\data`）
-- **`npx easy-vibe-kanban` 一行启动**（不依赖远程服务器、不依赖 Docker）
+- **LVK 使用 Docker 镜像部署**（源码开发使用 `pnpm run dev`，不发布 npm 包）
 
 **所有差异化能力必须强化以上三条主线，不去抢以下方向**：
 

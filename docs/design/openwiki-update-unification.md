@@ -1,11 +1,11 @@
 ---
 title: "OpenWiki update unification and legacy Wiki retirement"
-description: "Implementation and real-browser acceptance contract for manifest-guided OpenWiki updates during parallel EVK development."
+description: "Implementation and real-browser acceptance contract for manifest-guided OpenWiki updates during parallel LVK development."
 ---
 
 ## 1. Purpose and status
 
-Retire EVK's independent `.llm-wiki` execution path and complete one repository-memory lifecycle:
+Retire LVK's independent `.llm-wiki` execution path and complete one repository-memory lifecycle:
 
 ```text
 Read the workspace's OpenWiki snapshot
@@ -33,7 +33,7 @@ Before editing:
 
 1. Record branch, HEAD and uncommitted changes. If implementation begins on `main`, create a suitable development branch without discarding or automatically committing/stashing user changes.
 2. Trace normal run start, follow-up, Goal execution, source finalisation, integration, reconciliation, cleanup, publication and Viewer delivery. Map requirements to existing owners and identify the smallest changes.
-3. Check Chrome DevTools MCP, Chrome, the EVK development server, Codex authentication and the installed OpenWiki/Docker arrangement. Check the actual host-driven path; do not assume previous availability or require Docker-in-Docker when the supported CLI is already installed in the development container.
+3. Check Chrome DevTools MCP, Chrome, the LVK development server, Codex authentication and the installed OpenWiki/Docker arrangement. Check the actual host-driven path; do not assume previous availability or require Docker-in-Docker when the supported CLI is already installed in the development container.
 4. Record a plan and acceptance checklist. Keep implementation decisions and verification evidence in an implementation record, not in a new tracking subsystem.
 
 Routine decisions are autonomous. Record safe, backward-compatible adaptations. A new requirement for destructive migration, broader privileges or removal of a safety contract requires a decision from the user, not an improvised workaround.
@@ -64,7 +64,7 @@ The OpenWiki Viewer adapter currently reuses types and helpers from its parent W
 
 ## 4. Retire the legacy execution path without deleting user data
 
-Remove EVK-owned activation of the independent `.llm-wiki` feature:
+Remove LVK-owned activation of the independent `.llm-wiki` feature:
 
 - Default insertion, selection and seeding of the legacy `wikillm` Pipeline.
 - Automatic materialisation/selection of bundled `knowledge-recall` and `knowledge-enrich` Skills for that path.
@@ -74,11 +74,11 @@ Remove EVK-owned activation of the independent `.llm-wiki` feature:
 
 Deleting packaged assets is insufficient. Inspect previously seeded Pipeline files, stored card descriptions, selected Skills, new attempts, queued/follow-up messages, Goal execution and resumed sessions. They must not silently reactivate the legacy integration.
 
-Preserve card text, history and manual additions. Where you can identify an EVK-generated legacy block reliably, omit or neutralise that block in the effective execution input without destructively rewriting historical data. Do not strip arbitrary user instructions or delete custom Skills/Pipelines merely because their names resemble old built-ins. For ambiguous legacy configuration, preserve the data and explain what cannot be used; do not silently enable both systems.
+Preserve card text, history and manual additions. Where you can identify an LVK-generated legacy block reliably, omit or neutralise that block in the effective execution input without destructively rewriting historical data. Do not strip arbitrary user instructions or delete custom Skills/Pipelines merely because their names resemble old built-ins. For ambiguous legacy configuration, preserve the data and explain what cannot be used; do not silently enable both systems.
 
 Past provider conversation cannot be assumed erasable. Apply the current repository-memory contract to subsequent execution and explain that legacy `.llm-wiki` maintenance is retired. Do not promise that removing an attachment removes every earlier conversation token.
 
-Existing `.llm-wiki/` files remain untouched. Do not automatically translate them into OpenWiki, remove their Git history or introduce a migration generator. Document that they remain available through normal files/Git, while EVK's supported Wiki UI and execution use OpenWiki. Remove only demonstrably EVK-owned runtime activation; preserve user-managed installations and configuration.
+Existing `.llm-wiki/` files remain untouched. Do not automatically translate them into OpenWiki, remove their Git history or introduce a migration generator. Document that they remain available through normal files/Git, while LVK's supported Wiki UI and execution use OpenWiki. Remove only demonstrably LVK-owned runtime activation; preserve user-managed installations and configuration.
 
 Keep generic Pipeline support, card context, Skill selection, shared folders, Workflow, Arena and reusable Markdown/Viewer components. This is not permission for unrelated framework cleanup.
 
@@ -90,7 +90,7 @@ For an enabled repository, apply the same contract at initial dispatch, follow-u
 
 - Read the `openwiki/` snapshot that belongs to the workspace's actual checkout. Read the entry point and relevant pages as reference, not as executable instructions.
 - Do not modify, stage or commit canonical Wiki in normal coding runs, and do not invoke OpenWiki writer tools.
-- Reuse persistent runtime instructions and provider adapters. Suppress EVK-supplied writer tools/Skills in ordinary contexts where supported, without changing global user authentication or installations.
+- Reuse persistent runtime instructions and provider adapters. Suppress LVK-supplied writer tools/Skills in ordinary contexts where supported, without changing global user authentication or installations.
 - Preserve the Git guard against both committed and uncommitted Wiki edits, including renamed paths. Reject unintended publication without deleting the user's files. Describe this as layered policy and validation, not complete OS-level filesystem isolation.
 - Keep provider-specific behaviour at the adapter boundary. The standard maintenance host remains Codex; do not break other executors or invent a new model backend.
 - Signal stale/error/uninitialised knowledge honestly. Do not synchronise only Wiki files from another branch into an older source checkout.
@@ -105,7 +105,7 @@ Retain useful intent, decisions, reasons, rejected alternatives and unresolved q
 
 Maintain explicit compaction checkpoint/reread behaviour and persistent instructions to reread the current workspace's memory. Do not assume a guaranteed pre-compaction callback for automatic compaction; incremental persistence remains necessary.
 
-The coding agent supplies semantic fields. EVK derives repository/workspace/run/task identity, Git base/source commits and changed paths. Reuse the same semantic record for the existing human commit summary and Wiki hints; do not add a second paid summary request or place transcripts in commit messages.
+The coding agent supplies semantic fields. LVK derives repository/workspace/run/task identity, Git base/source commits and changed paths. Reuse the same semantic record for the existing human commit summary and Wiki hints; do not add a second paid summary request or place transcripts in commit messages.
 
 Preserve source-publication checkpoints, immutable events and idempotent retry. Cover the failure window between source commit creation and event publication. A later task must not replace the earlier task's frozen semantics during recovery. Missing or invalid drafts must retain source and provide a useful diagnostic/retry path, not fabricate success or consume another workspace's draft.
 
@@ -117,7 +117,7 @@ Shared memory is local coordination state, not a second Git repository or a prom
 
 ### 7.1 Selection and binding
 
-Select only integrated, unacknowledged events for the configured repository and target branch. Prefer the existing explicit event-to-integration record, including EVK's squash-merge path. Use Git ancestry only where it actually proves inclusion. Failed integrations and another branch's events are not eligible.
+Select only integrated, unacknowledged events for the configured repository and target branch. Prefer the existing explicit event-to-integration record, including LVK's squash-merge path. Use Git ancestry only where it actually proves inclusion. Failed integrations and another branch's events are not eligible.
 
 Freeze the selected event IDs and source SHA for each maintenance run. Associate only relevant Workspace Memory and preserve its workspace/task provenance. Memory can contain newer, unintegrated reasoning: treat it as a hint and never promote it merely because an older event from that workspace was integrated. Keep a stable dispatched input or bound reference using existing storage conventions.
 
@@ -136,7 +136,7 @@ Repository source, tests and actual configuration are authoritative for implemen
 
 Reconcile affected explanations against actual integrated code. Preserve useful knowledge, canonical explanation locations, output language and meaningful links. Follow dependency/semantic impact beyond changed paths when necessary, but do not turn every Sync into unconditional whole-repository regeneration. Do not simply append a changelog, copy a Manifest into a page, or manufacture an edit when the existing Wiki remains accurate.
 
-Use the installed OpenWiki Skill and public host-driven MCP lifecycle. The EVK-started Codex performs research and authoring; do not introduce an imagined separate LLM inside MCP or duplicate the upstream Skill. Keep EVK's small authority/organisation guidance shared where appropriate.
+Use the installed OpenWiki Skill and public host-driven MCP lifecycle. The LVK-started Codex performs research and authoring; do not introduce an imagined separate LLM inside MCP or duplicate the upstream Skill. Keep LVK's small authority/organisation guidance shared where appropriate.
 
 For large hint sets, use existing shared storage and bounded, complete reference-based reading when inline input is unsuitable. Do not silently truncate events or claim they were processed when the agent could not access them. Keep hint data separate from trusted instructions and validate host-controlled paths/identities.
 
@@ -166,9 +166,9 @@ Only verified maintenance and publication may acknowledge selected events. A fai
 
 Retain setup isolation/restoration, user-authored `openwiki/INSTRUCTIONS.md`, source/HEAD safety checks, Wiki-only commit selection and publication idempotency. Temporary OpenWiki AGENTS/CLAUDE/setup outputs must not enter source publication. Do not manually edit OpenWiki private state, Claims or provenance to force success.
 
-Keep the maintenance worktree at its frozen source HEAD until the existing final publication step. Do not add intermediate commits or node checkpoints. If the target advances, do not publish stale output against a different source. Retain events and diagnostics and make a fresh reconciliation against the new integrated source possible. Preserve durable publication recovery so restarting EVK cannot create duplicate commits or acknowledgements.
+Keep the maintenance worktree at its frozen source HEAD until the existing final publication step. Do not add intermediate commits or node checkpoints. If the target advances, do not publish stale output against a different source. Retain events and diagnostics and make a fresh reconciliation against the new integrated source possible. Preserve durable publication recovery so restarting LVK cannot create duplicate commits or acknowledgements.
 
-Reuse the existing automatic trigger for eligible integrated events and manual Sync for recovery or source changes without a Manifest. Initialisation remains explicit. An existing `openwiki/` directory alone does not prove EVK has established a successful maintenance baseline; verify normal configuration and Sync behaviour, including imported Wiki snapshots, without fabricating state records.
+Reuse the existing automatic trigger for eligible integrated events and manual Sync for recovery or source changes without a Manifest. Initialisation remains explicit. An existing `openwiki/` directory alone does not prove LVK has established a successful maintenance baseline; verify normal configuration and Sync behaviour, including imported Wiki snapshots, without fabricating state records.
 
 Do not create an unbounded automatic paid retry loop. After an error, reuse the existing explicit retry policy unless a documented bounded recovery is already safe. Stop and failure handling must preserve audited cancellation, confirm process termination before releasing writer ownership and retain enough evidence for diagnosis.
 
@@ -214,13 +214,13 @@ Review the complete implementation diff, fix confirmed findings and rerun affect
 
 ### 12.1 Fix the execution and data baselines
 
-Run the changed backend/frontend at `http://localhost:4020`, accessible from outside the sandbox. Confirm which executable and frontend source are serving it. Record EVK HEAD plus its uncommitted diff separately from the repository source SHA and Wiki baseline used as test data.
+Run the changed backend/frontend at `http://localhost:4020`, accessible from outside the sandbox. Confirm which executable and frontend source are serving it. Record LVK HEAD plus its uncommitted diff separately from the repository source SHA and Wiki baseline used as test data.
 
-Prefer an isolated checkout of an EVK snapshot with an existing canonical OpenWiki. Create collision-free `test/openwiki-update-*` local branches and a separate test repository registration/shared-state identity where necessary. Verify both the maintenance worktree and the target of source/Wiki integration before launching agents. Do not redirect the user's operational repository settings or alter its production target.
+Prefer an isolated checkout of an LVK snapshot with an existing canonical OpenWiki. Create collision-free `test/openwiki-update-*` local branches and a separate test repository registration/shared-state identity where necessary. Verify both the maintenance worktree and the target of source/Wiki integration before launching agents. Do not redirect the user's operational repository settings or alter its production target.
 
-Local test source commits, EVK source integration and Wiki-only publication to those isolated test targets are permitted. They do not authorise committing development changes or writing to `main`. Keep test branches and evidence for final inspection; do not delete them automatically.
+Local test source commits, LVK source integration and Wiki-only publication to those isolated test targets are permitted. They do not authorise committing development changes or writing to `main`. Keep test branches and evidence for final inspection; do not delete them automatically.
 
-Use normal UI configuration and, when required, a successful manual baseline Sync to establish readiness for automatic updates. Do not rewrite `last_success`, receipts or ownership records. Do not delete an existing Wiki to force initialisation. If the preferred snapshot is unsuitable, document a safe alternative. A small fixture demonstrates lifecycle correctness, not EVK-wide content quality.
+Use normal UI configuration and, when required, a successful manual baseline Sync to establish readiness for automatic updates. Do not rewrite `last_success`, receipts or ownership records. Do not delete an existing Wiki to force initialisation. If the preferred snapshot is unsuitable, document a safe alternative. A small fixture demonstrates lifecycle correctness, not LVK-wide content quality.
 
 ### 12.2 Exercise normal parallel development
 
@@ -229,7 +229,7 @@ Through Chrome DevTools MCP, perform the normal UI operations:
 1. Open repository settings and verify enablement, target test branch, language and healthy baseline.
 2. Create two independent cards/workspaces A and B from the test baseline. Ask authenticated Codex to make small, meaningful source changes with independently checkable intent and tests. Keep the two development worktrees separate and permit their development to overlap.
 3. Verify their normal execution reads the workspace Wiki without writing it, records useful Memory, and produces run-specific semantic drafts and host-finalised Manifests. Do not fabricate Manifests to substitute for this path.
-4. Integrate A through EVK's UI while B remains unintegrated. Observe the automatic maintenance run and its publication. Confirm B's event is not acknowledged and B-only behaviour has not become canonical Wiki knowledge.
+4. Integrate A through LVK's UI while B remains unintegrated. Observe the automatic maintenance run and its publication. Confirm B's event is not acknowledged and B-only behaviour has not become canonical Wiki knowledge.
 5. Integrate B and observe another update against the then-current target and Wiki. Confirm A's still-valid knowledge survives and B's intended implemented change is covered. Resolve test-only source conflicts through normal Git operations if necessary; never resolve them by copying branch-local Wiki output.
 6. Exercise manual Sync through the UI. Accept a correctly proven no-op when no relevant source changed; do not manufacture a Wiki edit for the test.
 7. Exercise a legacy-card follow-up and a fresh normal request in isolated test data. Verify no legacy `.llm-wiki` initialisation, automatic Skill attachment or writer execution reappears. Preserve historical/manual card content.
@@ -247,7 +247,7 @@ Collect evidence beyond prompt presence and an agent's final statement:
 - Source changes retained independently from Wiki success; no Wiki update on the development branch.
 - A before/after Wiki comparison against source for the specific test changes, including rationale where evidence supports it. Explain unsupported or unchanged hints rather than requiring every Manifest field to become prose.
 
-Open the resulting Wiki in the EVK Viewer through MCP. Confirm repository and source, navigate several relevant pages and representative internal links, then reload and repeat an affected navigation. Do not accidentally demonstrate an older Wiki or another run's worktree.
+Open the resulting Wiki in the LVK Viewer through MCP. Confirm repository and source, navigate several relevant pages and representative internal links, then reload and repeat an affected navigation. Do not accidentally demonstrate an older Wiki or another run's worktree.
 
 Use a new workspace based on the updated target, or a legitimate source-and-Wiki Git integration, and confirm a subsequent normal agent can read the new knowledge. Do not inject Wiki files alone into an older checkout.
 
@@ -269,7 +269,7 @@ For each confirmed related defect:
 3. Add a regression test that demonstrates failure before the fix where practical. If automation is unsuitable, record why and retain a repeatable manual procedure.
 4. Implement the smallest safe fix using existing abstractions. Test other affected consumers of shared runtime code.
 5. Rerun relevant automated gates and repeat the original browser operation with MCP. Correct API/DB state alone does not prove a UI fix.
-6. If the fix affects dispatch, hint delivery, run control, proof or publication, run a fresh UI-started end-to-end update through publication and Viewer on the corrected EVK. Do not reuse an earlier binary's success as evidence.
+6. If the fix affects dispatch, hint delivery, run control, proof or publication, run a fresh UI-started end-to-end update through publication and Viewer on the corrected LVK. Do not reuse an earlier binary's success as evidence.
 7. For a display-only fix that cannot affect generation/publication, reusing existing successful output is acceptable if you explain why, rerun the affected MCP operations and pass regression tests.
 
 Record each retry's reason. Do not repeat unchanged trials until one happens to pass. Do not hand-edit generated content, receipts, audits or OpenWiki private state to conceal a failure. A small page count or a stylistic preference alone is not a proven integration defect; inspect its relation to the actual contract.
@@ -280,7 +280,7 @@ Keep a concise defect ledger in the implementation record: regression/pre-existi
 
 Mark the implementation goal complete only when all of these are evidenced:
 
-1. EVK no longer automatically activates the legacy Wiki path, including persisted cards/settings and follow-up execution. User data and generic shared capabilities remain intact.
+1. LVK no longer automatically activates the legacy Wiki path, including persisted cards/settings and follow-up execution. User data and generic shared capabilities remain intact.
 2. Enabled normal coding runs use the OpenWiki read-only/Memory/Manifest contract with correct identity, source finalisation and compaction continuity.
 3. Integrated Manifest intent reaches and informs the real maintenance host, while source/tests/config remain authoritative and unintegrated events are excluded.
 4. Parallel development remains possible; one canonical writer handles batching, retries, no-op and source drift safely using the existing lifecycle.
@@ -304,7 +304,7 @@ The final handover must include:
 
 - Architecture, principal files, removed legacy entry points and preservation of existing data.
 - The exact Manifest-to-update path, memory/compaction behaviour and integration/publication contracts.
-- Commands, results and exclusions for automated checks, with the final EVK revision/diff to which they apply.
+- Commands, results and exclusions for automated checks, with the final LVK revision/diff to which they apply.
 - Test repository/branches, source SHA, workspace/session/AgentRun IDs, timing and retained test assets.
 - Actual Manifest use, OpenWiki operation proof, publication commits/receipts, Wiki differences and MCP Viewer evidence.
 - Checked content questions and unresolved limits, without unmeasured quality/performance claims.

@@ -1,14 +1,14 @@
 ---
 type: guide
 title: クイックスタートと調査案内
-description: easy-vibe-kanban の目的、主要概念の説明先、変更時の調査経路、既存文書の適用範囲を案内する。
+description: lucky-vibe-kanban の目的、主要概念の説明先、変更時の調査経路、既存文書の適用範囲を案内する。
 tags: [overview, onboarding, concepts, navigation]
 verified:
   - by: openwiki/0.5.1
     at: 2026-09-22T02:14:43.589Z
 sources:
-  - id: openwiki-source-0d0b05d2fac028aecd3be162
-    resource: repo://.github/workflows/publish-easy-npx.yml
+  - id: openwiki-source-b28e4ff9d0efb53d7fe91df4
+    resource: repo://.github/workflows/publish-server.yml
   - id: openwiki-source-4e5231907394b801763cfa97
     resource: repo://crates/api-types/src/issue_tag.rs
   - id: openwiki-source-d6072e60b63fe041de50f89e
@@ -54,16 +54,16 @@ generated: { by: "codex", at: "2026-09-22T02:14:43.589Z" }
 
 # クイックスタートと調査案内
 
-easy-vibe-kanban（EVK）は、Issue で仕事を整理し、Workspace 内で coding agent を動かし、成果物をレビューして Git に統合する製品である。README は「計画と Agent 出力のレビューを速くする」ことを目的として記録し、複数の Session を graph で協働させる Workflow を主要機能に位置づける。[製品の目的](../README.md) 実装の境界は [システム構成](architecture/system.md)、一連の操作は [Issue から統合まで](workflows/task-to-integration.md) から読む。
+lucky-vibe-kanban（LVK）は、Issue で仕事を整理し、Workspace 内で coding agent を動かし、成果物をレビューして Git に統合する製品である。README は「計画と Agent 出力のレビューを速くする」ことを目的として記録し、複数の Session を graph で協働させる Workflow を主要機能に位置づける。[製品の目的](../README.md) 実装の境界は [システム構成](architecture/system.md)、一連の操作は [Issue から統合まで](workflows/task-to-integration.md) から読む。
 
 ## 最初の作業
 
-1. 利用する coding agent の認証を済ませて EVK を起動する。配布版の入口として README は npx easy-vibe-kanban を案内する。現在の Easy 同梱版は Linux/Windows x64 を対象にするため、[NPX の配布経路と platform 条件](operations/development.md#npx-配布経路と同梱-binary) を確認する。ソースから開発する場合は [開発環境と検証範囲](operations/development.md) を参照する。[配布版の案内](../README.md)
+1. [サーバーコンテナー](operations/server-container.md)の手順で LVK の Docker image を起動し、実行環境内で coding agent の認証を済ませる。LVK は npm パッケージを公開しない。ソースから開発する場合は [開発環境と検証範囲](operations/development.md) を参照する。[配布版の案内](../README.md)
 2. [Project / Issue](concepts/project-and-issue.md) と、変更先の [Repo / Workspace](concepts/workspace.md) を確認する。仕事の分類と、実ファイルを置く場所は別の設定である。
 3. 通常 Session、[WorkflowAttempt](concepts/workflow-attempt.md)、または [Arena](concepts/arena.md) を選び、[Setup → 実行 → レビュー → 統合](workflows/task-to-integration.md) を進める。local Board で複数 Card の採用成果を統合する場合は [正式 Integration](concepts/formal-integration.md)を使う。専用環境で検証し、local target の公開と条件付き Done を扱う。
 4. canonical repository memory は [OpenWiki 初期生成・Sync](operations/openwiki-maintenance.md)を Repo ごとに設定する。新規 Card の既定 [Shared directories context](concepts/card-context-and-llm-wiki.md)とは独立しており、旧 LLM Wiki の自動生成は終了している。成果物は [OpenWiki Viewer の表示元](operations/workspace-inspection.md#wiki-の本文ツリーと表示元を確認する)を確認し、閲覧可能と publication 成功を区別する。
 
-サーバーに常駐させる場合は [単一サーバーコンテナー](operations/server-container.md)を参照する。local EVK の HTTPS 配布と Cloud/relay の構成、データの永続化と実行プロセスの継続を区別する。
+サーバーに常駐させる場合は [単一サーバーコンテナー](operations/server-container.md)を参照する。local LVK の HTTPS 配布と Cloud/relay の構成、データの永続化と実行プロセスの継続を区別する。
 
 画面の基本操作は [Get Started](../docs/getting-started.mdx) が入口になる。ただし同文書の「sign-in を省略すると看板・Issue が利用不可」という記載は、現行の local-web 全体には適用できない。local-web は local API を有効化し、remote API base が空なら local identity と /api/local の経路を使う。[旧来の説明](../docs/getting-started.mdx)・[local 設定](../packages/local-web/src/app/providers/ConfigProvider.tsx#L122-L125)・[identity](../packages/local-web/src/app/entry/Bootstrap.tsx#L82-L90)・[API 選択](../packages/web-core/src/shared/lib/remoteApi.ts#L19-L32)
 
@@ -88,7 +88,7 @@ easy-vibe-kanban（EVK）は、Issue で仕事を整理し、Workspace 内で co
 | --- | --- |
 | 起動、DB、desktop と server の差 | [システム境界と起動順](architecture/system.md) → [開発・検証](operations/development.md) |
 | Agent が止まった、表示と監査が合わない、再接続したい | [Session の状態](concepts/session-and-agent-run.md) → [Agent Runtime の監査・投影・回復](architecture/agent-runtime.md) |
-| provider や model 設定、MCP、Skill の追加 | [Provider integration](integrations/agent-providers.md)。effort override と解決済み値、外部 MCP を使う方向と EVK MCP を公開する方向を分ける |
+| provider や model 設定、MCP、Skill の追加 | [Provider integration](integrations/agent-providers.md)。effort override と解決済み値、外部 MCP を使う方向と LVK MCP を公開する方向を分ける |
 | Workflow の分岐、取消、outbox、再起動回復 | [Graph の契約](concepts/workflow-attempt.md) → [Workflow Runtime](architecture/workflow-runtime.md) |
 | 定期的に作業を実行したい | [ScheduledTask の起動・skip 条件](workflows/task-to-integration.md#定時に-workflow-を起動する) |
 | frontend、host 選択、Issue 同期 | [Web と同期](architecture/web-and-sync.md) → [Remote と認証](integrations/remote-access.md) |
@@ -100,7 +100,7 @@ easy-vibe-kanban（EVK）は、Issue で仕事を整理し、Workspace 内で co
 | Wiki を読む、表示対象が違う | [Wiki の本文・ツリーと表示元](operations/workspace-inspection.md#wiki-の本文ツリーと表示元を確認する) → [共有 reader とチャット保持](architecture/web-and-sync.md#wiki-のナビゲーションと本文を一つの状態で動かす) |
 | Wiki が stale/error、Bootstrap が途中で止まる | [OpenWiki の phase・共通索引・レポート・完了証拠・回復](operations/openwiki-maintenance.md)。MCP 起動前確認と公開条件を分けて診断する |
 | 統合・Wiki 実行のログを見る、所有者を止める | [Execution の閲覧と停止](operations/workspace-inspection.md#実行専用-workspace-の確認)。通常開発用 Workspace と操作入口を分ける |
-| local EVK を常駐サーバーへ置く | [単一サーバーコンテナー](operations/server-container.md)。HTTPS/Basic 認証、preview origin、volume、停止と rollback |
+| local LVK を常駐サーバーへ置く | [単一サーバーコンテナー](operations/server-container.md)。HTTPS/Basic 認証、preview origin、volume、停止と rollback |
 | モバイル・Cloud・relay の self-hosting | [Remote の接続境界](integrations/remote-access.md) → [運用文書の使い分け](operations/development.md) |
 
 ## 編集・接続の不調から調べる

@@ -1,6 +1,6 @@
-# Use with compose.yaml. Port 80 serves ACME validation only, never EVK.
+# Use with compose.yaml. Port 80 serves ACME validation only, never LVK.
 services:
-  evk:
+  lvk:
     depends_on:
       certificates:
         condition: service_healthy
@@ -8,29 +8,29 @@ services:
     image: certbot/certbot:v5.8.0@sha256:f70ad0adbb7e117f0fe42a63c553f28ea451edabc0148757b6efcd9735acaa20
     init: true
     restart: unless-stopped
-    entrypoint: ["python", "/opt/evk-acme/acme.py", "run"]
+    entrypoint: ["python", "/opt/lvk-acme/acme.py", "run"]
     ports:
       - "80:80"
     environment:
-      EVK_HOST: ${EVK_HOST:-${EVK_DOMAIN:-}}
-      EVK_PREVIEW_DOMAIN: ${EVK_PREVIEW_DOMAIN:-}
-      EVK_ACME_AGREE_TOS: ${EVK_ACME_AGREE_TOS:?Set to yes after reading the Let's Encrypt subscriber agreement}
-      EVK_ACME_EMAIL: ${EVK_ACME_EMAIL:-}
+      LVK_HOST: ${LVK_HOST:?Set LVK_HOST to a public IP or DNS hostname}
+      LVK_PREVIEW_DOMAIN: ${LVK_PREVIEW_DOMAIN:-}
+      LVK_ACME_AGREE_TOS: ${LVK_ACME_AGREE_TOS:?Set to yes after reading the Let's Encrypt subscriber agreement}
+      LVK_ACME_EMAIL: ${LVK_ACME_EMAIL:-}
     volumes:
       - acme:/etc/letsencrypt
       - type: bind
         source: ./acme.py
-        target: /opt/evk-acme/acme.py
+        target: /opt/lvk-acme/acme.py
         read_only: true
         bind:
           create_host_path: false
       - type: bind
         source: ./secrets/tls
-        target: /run/evk-tls
+        target: /run/lvk-tls
         bind:
           create_host_path: false
     healthcheck:
-      test: ["CMD", "python", "/opt/evk-acme/acme.py", "health"]
+      test: ["CMD", "python", "/opt/lvk-acme/acme.py", "health"]
       interval: 30s
       timeout: 10s
       start_period: 120s

@@ -1,11 +1,11 @@
 ---
-title: "EVK 並列開発コンテキスト・ブートストラップ仕様案"
+title: "LVK 並列開発コンテキスト・ブートストラップ仕様案"
 description: "既存Repository Memoryと機械的Workspace情報を利用した並列開発の入口。"
 ---
 
-# EVK 並列開発コンテキスト・ブートストラップ仕様案
+# LVK 並列開発コンテキスト・ブートストラップ仕様案
 
-文書ID: EVK-BOOTSTRAP / 版: 0.3 / 作成・改訂日: 2026-09-17
+文書ID: LVK-BOOTSTRAP / 版: 0.3 / 作成・改訂日: 2026-09-17
 
 状態: **今回の採用範囲を実装・検証済み（2026-09-18）。実機試験・自動テスト・保証範囲は[実装記録](parallel-integration-implementation.md)を参照**
 
@@ -21,9 +21,9 @@ description: "既存Repository Memoryと機械的Workspace情報を利用した�
 
 ### 1.2 本機能の基本契約
 
-**B-01［合意］情報はEVK、意味解釈はエージェント。**
+**B-01［合意］情報はLVK、意味解釈はエージェント。**
 
-EVKは情報源を発見可能にし、由来・利用方法・限界を説明する。関連性、依存関係、競合可能性、役割分担の推論はCodex等のエージェントに任せる。新しい意味的依存DB、Mission Brief生成AI、共有会話記憶DB、オーケストレーションDAGを必須にしない。
+LVKは情報源を発見可能にし、由来・利用方法・限界を説明する。関連性、依存関係、競合可能性、役割分担の推論はCodex等のエージェントに任せる。新しい意味的依存DB、Mission Brief生成AI、共有会話記憶DB、オーケストレーションDAGを必須にしない。
 
 **B-02［合意］参照はコードの取り込みではない。**
 
@@ -90,7 +90,7 @@ EVKは情報源を発見可能にし、由来・利用方法・限界を説明�
 
 **B-07［合意＋提案］新しいManifestの二重保存先を作らない。**
 
-既存`RepositoryMemoryStore`の登録repository単位の共有領域を使う。`shared_resources_dir(repo_name, repo_id)`配下の`persistent/knowledge/`に`state.json`、`events/`、`integrations/`、`receipts/`等がある。管理worktreeの`.evk-shared/persistent/`から参照できる場合も、実際のパスは既存resolverで解決する。repo名やcwdから独自に保存先を推測しない。
+既存`RepositoryMemoryStore`の登録repository単位の共有領域を使う。`shared_resources_dir(repo_name, repo_id)`配下の`persistent/knowledge/`に`state.json`、`events/`、`integrations/`、`receipts/`等がある。管理worktreeの`.lvk-shared/persistent/`から参照できる場合も、実際のパスは既存resolverで解決する。repo名やcwdから独自に保存先を推測しない。
 
 論理的に必要なのは次の三つである。
 
@@ -123,7 +123,7 @@ indexを作る場合の候補フィールド:
 | ----------------------------------- | ------------------------------------------------------------------------------------ |
 | repository_id                       | 登録単位のID。別repoのManifestを混在させない                                         |
 | card_id / workspace_id / session_id | 実在する関連のみ。現在のCardリンクとevent作成時の帰属を区別し、後者が不明ならunknown |
-| title / goal_reference              | 原文・既存要求への参照。EVKによる意味要約は必須でない                                |
+| title / goal_reference              | 原文・既存要求への参照。LVKによる意味要約は必須でない                                |
 | branch_ref                          | 観測時点の完全なref名。永続的な成果識別子ではない                                    |
 | observed_head_oid                   | Gitから実際に読んだHEADと観測時刻                                                    |
 | manifest_source_oid                 | Manifestが対象とするcommit。判明しなければunknown                                    |
@@ -164,7 +164,7 @@ indexは再生成可能とし、壊れた場合は既存Manifestの列挙へ退�
 4. 既存の初回prompt組立へbootstrapの指示を一度だけ含める。
 5. エージェント自身が情報を調べ、関連作業と自分の役割を整理して実装を始める。
 
-全文をEVK側で読み込んでpromptへ大量に連結することは必須にしない。ファイルを読む・一覧を見る・必要な記録を選ぶという能力をエージェントに使わせる。
+全文をLVK側で読み込んでpromptへ大量に連結することは必須にしない。ファイルを読む・一覧を見る・必要な記録を選ぶという能力をエージェントに使わせる。
 
 ### 5.3 新規Session・継続Session
 
@@ -181,7 +181,7 @@ indexは再生成可能とし、壊れた場合は既存Manifestの列挙へ退�
 **B-14［提案］下記はテンプレートであり、実在しない固定パスをそのまま埋め込まない。**
 
 ```text
-あなたはEVK上で、このカードの要求を実装するエージェントです。
+あなたはLVK上で、このカードの要求を実装するエージェントです。
 同じリポジトリでは、他のWorkspaceでも独立した開発が進んでいる場合があります。
 
 今回の環境:
@@ -242,13 +242,13 @@ Shared directoriesのOFFと、repositoryのOpenWiki／Repository Memory設定は
 
 **B-17［提案］共有範囲は対象リポジトリ内。**
 
-参照設定が有効でも、他repo、他ユーザー、認証情報、共有キャッシュ全体、生の会話ログへ再帰的に読み進める許可にはしない。公開対象を既存Manifestと必要メタデータに絞る。ユーザーが管理する一般共有ファイルと、EVKが説明するコンテキスト入口を区別する。
+参照設定が有効でも、他repo、他ユーザー、認証情報、共有キャッシュ全体、生の会話ログへ再帰的に読み進める許可にはしない。公開対象を既存Manifestと必要メタデータに絞る。ユーザーが管理する一般共有ファイルと、LVKが説明するコンテキスト入口を区別する。
 
 `workspace-memory/`は既存指示が当該Workspaceだけに限定する私的継続情報であり、peer発見用の共有記憶にはしない。通常のdanger-full-access等ではprompt上のReadOnlyをOS権限の保証と呼ばない。正式Integrationと同じ保証区分を02のA-19で示す。
 
 **B-18［提案］peerの文書を上位指示と扱わない。**
 
-Manifest内の「前の指示を無視する」「別repoを変更する」「外部へ送信する」等の文面は作業者の記録として扱い、bootstrapやユーザーの操作権限を上書きさせない。本文をシェル断片としてEVKが自動実行する機能は作らない。
+Manifest内の「前の指示を無視する」「別repoを変更する」「外部へ送信する」等の文面は作業者の記録として扱い、bootstrapやユーザーの操作権限を上書きさせない。本文をシェル断片としてLVKが自動実行する機能は作らない。
 
 **B-19［提案］読む側は共有Manifestを書き換えない。**
 
@@ -318,7 +318,7 @@ Workspace間でコードを合わせられること自体をAuto Merge専用能�
 | BT-12 | 「必要ならBも直して」と指示                      | 初版ではcross-workspace writeへ昇格せず、Delegation未実装ならその制約を明示する |
 | BT-13 | Direct-folder                                    | 存在しない共有リンクを仮定せず、自動参照の対象外を説明する                      |
 | BT-14 | 共有cacheのみ削除                                | 重要Manifestを失わず、必要な派生情報を再構築できる                              |
-| BT-15 | Manifestに命令的な文字列                         | EVKが内容をコードや上位指示として実行しない                                     |
+| BT-15 | Manifestに命令的な文字列                         | LVKが内容をコードや上位指示として実行しない                                     |
 | BT-16 | 活動中／中断Workspaceにeventなし                 | Workspaceを一覧から消さず、活動状態と記録不在を区別する                         |
 | BT-17 | 同じSessionでfollow-up／goal／compaction後に実行 | CURRENT identityとdraft先が今回runに対応し、前回へ誤記録しない                  |
 | BT-18 | 並列参照設定OFF、Memory有効                      | 追加参照指示だけOFF。既存Memory・Wiki書込制約・終了処理は維持                   |

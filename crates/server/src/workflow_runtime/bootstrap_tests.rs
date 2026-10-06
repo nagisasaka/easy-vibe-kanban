@@ -49,7 +49,7 @@ impl Fixture {
         let root = temp.path().join("repo");
         std::fs::create_dir(&root).unwrap();
         git(&root, &["init", "-b", "main"]);
-        git(&root, &["config", "user.name", "EVK fixture"]);
+        git(&root, &["config", "user.name", "LVK fixture"]);
         git(&root, &["config", "user.email", "fixture@example.invalid"]);
         std::fs::write(root.join("source.rs"), "authoritative source").unwrap();
         git(&root, &["add", "."]);

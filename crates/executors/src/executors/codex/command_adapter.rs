@@ -45,7 +45,7 @@ pub(crate) fn encode_control(control: DirectControl) -> Result<Vec<u8>, serde_js
         }),
         DirectControl::UpdatePlanGoalDraft { objective } => serde_json::json!({
             "jsonrpc":"2.0", "id": Uuid::new_v4().to_string(),
-            "method":"easy-vibe/plan-goal-draft/update",
+            "method":"lucky-vibe/plan-goal-draft/update",
             "params":{"objective":objective}
         }),
         DirectControl::GoalUpdate {

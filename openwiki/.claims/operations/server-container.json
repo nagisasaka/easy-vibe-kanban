@@ -4,7 +4,7 @@
   "claims": [
     {
       "id": "claim_58a31267fd284cf6b691efe1ca720bfe",
-      "statement": "server 配布は単一信頼ユーザー向け local EVK の遠隔配置で、同一 appuser の agent/nginx を tenant 隔離せず、作業 checkout の build は稼働 binary を置換しない。",
+      "statement": "server 配布は単一信頼ユーザー向け local LVK の遠隔配置で、同一 appuser の agent/nginx を tenant 隔離せず、作業 checkout の build は稼働 binary を置換しない。",
       "evidence": [
         {
           "resource": "repo://Dockerfile#L108-L171",

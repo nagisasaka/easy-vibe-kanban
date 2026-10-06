@@ -2,7 +2,7 @@
 
 **カンバンで作業を計画し、コーディングエージェントを実行して、変更をレビューする。**
 
-Lucky Vibe Kanban は、Vibe Kanban と Easy Vibe Kanban を基にした、セルフホスト型の開発環境です。
+Lucky Vibe Kanban は、Vibe Kanban と Lucky Vibe Kanban を基にした、セルフホスト型の開発環境です。
 手元のコンピューターで動かすことも、自分のサーバーに設置して、ノート PC を切断している間もエージェントの作業を続けることもできます。
 
 [English](README.md) · [サーバーのセットアップ](docs/self-hosting/server-container.mdx) ·
@@ -80,7 +80,7 @@ pnpm run dev
 
 ## ワークスペースとリポジトリの記憶
 
-登録したリポジトリでは、`.evk-shared/persistent` と `.evk-shared/cache` を通じてローカルファイルを共有できます。
+登録したリポジトリでは、`.lvk-shared/persistent` と `.lvk-shared/cache` を通じてローカルファイルを共有できます。
 これらは Git の管理対象外となるリンクで、各ワークスペースから共有されます。
 言語ごとのキャッシュは明示的に設定し、重要なローカルファイルはバックアップしてください。
 
@@ -88,12 +88,11 @@ pnpm run dev
 コーディングエージェントが変更マニフェストを作成し、ソース統合後にリポジトリの知識を更新します。
 ソースの予約、検証、公開、復旧については、[統合操作ガイド](docs/design/parallel-integration-implementation.md#operation-and-recovery)を参照してください。
 
-## 名前と互換性
+## 名前
 
 製品名は **Lucky Vibe Kanban**、略称は **LVK**、リポジトリ名は `lucky-vibe-kanban` です。
-互換性のため、従来の保存先名（`vibe-kanban`、`.evk-shared`）、`EVK_*` / `VK_*` の設定キー、ネイティブバイナリ名は維持しています。
-これらの識別子の変更には、別途データ移行が必要です。
-既存の `easy-vibe-kanban` npm インストールが、自動で Docker に移行することはありません。
+現在の設定・共有リンクは `LVK_*` と `.lvk-shared` に統一しています。
+オリジナル Vibe Kanban の保存先・`VK_*` 設定・ネイティブバイナリ名は変更していません。
 
 ## 謝辞とライセンス
 

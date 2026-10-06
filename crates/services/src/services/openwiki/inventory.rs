@@ -477,7 +477,7 @@ fn unsupported_mdx(reason: &str) -> MdxSignal {
     MdxSignal::Error(
         reason.into(),
         0,
-        Box::new("evk-inventory".into()),
+        Box::new("lvk-inventory".into()),
         Box::new("unsupported-js".into()),
     )
 }

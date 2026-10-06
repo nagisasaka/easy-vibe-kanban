@@ -86,7 +86,7 @@
     },
     {
       "id": "claim_fa65eae6c40947658434f41af2d1e883",
-      "statement": "単一サーバーコンテナーは local EVK application のサーバー配布であり、独立 Remote の PostgreSQL/Electric 構成ではない。",
+      "statement": "単一サーバーコンテナーは local LVK application のサーバー配布であり、独立 Remote の PostgreSQL/Electric 構成ではない。",
       "evidence": [
         {
           "resource": "repo://docs/self-hosting/server-container.mdx#L6-L27",

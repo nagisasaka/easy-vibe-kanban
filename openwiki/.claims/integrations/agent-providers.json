@@ -122,7 +122,7 @@
     },
     {
       "id": "claim_6a0aa0a3b75a408081c0f79a7ac03a36",
-      "statement": "EVK MCPはstdioでbackendへ転送し、Global routerと実行context必須の限定Orchestrator routerを分ける。",
+      "statement": "LVK MCPはstdioでbackendへ転送し、Global routerと実行context必須の限定Orchestrator routerを分ける。",
       "evidence": [
         {
           "resource": "repo://crates/mcp/src/bin/vibe_kanban_mcp.rs#L23-L49",
@@ -140,7 +140,7 @@
     },
     {
       "id": "claim_b43c901524c04c1194fc7c8c0e7cb88b",
-      "statement": "EVK MCP backendはVIBE_BACKEND_URLを優先し、host/port変数とport fileへfallbackする。",
+      "statement": "LVK MCP backendはVIBE_BACKEND_URLを優先し、host/port変数とport fileへfallbackする。",
       "evidence": [
         {
           "resource": "repo://crates/mcp/src/bin/vibe_kanban_mcp.rs#L100-L133",
@@ -252,7 +252,7 @@
     },
     {
       "id": "claim_a1a05205b1794800b3b0b8d4d0d76d4e",
-      "statement": "通常 Codex thread は OpenWiki MCP を無効にして旧 LLM Wiki 終了通知を追加する。旧同梱 Skill のフィルターは EVK 管理のパスだけを対象にし、別の場所の同名 Skill と既存ファイルを残す。",
+      "statement": "通常 Codex thread は OpenWiki MCP を無効にして旧 LLM Wiki 終了通知を追加する。旧同梱 Skill のフィルターは LVK 管理のパスだけを対象にし、別の場所の同名 Skill と既存ファイルを残す。",
       "evidence": [
         {
           "resource": "repo://crates/executors/src/executors/codex.rs#L959-L973",

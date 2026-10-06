@@ -28,7 +28,7 @@ test("ACME companion only publishes validation and shares no agent or account cr
   const acme = services.certificates;
   assert.deepEqual(acme.ports, ["80:80"]);
   assert.equal(
-    services.evk.depends_on.certificates.condition,
+    services.lvk.depends_on.certificates.condition,
     "service_healthy",
   );
   assert(acme.volumes.includes("acme:/etc/letsencrypt"));

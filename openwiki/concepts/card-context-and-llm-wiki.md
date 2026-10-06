@@ -42,7 +42,7 @@ Card context は [Issue](project-and-issue.md) の依頼本文と一緒に保存
 
 新規カードの既定値は **Shared directories のみ**。保存済み Card context、旧 Pipeline、空ブロックによる明示的な無効化は保持し、依頼本文の編集で preset を再生成しない。共有 preset の ON/OFF は案内の編集であり、[共有ファイル](workspace.md#共有ディレクトリの意味)の削除や [Repository Memory](repository-memory.md) の無効化ではない。[保存と既定値](../../packages/web-core/src/features/pipeline/model/cardContext.ts#L24-L85)、[回帰テスト](../../packages/web-core/src/features/pipeline/model/cardContext.test.ts#L65-L121)
 
-`evk:card-context` と `vk:pipeline` の独立行 marker がブロック境界になる。Pipeline の再構成は最後の完全なブロックを置換し、周囲の本文と手書き補足を保持する。安定した pipeline/stage ID で生成行を区別する。[再構成](../../packages/web-core/src/features/pipeline/model/cardPipeline.ts#L19-L109)
+`lvk:card-context` と `vk:pipeline` の独立行 marker がブロック境界になる。Pipeline の再構成は最後の完全なブロックを置換し、周囲の本文と手書き補足を保持する。安定した pipeline/stage ID で生成行を区別する。[再構成](../../packages/web-core/src/features/pipeline/model/cardPipeline.ts#L19-L109)
 
 初回 Workspace リクエストは保存済み context を含む。既存 Workspace に作る fresh Session にも、現在関連する local Card の **保存済み Shared directories 部分**をそのまま渡す。Card が未関連のときだけ initial prompt に戻り、関連 Card の空 description は旧 Card の指示を復活させない。continuation には保存指示を繰り返さず、現在の identity と参照案内を渡す。[初回リクエストのテスト](../../packages/web-core/src/features/pipeline/model/cardContext.test.ts#L65-L74)、[保存方針の取得](../../crates/services/src/services/parallel_context.rs#L134-L157)、[fresh / continuation](../../crates/services/src/services/parallel_context.rs#L160-L198)
 
@@ -64,7 +64,7 @@ DirectFolder には自動共有リンクや peer discovery がない旨を通知
 
 Pipeline loader は現在同梱定義を持たず、残存する `wikillm.toml` を表示候補から外す。他の定義は保持し、不正 TOML は警告して読み飛ばす。seed 機構も既存ファイルを上書きしない。[loader](../../crates/services/src/services/pipelines.rs#L11-L12)、[読取規則](../../crates/services/src/services/pipelines.rs#L136-L190)
 
-新しい実行要求では、EVK が生成したと識別できる旧 Recall/Enrich 行だけを取り除き、手書き補足と他 Pipeline を残す。改変された stage や不完全な旧 marker はエラーで停止し、保存済みカードを書き直さない。同名でも利用者自身の場所にある Skill は削除対象にしない。実行時の選択から外すのは EVK の旧 `skills/llm-wiki` 配下だけで、disk 上のファイルは保持する。[互換 filter](../../crates/executors/src/legacy_wiki.rs#L14-L119)、[要求境界](../../crates/server/src/routes/sessions/agent_run.rs#L366-L375)、[保持と曖昧入力のテスト](../../crates/executors/src/legacy_wiki.rs#L132-L152)
+新しい実行要求では、LVK が生成したと識別できる旧 Recall/Enrich 行だけを取り除き、手書き補足と他 Pipeline を残す。改変された stage や不完全な旧 marker はエラーで停止し、保存済みカードを書き直さない。同名でも利用者自身の場所にある Skill は削除対象にしない。実行時の選択から外すのは LVK の旧 `skills/llm-wiki` 配下だけで、disk 上のファイルは保持する。[互換 filter](../../crates/executors/src/legacy_wiki.rs#L14-L119)、[要求境界](../../crates/server/src/routes/sessions/agent_run.rs#L366-L375)、[保持と曖昧入力のテスト](../../crates/executors/src/legacy_wiki.rs#L132-L152)
 
 ## 閲覧と更新権限
 

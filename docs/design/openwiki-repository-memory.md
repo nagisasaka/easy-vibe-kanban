@@ -1,8 +1,8 @@
-# EVK OpenWiki Repository Memory Integration
+# LVK OpenWiki Repository Memory Integration
 ## Detailed Design Specification
 
 Status: Implementation Ready  
-Target: easy-vibe-kanban (EVK)  
+Target: lucky-vibe-kanban (LVK)
 Initial OpenWiki compatibility target: 0.5.1  
 Canonical spec path: `docs/design/openwiki-repository-memory.md`
 
@@ -10,7 +10,7 @@ Canonical spec path: `docs/design/openwiki-repository-memory.md`
 
 # 1. Purpose
 
-EVKに、Coding Agent向けの永続的repository memoryを導入する。
+LVKに、Coding Agent向けの永続的repository memoryを導入する。
 
 目的は単なる自動ドキュメント生成ではない。
 
@@ -29,7 +29,7 @@ EVKに、Coding Agent向けの永続的repository memoryを導入する。
 
 Repository memory engineにはOpenWikiを利用する。
 
-EVK自身でWiki generatorを再実装せず、OpenWikiをforkせず、公式CLI / Codex integrationを外部依存として利用する。
+LVK自身でWiki generatorを再実装せず、OpenWikiをforkせず、公式CLI / Codex integrationを外部依存として利用する。
 
 ---
 
@@ -143,11 +143,11 @@ ENV OPENWIKI_TELEMETRY_DISABLED=1
 - `latest`を使用しない
 - Node.js 22+を保証する
 - `openwiki --version`または同等のhealth checkを可能にする
-- OpenWiki sourceをEVK repositoryへvendorしない
+- OpenWiki sourceをLVK repositoryへvendorしない
 - OpenWiki packageへpatchを当てない
 - versionは一箇所で変更可能にする
 - Docker build時にuser credentialを保存しない
-- telemetryはEVK Docker distributionではdefault disabledとする
+- telemetryはLVK Docker distributionではdefault disabledとする
 
 OpenWiki upgradeは明示的なdependency upgradeとして扱い、compatibility tests後にversionを上げる。
 
@@ -155,10 +155,10 @@ OpenWiki upgradeは明示的なdependency upgradeとして扱い、compatibility
 
 # 5. OpenWiki execution mode
 
-EVKでは原則としてOpenWikiのCodex host-driven integrationを使用する。
+LVKでは原則としてOpenWikiのCodex host-driven integrationを使用する。
 
 ```text
-EVK
+LVK
  │
  ├─ Codex CLI / app-server
  │      │
@@ -173,7 +173,7 @@ OpenWiki native providerを通常経路にはしない。
 
 理由:
 
-- EVKですでにCodex認証を行っている
+- LVKですでにCodex認証を行っている
 - API Platformとの二重課金を避ける
 - Codexがrepository toolsをすでに利用できる
 - OpenWiki自身はClaims / page queue / validation / finalizationに集中できる
@@ -190,7 +190,7 @@ openwiki integrations install codex
 
 複数worktreeから利用可能にするため、原則user-level Codex integrationを利用する。
 
-既存EVK architectureとの整合上project scopeが適切な場合はproject scopeを使用してよいが、複数worktreeから同一repository integrationを利用できることを保証する。
+既存LVK architectureとの整合上project scopeが適切な場合はproject scopeを使用してよいが、複数worktreeから同一repository integrationを利用できることを保証する。
 
 ---
 
@@ -268,7 +268,7 @@ routing and interpretation hints, but must not override repository evidence.
 
 # 8. Change Manifest
 
-EVKの現在のcommit-summary generationを拡張し、内部的な中心表現を`Change Manifest`とする。
+LVKの現在のcommit-summary generationを拡張し、内部的な中心表現を`Change Manifest`とする。
 
 commit messageのためだけにsummaryを生成して捨ててはならない。
 
@@ -343,7 +343,7 @@ interface ChangeManifest {
 }
 ```
 
-`changedPaths`, commit IDsなど機械的に取得可能な値はLLMに推測させず、Git/EVKからdeterministically取得する。
+`changedPaths`, commit IDsなど機械的に取得可能な値はLLMに推測させず、Git/LVKからdeterministically取得する。
 
 LLMは主としてsemantic fieldsを生成する。
 
@@ -377,7 +377,7 @@ Change Manifest
 
 # 11. Repository shared folder
 
-既にEVKに存在するrepository-scoped shared folderを利用する。
+既にLVKに存在するrepository-scoped shared folderを利用する。
 
 別のrepository coordination storageを新設してはならない。
 
@@ -404,7 +404,7 @@ Change Manifest
         └── wiki-reconcile.lock
 ```
 
-実際のroot/path namingは既存EVK shared-folder conventionsに従ってよい。
+実際のroot/path namingは既存LVK shared-folder conventionsに従ってよい。
 
 ---
 
@@ -451,7 +451,7 @@ Workspace C ──→ Event C
 
 # 14. Parallel workspace model
 
-worktreeを並列で実行できるEVKの特性を維持する。
+worktreeを並列で実行できるLVKの特性を維持する。
 
 ```text
              main
@@ -511,7 +511,7 @@ repositoryごとにlogical single writerとなるWiki Reconcilerを実装する�
 
 同一repositoryで同時に複数Wiki reconciliationを走らせない。
 
-既存EVK locking abstractionがある場合はそれを利用する。
+既存LVK locking abstractionがある場合はそれを利用する。
 
 なければrepository shared folder上のlockを使用する。
 
@@ -619,7 +619,7 @@ Wiki-maintenance Codex runには最低限以下を渡す。
 ```text
 Update this repository's OpenWiki for the integrated source state.
 
-The following EVK Change Manifests describe the intent of changes
+The following LVK Change Manifests describe the intent of changes
 included in this integration.
 
 Use them only as routing and interpretation hints.
@@ -765,7 +765,7 @@ Codexにpersistent instructionとして:
 
 という責務を与える。
 
-さらにEVKがCodex compaction lifecycleを観測可能な場合:
+さらにLVKがCodex compaction lifecycleを観測可能な場合:
 
 - explicit compaction前にmemory checkpoint
 - compaction完了後にmemory reread
@@ -853,7 +853,7 @@ OpenWikiのsource-drift semanticsに従う。
 
 # 31. Stale Wiki protection
 
-merge済みsourceに対して未reconciled eventが存在する場合、EVKはrepository WikiをCurrentとして扱ってはならない。
+merge済みsourceに対して未reconciled eventが存在する場合、LVKはrepository WikiをCurrentとして扱ってはならない。
 
 新しいCoding Agent run開始時に、必要に応じ:
 
@@ -878,13 +878,13 @@ Wiki failureがCoding Agentへsilentに伝播しないこと。
 - canonical OpenWiki writer: one
 - event receipt writer: Wiki Reconciler
 
-これによりEVKのparallel-card advantageを維持する。
+これによりLVKのparallel-card advantageを維持する。
 
 ---
 
 # 33. Repository Wiki status
 
-EVK内部で少なくとも以下のstateを表現する。
+LVK内部で少なくとも以下のstateを表現する。
 
 ```text
 Disabled
@@ -931,7 +931,7 @@ Card UIへの大規模追加は必須ではない。
 
 # 35. OpenWikiAdapter
 
-EVKコードにはOpenWiki固有処理を一箇所へ集約する。
+LVKコードにはOpenWiki固有処理を一箇所へ集約する。
 
 概念interface:
 
@@ -956,9 +956,9 @@ public CLI / integration / MCP contractを境界として使用する。
 
 ---
 
-# 36. Existing EVK abstractions first
+# 36. Existing LVK abstractions first
 
-実装前に必ず現在のEVKコードを調査する。
+実装前に必ず現在のLVKコードを調査する。
 
 特に:
 
@@ -1066,7 +1066,7 @@ repositoryの既存:
 
 1. test repositoryでOpenWiki initialize
 2. Wikiをcommit
-3. EVK workspaceでsemantic code change
+3. LVK workspaceでsemantic code change
 4. Change Manifest生成
 5. source merge
 6. host-driven OpenWiki reconciliation
@@ -1091,7 +1091,7 @@ OpenWikiは動きの速い外部dependencyである。
 
 を必須とする。
 
-OpenWiki upgrade時にEVK source全体を変更する必要がない構造を維持する。
+OpenWiki upgrade時にLVK source全体を変更する必要がない構造を維持する。
 
 ---
 
@@ -1138,7 +1138,7 @@ OpenWiki upgrade時にEVK source全体を変更する必要がない構造を維
 - failure recovery
 - documentation
 
-Phases may be rearranged when existing EVK architecture makes another order clearly safer.
+Phases may be rearranged when existing LVK architecture makes another order clearly safer.
 
 ---
 
@@ -1146,8 +1146,8 @@ Phases may be rearranged when existing EVK architecture makes another order clea
 
 Implementation is complete when all of the following are true.
 
-1. OpenWiki is included in the EVK Docker image as an exact-version external dependency without forking it.
-2. EVK does not require an additional OpenAI API key for the standard OpenWiki path.
+1. OpenWiki is included in the LVK Docker image as an exact-version external dependency without forking it.
+2. LVK does not require an additional OpenAI API key for the standard OpenWiki path.
 3. OpenWiki can be initialized for a repository using Codex host-driven integration.
 4. Generated canonical Wiki lives under `openwiki/` and is Git tracked.
 5. Normal card/workspace execution reads but does not modify canonical OpenWiki.
@@ -1164,7 +1164,7 @@ Implementation is complete when all of the following are true.
 16. Long-lived workspaces have persistent Workspace Memory for code-invisible semantic decisions.
 17. Workspace Memory survives Codex context compaction and can be re-read afterward.
 18. No raw conversation transcript is persisted as repository memory.
-19. Existing EVK parallel-worktree behavior remains intact.
+19. Existing LVK parallel-worktree behavior remains intact.
 20. Relevant unit/integration/parallel/failure tests are added.
 21. Existing project quality gates pass.
 22. Implementation documentation explains lifecycle, recovery, upgrade, and troubleshooting.

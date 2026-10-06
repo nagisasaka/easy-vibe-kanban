@@ -52,10 +52,10 @@ Workspace は、エージェントの [Session](session-and-agent-run.md)、作�
 
 | 種別 | 作業場所 | ファイル所有 |
 | --- | --- | --- |
-| Worktree | EVK 管理のルート内に作る Repo ごとの worktree | Managed |
+| Worktree | LVK 管理のルート内に作る Repo ごとの worktree | Managed |
 | DirectFolder | 利用者が選んだ既存ディレクトリ | External |
 
-削除可能性は kind の名称からではなく `container_ownership` から判定する。External の container path を EVK が削除することは許可しない。[所有権](../../crates/db/src/models/workspace.rs#L35-L53)、[判定とテスト](../../crates/db/src/models/workspace.rs#L137-L148)、[削除テスト](../../crates/db/src/models/workspace.rs#L876-L886)
+削除可能性は kind の名称からではなく `container_ownership` から判定する。External の container path を LVK が削除することは許可しない。[所有権](../../crates/db/src/models/workspace.rs#L35-L53)、[判定とテスト](../../crates/db/src/models/workspace.rs#L137-L148)、[削除テスト](../../crates/db/src/models/workspace.rs#L876-L886)
 
 DirectFolder で選択先が開ける Git Repo なら Repo を登録し、現在の branch を使い、選択ディレクトリの親を container_ref にする。通常の Repo 相対解決で選択先に到達するためである。Git Repo でなければ選択先自体をルートとし、Repo membership を持たない。DirectFolder は新しい Git worktree を作る操作ではない。[DirectFolder 作成](../../crates/server/src/routes/workspaces/create.rs#L107-L168)、[既存パス検証](../../crates/local-deployment/src/container.rs#L1287-L1306)
 
@@ -83,16 +83,16 @@ Agent 起動前の setup script は Repo 設定に従う。DirectFolder では�
 
 ## 共有ディレクトリの意味
 
-managed Git Workspace の各 Repo にある `.evk-shared/persistent/` と `.evk-shared/cache/` は、**同じ登録 Repo を使う他 Workspace と内容を共有するリンク**である。保存先は既定 storage base の `shared/<sanitized-name>-<full-repo-UUID>/`。worktree の保管先 override とは独立している。[パス生成](../../crates/utils/src/path.rs#L140-L157)、[README の運用契約](../../README.md)
+managed Git Workspace の各 Repo にある `.lvk-shared/persistent/` と `.lvk-shared/cache/` は、**同じ登録 Repo を使う他 Workspace と内容を共有するリンク**である。保存先は既定 storage base の `shared/<sanitized-name>-<full-repo-UUID>/`。worktree の保管先 override とは独立している。[パス生成](../../crates/utils/src/path.rs#L140-L157)、[README の運用契約](../../README.md)
 
 - persistent は利用者が維持するローカルファイル。[Repository Memory](repository-memory.md) の記録もその下に置く。
-- cache は再生成できる成果物や cache。ツールごとの cache 設定を EVK が自動変更するものではない。
+- cache は再生成できる成果物や cache。ツールごとの cache 設定を LVK が自動変更するものではない。
 - Workspace 削除ではリンク先の共有内容を削除しない。自動清掃やバックアップが保証される領域でもない。
 - DirectFolder ではこれらのリンクがない場合がある。存在を前提にする前に作業環境を確認する。
 
 [共有の利用契約](../../README.md)、[削除後もデータを保持するテスト](../../crates/workspace-manager/src/shared_resources.rs#L171-L224)
 
-provisioner は tracked な `.evk-shared`、既存の通常ファイル、異なる宛先のリンクを拒否し、全リンクを検査してから作成する。Git のローカル `info/exclude` に追加し、利用者のパスを上書きしない。Windows のリンク作成には Developer Mode または symlink 権限が必要で、作成失敗は明示エラーになる。[検証・配置](../../crates/workspace-manager/src/shared_resources.rs#L41-L126)、[Windows](../../crates/workspace-manager/src/shared_resources.rs#L134-L136)
+provisioner は tracked な `.lvk-shared`、既存の通常ファイル、異なる宛先のリンクを拒否し、全リンクを検査してから作成する。Git のローカル `info/exclude` に追加し、利用者のパスを上書きしない。Windows のリンク作成には Developer Mode または symlink 権限が必要で、作成失敗は明示エラーになる。[検証・配置](../../crates/workspace-manager/src/shared_resources.rs#L41-L126)、[Windows](../../crates/workspace-manager/src/shared_resources.rs#L134-L136)
 
 provision lock は配置処理を守る。利用者の共有ファイルへの同時書き込みまで直列化するものではない。共有内容を使うツール側が競合を扱う必要がある。[配置 lock](../../crates/workspace-manager/src/shared_resources.rs#L13-L20)、[共有利用時の指示](../../packages/web-core/src/features/pipeline/model/cardContext.ts#L15-L23)
 

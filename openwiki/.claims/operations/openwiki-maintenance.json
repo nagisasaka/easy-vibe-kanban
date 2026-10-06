@@ -46,7 +46,7 @@
     },
     {
       "id": "claim_59ed66a6d1a4445eab41bce18feb237d",
-      "statement": "EVK の Codex 準備は force なしの public integration installer を呼び、maintenance writer の thread には public OpenWiki MCP を enabled/required として設定する。",
+      "statement": "LVK の Codex 準備は force なしの public integration installer を呼び、maintenance writer の thread には public OpenWiki MCP を enabled/required として設定する。",
       "evidence": [
         {
           "resource": "repo://crates/executors/src/executors/codex.rs#L929-L956",
@@ -74,7 +74,7 @@
     },
     {
       "id": "claim_4fcc96752e82429d97556bd5b8b63ad3",
-      "statement": "Generate、独立 Review、material finding 時 Refine、EVK Publish の phase を持ち、既存 repository monitor が lock 下で進める。",
+      "statement": "Generate、独立 Review、material finding 時 Refine、LVK Publish の phase を持ち、既存 repository monitor が lock 下で進める。",
       "evidence": [
         {
           "resource": "repo://crates/server/src/workflow_runtime/bootstrap.rs#L305-L332",
@@ -388,7 +388,7 @@
     },
     {
       "id": "claim_1dc29ee92dfa434a9af187a9994e4720",
-      "statement": "EVK の共通知識構成 guidance は重要概念に根拠付きの説明先と意味ある本文リンクを求めるが、固定ディレクトリやページ数は強制しない。架空製品の例は Generate の計画だけに渡し、通常 Sync は既存構成を維持する。",
+      "statement": "LVK の共通知識構成 guidance は重要概念に根拠付きの説明先と意味ある本文リンクを求めるが、固定ディレクトリやページ数は強制しない。架空製品の例は Generate の計画だけに渡し、通常 Sync は既存構成を維持する。",
       "evidence": [
         {
           "resource": "repo://crates/services/src/services/openwiki.rs#L170-L178",

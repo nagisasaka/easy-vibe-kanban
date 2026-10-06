@@ -7,7 +7,7 @@ pub const VIBE_ATTACHMENTS_DIR: &str = ".vibe-attachments";
 
 /// Directories that should always be skipped regardless of gitignore.
 /// .git is not in .gitignore but should never be watched.
-pub const ALWAYS_SKIP_DIRS: &[&str] = &[".git", "node_modules", ".evk-shared"];
+pub const ALWAYS_SKIP_DIRS: &[&str] = &[".git", "node_modules", ".lvk-shared"];
 
 /// Convert absolute paths to relative paths based on worktree path
 /// This is a robust implementation that handles symlinks and edge cases
@@ -169,15 +169,15 @@ mod tests {
     #[test]
     fn shared_resources_name_is_readable_and_uses_the_full_repo_id() {
         let id = uuid::Uuid::parse_str("12b6186f-0781-4e73-a844-178dd9646aa1").unwrap();
-        let path = shared_resources_dir("easy-vibe-kanban", id);
+        let path = shared_resources_dir("lucky-vibe-kanban", id);
         assert_eq!(
             path,
             get_vibe_kanban_temp_dir()
-                .join("shared/easy-vibe-kanban-12b6186f-0781-4e73-a844-178dd9646aa1")
+                .join("shared/lucky-vibe-kanban-12b6186f-0781-4e73-a844-178dd9646aa1")
         );
         assert_ne!(
             path,
-            shared_resources_dir("easy-vibe-kanban", uuid::Uuid::nil())
+            shared_resources_dir("lucky-vibe-kanban", uuid::Uuid::nil())
         );
     }
 

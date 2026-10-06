@@ -141,7 +141,7 @@ impl GitService {
         &self,
         root: &Path,
     ) -> Result<GitPublicationGuard, GitServiceError> {
-        let path = self.storage_identity(root)?.join("evk-publication.lock");
+        let path = self.storage_identity(root)?.join("lvk-publication.lock");
         if std::fs::symlink_metadata(&path)
             .is_ok_and(|m| !m.is_file() || m.file_type().is_symlink())
         {
@@ -305,7 +305,7 @@ impl GitService {
             target_ref,
             result,
             Some(&self.signature_with_fallback(&repo)?),
-            &format!("EVK Integration {run_id}: verified exact result"),
+            &format!("LVK Integration {run_id}: verified exact result"),
         )?;
         transaction.commit()?;
         if repo.find_reference(target_ref)?.peel_to_commit()?.id() != result {

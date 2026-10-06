@@ -43,14 +43,14 @@ Add the following configuration to your agent's MCP servers configuration:
 {
   "mcpServers": {
     "vibe_kanban": {
-      "command": "npx",
-      "args": ["-y", "easy-vibe-kanban@latest", "--mcp"]
+      "command": "vibe-kanban-mcp",
+      "args": []
     }
   }
 }
 ```
 
-`--mcp` launches the local MCP stdio server. Any additional arguments after `--mcp` are passed through to the `vibe-kanban-mcp` binary.
+The LVK Docker image includes `vibe-kanban-mcp` on `PATH`. This command starts the stdio server directly in the same container as LVK. External clients need access to that executable and the running backend; this example does not install a package on your laptop. If you previously saved the npm-based preset, save the updated preset to replace it.
 
 ## Available MCP Tools
 

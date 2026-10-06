@@ -385,7 +385,7 @@ impl AppServerClient {
                 }
                 *pending = Some(objective);
                 serde_json::to_vec(&serde_json::json!({
-                    "method": "easy-vibe/plan-goal-draft/updated"
+                    "method": "lucky-vibe/plan-goal-draft/updated"
                 }))
                 .map_err(ExecutorError::from)
             }
@@ -597,7 +597,7 @@ impl AppServerClient {
         // commit pre-existing source changes after the reload turn finishes.
         self.commit_reminder_sent.store(true, Ordering::SeqCst);
         self.turn_start_with_mode(thread_id, vec![UserInput::Text {
-            text: "Before explicit context compaction, checkpoint meaningful decisions, user intent, rationale, rejected alternatives and unresolved questions into the host-provided Workspace Memory files. Preserve workspace/task identity; do not save raw conversation or modify source, Wiki or Git history. If nothing meaningful changed, leave memory unchanged. Finish this checkpoint now; EVK will compact next.".into(),
+            text: "Before explicit context compaction, checkpoint meaningful decisions, user intent, rationale, rejected alternatives and unresolved questions into the host-provided Workspace Memory files. Preserve workspace/task identity; do not save raw conversation or modify source, Wiki or Git history. If nothing meaningful changed, leave memory unchanged. Finish this checkpoint now; LVK will compact next.".into(),
             text_elements: vec![],
         }], None).await?;
         Ok(())
@@ -1899,7 +1899,7 @@ mod version_check_tests {
     #[ignore = "subprocess fixture, invoked by transport tests"]
     fn goal_stdio_fixture() {
         use std::io::{BufRead, Write};
-        let case = std::env::var("EVK_GOAL_FIXTURE").expect("fixture case");
+        let case = std::env::var("LVK_GOAL_FIXTURE").expect("fixture case");
         let emit = |value: serde_json::Value| {
             println!("{value}");
             std::io::stdout().flush().unwrap();
@@ -2049,7 +2049,7 @@ mod version_check_tests {
                     "--ignored",
                     "--nocapture",
                 ])
-                .env("EVK_GOAL_FIXTURE", case)
+                .env("LVK_GOAL_FIXTURE", case)
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::null())
@@ -2260,7 +2260,7 @@ mod version_check_tests {
                 .contains("drafts/current-run.json")
         );
         let _: codex_protocol::models::ResponseItem = serde_json::from_value(item.clone()).unwrap();
-        let response = if std::env::var_os("EVK_TEST_REJECT_INJECTION").is_some() {
+        let response = if std::env::var_os("LVK_TEST_REJECT_INJECTION").is_some() {
             json!({"id":injection["id"],"error":{"code":-32601,"message":"unsupported fixture injection"}})
         } else {
             json!({"id":injection["id"],"result":{}})
@@ -2297,7 +2297,7 @@ mod version_check_tests {
             command.args(["--exact", "executors::codex::client::version_check_tests::resumed_host_context_stdio_fixture", "--ignored", "--nocapture"])
                 .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::inherit()).kill_on_drop(true);
             if reject {
-                command.env("EVK_TEST_REJECT_INJECTION", "1");
+                command.env("LVK_TEST_REJECT_INJECTION", "1");
             }
             let mut child = command.spawn().unwrap();
             let (exit_tx, _exit_rx) = tokio::sync::oneshot::channel();
@@ -2313,7 +2313,7 @@ mod version_check_tests {
                     .thread_resume(codex_app_server_protocol::ThreadResumeParams {
                         thread_id: "resumed".into(),
                         developer_instructions: Some(
-                            "Current EVK run: drafts/current-run.json".into(),
+                            "Current LVK run: drafts/current-run.json".into(),
                         ),
                         ..Default::default()
                     })

@@ -26,7 +26,7 @@ Arena は、一つのローカル [Issue](project-and-issue.md)について複�
 
 | mode | 主な意味 | 実装上の区別 |
 | --- | --- | --- |
-| Design（既定） | 方案を読み、追問・比較して方向を決める | Open の間は EVK の既定 commit 方針を抑制 |
+| Design（既定） | 方案を読み、追問・比較して方向を決める | Open の間は LVK の既定 commit 方針を抑制 |
 | Implementation | コードの実施候補を比較する | 従来の diff・promote 経路を利用 |
 
 [Arena v2 仕様](../../docs/future/ai-arena/spec-v2.md)は Draft 表記だが、この mode 分離は現行モデルに実装されている。仕様には「diff 統計だけでは設計判断に足りない」という記録された動機がある。そこから全提案 UI が完成済みだとは推論しない。

@@ -4,6 +4,11 @@ description: "Set up Anthropic's Claude Code agent"
 icon: https://www.vibekanban.com/images/logos/claude.svg#"
 ---
 
+<Note>
+LVK is distributed as Docker images. Use the [server guide](/self-hosting/server-container) for deployment. The `pnpm run dev` examples below require a source checkout with dependencies installed.
+</Note>
+
+
 <Steps>
 <Step title="Install Claude Code">
   ```bash
@@ -23,7 +28,7 @@ icon: https://www.vibekanban.com/images/logos/claude.svg#"
   Once authenticated, launch Vibe Kanban:
 
   ```bash
-  npx easy-vibe-kanban
+  pnpm run dev
   ```
 
   You can now select Claude Code when creating task attempts.

@@ -1,9 +1,9 @@
 ---
-title: "EVK 並列開発・自動統合仕様案 — レビューガイド"
+title: "LVK 並列開発・自動統合仕様案 — レビューガイド"
 description: "コード照合の基準点、既存機構の再利用範囲、未決定事項を記録する。"
 ---
 
-# EVK 並列開発・自動統合仕様案 — レビューガイド
+# LVK 並列開発・自動統合仕様案 — レビューガイド
 
 作成・改訂日: 2026-09-17 / 文書版: 0.3 / 用途: コード照合レビュー反映済みの実装前仕様
 
@@ -34,7 +34,7 @@ description: "コード照合の基準点、既存機構の再利用範囲、未
 
 ### 2.1 調査基準点と取得結果
 
-対象: [nagisasaka/easy-vibe-kanban](https://github.com/nagisasaka/easy-vibe-kanban)
+対象: [nagisasaka/lucky-vibe-kanban](https://github.com/nagisasaka/lucky-vibe-kanban)
 
 初稿作成時の取得結果（v0.2の来歴）:
 
@@ -65,13 +65,13 @@ v0.3のコード照合結果:
 
 ### 2.2 READMEから得られた既存仕様の接点
 
-以下はすべて[README「Card context and shared local files」および「Architecture」](https://github.com/nagisasaka/easy-vibe-kanban#readme)の記述に基づく。
+以下はすべて[README「Card context and shared local files」および「Architecture」](https://github.com/nagisasaka/lucky-vibe-kanban#readme)の記述に基づく。
 
 | ID  | READMEで確認できたこと                                                                                                      |
 | --- | --------------------------------------------------------------------------------------------------------------------------- |
 | R1  | 新規カードにはLLM WikiとShared directoriesのコンテキストプリセットがある                                                    |
 | R2  | 保存済み指示は維持され、カードの初回Workspaceリクエストに含まれる。毎メッセージへの注入や既存セッションへの遡及適用ではない |
-| R3  | 管理Git Workspaceには `.evk-shared/persistent/` と `.evk-shared/cache/` のGit除外リンクがある                               |
+| R3  | 管理Git Workspaceには `.lvk-shared/persistent/` と `.lvk-shared/cache/` のGit除外リンクがある                               |
 | R4  | 同じ登録リポジトリの共有領域を参照する。プリセット無効化は共有ファイル削除やアクセス権剥奪ではない                          |
 | R5  | Direct-folder Workspaceにはこのリンクがない。共有内容の並行書き込み保護も記載上はない                                       |
 | R6  | PR・mergeの既存導線があり、Rustバックエンド／React+TypeScript構成。共有型はRustから生成される                               |
@@ -102,9 +102,9 @@ v0.3のコード照合結果:
 
 ## 3. 二つの仕様に共通する設計原則
 
-**合意 C01 — EVKは事実・アクセス手段・実行整合性を提供し、意味解釈はエージェントに委ねる。**
+**合意 C01 — LVKは事実・アクセス手段・実行整合性を提供し、意味解釈はエージェントに委ねる。**
 
-依存関係、競合の意味、実装意図の両立可否をEVK独自の永続的意味モデルとして再実装しない。Wiki、既存Manifest、Git・カード・Workspaceの機械的情報、用途の説明を用意し、Codexが必要な文脈を読む。
+依存関係、競合の意味、実装意図の両立可否をLVK独自の永続的意味モデルとして再実装しない。Wiki、既存Manifest、Git・カード・Workspaceの機械的情報、用途の説明を用意し、Codexが必要な文脈を読む。
 
 **合意 C02 — 開発単位と認知の共有単位を分離する。**
 
@@ -155,7 +155,7 @@ Issue:Workspace=1:N、Workspace:Session=1:Nはコードと整合する。一方�
 
 | 優先度 | 確認領域     | 探索語・追うべき経路                                           | 必要な結論                                                              |
 | ------ | ------------ | -------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| P0     | Card context | `LLM Wiki`, `Shared directories`, `card context`, `evk-shared` | プリセット保存→Workspace作成→prompt組立→executor起動の実際の経路        |
+| P0     | Card context | `LLM Wiki`, `Shared directories`, `card context`, `lvk-shared` | プリセット保存→Workspace作成→prompt組立→executor起動の実際の経路        |
 | P0     | Manifest     | `change_manifest`, `change-manifest`, `manifest`, `openwiki`   | writer、reader、保存先、履歴、失敗・中断時、source commitとの紐付け     |
 | P0     | Wiki         | `wiki`, `openwiki`, `initialize`                               | 設定ブランチ・参照方法・生成元revision・無効時の処理                    |
 | P0     | データ関係   | Card/Issue/Task, Workspace/Attempt, Session                    | 1:N対応、multi-repo、既存状態遷移、Done更新の実体                       |
@@ -176,7 +176,7 @@ git rev-parse HEAD
 git log -1 --format='%H %cI %s'
 git remote -v
 git show-ref --verify refs/remotes/origin/main
-rg -n -i 'evk-shared|shared directories|card context|change.?manifest|openwiki' . \
+rg -n -i 'lvk-shared|shared directories|card context|change.?manifest|openwiki' . \
   --glob '!pnpm-lock.yaml' --glob '!Cargo.lock'
 ```
 
@@ -224,7 +224,7 @@ P0=データ損失・安全性・意図しない統合・根本的矛盾、P1=�
 
 ## 8. Gitの設計根拠
 
-以下はEVKコードの確認結果ではなく、Git自体の動作に関する一次資料である。
+以下はLVKコードの確認結果ではなく、Git自体の動作に関する一次資料である。
 
 - [G1: git-worktree](https://git-scm.com/docs/git-worktree): worktree間で共有されるrefs等の説明。別worktreeは権限隔離ではない。
 - [G2: git-merge](https://git-scm.com/docs/git-merge): fast-forward、`--ff-only`、squashの違い。
@@ -237,7 +237,7 @@ P0=データ損失・安全性・意図しない統合・根本的矛盾、P1=�
 
 ## 10. 汎用Git動作の補助検証
 
-以下は初稿作成者が `git version 2.47.3` と模擬リポジトリで確認したと記録した結果である。v0.3のコード照合担当は再実行していない。**EVKのソース・テスト・実行環境の検証結果ではない。**
+以下は初稿作成者が `git version 2.47.3` と模擬リポジトリで確認したと記録した結果である。v0.3のコード照合担当は再実行していない。**LVKのソース・テスト・実行環境の検証結果ではない。**
 
 | 確認した挙動                                                | ローカル試験結果                                           |
 | ----------------------------------------------------------- | ---------------------------------------------------------- |
@@ -246,7 +246,7 @@ P0=データ損失・安全性・意図しない統合・根本的矛盾、P1=�
 | expected old OIDが違えばupdate-refは失敗する                | 確認。古い基点からの更新検出に使える                       |
 | targetが途中まで進んだ後でもff-onlyが成功する場合がある     | 確認。ff-onlyだけでは「targetが元のOIDのまま」を保証しない |
 
-元の記録では試験を模擬repo内に限定している。EVKの追加反映経路が同じ不変条件を満たすかは、受入テストAT-19〜AT-32等で別途確認する。
+元の記録では試験を模擬repo内に限定している。LVKの追加反映経路が同じ不変条件を満たすかは、受入テストAT-19〜AT-32等で別途確認する。
 
 ## 11. v0.3で必須契約へ反映した事項
 

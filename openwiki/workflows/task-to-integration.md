@@ -152,7 +152,7 @@ Remote の Issue 状態同期は、WorkMerged で関連 PR がすべて Merged �
 
 [Repository memory](../concepts/repository-memory.md) が有効な場合、成功した coding run の semantic draft と Git 証拠から Change Manifest を作り、統合された event を maintenance の入力にする。source merge の成功と Wiki 更新の成功は別であり、Wiki 失敗は source を巻き戻さない。
 
-EVK 自身の手動 direct squash と正式 Integration はそれぞれ明示的な event ID を記録できる。外部 PR の squash/rebase は元 commit の ancestry を証明できない場合があり、Workspace ID や時刻だけで event を消費しない。統合先 local branch を準備し、必要なら [Sync Wiki](../operations/openwiki-maintenance.md) で実 source を再確認する。[記録された運用契約](../../docs/workspaces/openwiki.mdx)・[外部 PR の制約](../../docs/workspaces/openwiki.mdx)
+LVK 自身の手動 direct squash と正式 Integration はそれぞれ明示的な event ID を記録できる。外部 PR の squash/rebase は元 commit の ancestry を証明できない場合があり、Workspace ID や時刻だけで event を消費しない。統合先 local branch を準備し、必要なら [Sync Wiki](../operations/openwiki-maintenance.md) で実 source を再確認する。[記録された運用契約](../../docs/workspaces/openwiki.mdx)・[外部 PR の制約](../../docs/workspaces/openwiki.mdx)
 
 生成物は [Wiki Viewer](../operations/workspace-inspection.md#wiki-の本文ツリーと表示元を確認する)で確認できる。ただし Viewer は選択 Workspace の現在のファイルを読むため、maintenance の未公開成果物も見える。Wiki 本文を開けたこと、Agent が完了を宣言したこと、Workflow と target branch への publication が成功したことを分けて確認する。[表示元の実装](../../crates/server/src/routes/workspaces/wiki.rs#L148-L169)、[publication の検証](../../crates/server/src/workflow_runtime/bootstrap.rs#L603-L651)
 
