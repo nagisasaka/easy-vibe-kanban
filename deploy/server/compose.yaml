@@ -6,7 +6,9 @@ services:
     ports:
       - "443:8443"
     environment:
-      EVK_HOST: ${EVK_HOST:-${EVK_DOMAIN:?Set EVK_HOST to your public IP or DNS hostname}}
+      # Validate the required host in the entrypoint. Older Compose v2 releases
+      # eagerly evaluate nested :? expressions even when EVK_HOST is set.
+      EVK_HOST: ${EVK_HOST:-${EVK_DOMAIN:-}}
       EVK_PREVIEW_DOMAIN: ${EVK_PREVIEW_DOMAIN:-}
     volumes:
       - home:/home/appuser

@@ -157,7 +157,7 @@ To test the validation path against Let's Encrypt staging without replacing the 
 ```bash
 docker compose stop certificates
 docker compose run --rm --no-deps --service-ports --entrypoint certbot \
-  certificates renew --cert-name evk --dry-run
+  certificates renew --cert-name evk --dry-run --no-random-sleep-on-renew
 docker compose start certificates
 ```
 

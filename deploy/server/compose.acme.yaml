@@ -12,7 +12,7 @@ services:
     ports:
       - "80:80"
     environment:
-      EVK_HOST: ${EVK_HOST:-${EVK_DOMAIN:?Set EVK_HOST to your public IP or DNS hostname}}
+      EVK_HOST: ${EVK_HOST:-${EVK_DOMAIN:-}}
       EVK_PREVIEW_DOMAIN: ${EVK_PREVIEW_DOMAIN:-}
       EVK_ACME_AGREE_TOS: ${EVK_ACME_AGREE_TOS:?Set to yes after reading the Let's Encrypt subscriber agreement}
       EVK_ACME_EMAIL: ${EVK_ACME_EMAIL:-}

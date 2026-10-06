@@ -33,7 +33,13 @@ jobs:
       - uses: ./.github/actions/setup-node
       - run: pnpm install --frozen-lockfile
       - name: Validate server configuration
-        run: pnpm run server:check
+        run: |
+          pnpm run server:check
+          docker compose -f deploy/server/compose.yaml -f deploy/server/compose.acme.yaml config --quiet
+        env:
+          EVK_IMAGE: ghcr.io/example/evk:test
+          EVK_HOST: 192.0.2.1
+          EVK_ACME_AGREE_TOS: "yes"
       - name: Choose image reference
         id: image
         shell: bash
