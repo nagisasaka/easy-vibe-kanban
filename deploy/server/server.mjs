@@ -25,7 +25,14 @@ export function serverSettings(env) {
   if (env.EVK_HOST && env.EVK_DOMAIN && env.EVK_HOST !== env.EVK_DOMAIN)
     throw new Error("Set EVK_HOST or EVK_DOMAIN, not conflicting values");
   const value = env.EVK_HOST || env.EVK_DOMAIN;
-  const app = isIP(value ?? "") ? value : domain(value, "EVK_HOST");
+  const version = isIP(value ?? "");
+  // Browsers canonicalise IPv6 literals in Host and Origin headers.
+  const app =
+    version === 6
+      ? new URL(`https://[${value}]`).hostname.slice(1, -1)
+      : version === 4
+        ? value
+        : domain(value, "EVK_HOST");
   const preview = env.EVK_PREVIEW_DOMAIN
     ? domain(env.EVK_PREVIEW_DOMAIN, "EVK_PREVIEW_DOMAIN")
     : null;

@@ -112,6 +112,10 @@ test("backend stays on loopback with only the app origin allowed", () => {
 });
 
 test("IP hosts use IP SANs and correctly formatted origins", async (t) => {
+  assert.equal(
+    serverSettings({ EVK_HOST: "2001:0DB8:0:0:0:0:0:10" }).app,
+    "2001:db8::10",
+  );
   for (const host of ["192.0.2.10", "2001:db8::10"]) {
     const config = serverSettings({ EVK_HOST: host });
     assert.equal(config.app, host);
