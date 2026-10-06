@@ -1,5 +1,7 @@
-import { spawn } from "node:child_process";
-import { X509Certificate, createPrivateKey } from "node:crypto";
+import { spawn, execFile } from "node:child_process";
+import { X509Certificate, createPrivateKey, createHash } from "node:crypto";
+import { isIP } from "node:net";
+import { promisify } from "node:util";
 import { constants } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -20,7 +22,10 @@ export function domain(value, name) {
 }
 
 export function serverSettings(env) {
-  const app = domain(env.EVK_DOMAIN, "EVK_DOMAIN");
+  if (env.EVK_HOST && env.EVK_DOMAIN && env.EVK_HOST !== env.EVK_DOMAIN)
+    throw new Error("Set EVK_HOST or EVK_DOMAIN, not conflicting values");
+  const value = env.EVK_HOST || env.EVK_DOMAIN;
+  const app = isIP(value ?? "") ? value : domain(value, "EVK_HOST");
   const preview = env.EVK_PREVIEW_DOMAIN
     ? domain(env.EVK_PREVIEW_DOMAIN, "EVK_PREVIEW_DOMAIN")
     : null;
@@ -29,6 +34,8 @@ export function serverSettings(env) {
   }
   return { app, preview };
 }
+
+export const authority = (host) => (isIP(host) === 6 ? `[${host}]` : host);
 
 export function renderNginx(template, settings) {
   const preview = settings.preview;
@@ -42,7 +49,7 @@ export function renderNginx(template, settings) {
     }`
     : "";
   return template
-    .replace("@@APP_DOMAIN@@", settings.app)
+    .replace("@@APP_DOMAIN@@", authority(settings.app))
     .replace("@@PREVIEW_SERVER@@", previewServer);
 }
 
@@ -63,7 +70,7 @@ export function validateSecrets(
     settings.app,
     ...(settings.preview ? [`3000.${settings.preview}`] : []),
   ]) {
-    if (!cert.checkHost(host))
+    if (!(isIP(host) ? cert.checkIP(host) : cert.checkHost(host)))
       throw new Error(`TLS certificate does not cover ${host}`);
   }
   if (!cert.checkPrivateKey(createPrivateKey(key)))
@@ -92,9 +99,33 @@ export function backendEnvironment(env, settings) {
     PORT: "",
     BACKEND_PORT: "3000",
     PREVIEW_PROXY_PORT: "3001",
-    VK_ALLOWED_ORIGINS: `https://${settings.app}`,
+    VK_ALLOWED_ORIGINS: `https://${authority(settings.app)}`,
     VK_PREVIEW_DOMAIN: settings.preview ?? "",
     BROWSER: "true",
+  };
+}
+
+// A renewed certificate must not restart the backend or its running agents.
+// Poll the directory rather than watching an inode replaced by a deploy hook.
+export function certificateReloader({ read, activate, settings, initial }) {
+  const digest = ({ certificate, key }) =>
+    createHash("sha256").update(certificate).update(key).digest("hex");
+  let loaded = digest(initial);
+  let checking = false;
+  return async () => {
+    if (checking) return;
+    checking = true;
+    try {
+      const next = await read();
+      const fingerprint = digest(next);
+      if (fingerprint === loaded) return;
+      validateSecrets(next.certificate, next.key, next.passwords, settings);
+      await activate();
+      loaded = fingerprint;
+      console.log("TLS certificate reloaded without restarting agents");
+    } finally {
+      checking = false;
+    }
   };
 }
 
@@ -182,10 +213,19 @@ export function supervise(
 async function main() {
   const settings = serverSettings(process.env);
   const secrets = "/run/evk-secrets";
+  const readSecrets = async () => {
+    const [certificate, key, passwords] = await Promise.all([
+      readFile(`${secrets}/tls/fullchain.pem`),
+      readFile(`${secrets}/tls/privkey.pem`),
+      readFile(`${secrets}/htpasswd`, "utf8"),
+    ]);
+    return { certificate, key, passwords };
+  };
+  const initial = await readSecrets();
   validateSecrets(
-    await readFile(`${secrets}/tls/fullchain.pem`),
-    await readFile(`${secrets}/tls/privkey.pem`),
-    await readFile(`${secrets}/htpasswd`, "utf8"),
+    initial.certificate,
+    initial.key,
+    initial.passwords,
     settings,
   );
   for (const dir of ["/home/appuser", "/repos", "/var/tmp"])
@@ -206,13 +246,32 @@ async function main() {
     check.once("exit", resolve);
   });
   if (code !== 0) throw new Error("nginx configuration validation failed");
-  process.exitCode = await supervise(
-    [
-      ["/usr/local/bin/server"],
-      ["nginx", "-e", "stderr", "-c", config, "-g", "daemon off;"],
-    ],
-    backendEnvironment(process.env, settings),
-  );
+  const run = promisify(execFile);
+  const reload = certificateReloader({
+    read: readSecrets,
+    settings,
+    initial,
+    activate: async () => {
+      await run("nginx", ["-e", "stderr", "-t", "-c", config]);
+      await run("nginx", ["-e", "stderr", "-s", "reload", "-c", config]);
+    },
+  });
+  const timer = setInterval(() => {
+    reload().catch((error) =>
+      console.error(`TLS renewal not loaded; will retry: ${error.message}`),
+    );
+  }, 30_000);
+  try {
+    process.exitCode = await supervise(
+      [
+        ["/usr/local/bin/server"],
+        ["nginx", "-e", "stderr", "-c", config, "-g", "daemon off;"],
+      ],
+      backendEnvironment(process.env, settings),
+    );
+  } finally {
+    clearInterval(timer);
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

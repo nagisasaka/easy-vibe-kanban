@@ -16,7 +16,7 @@ chmod 755 "$fixture"
 mkdir "$fixture/tls"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
   -subj /CN=evk.example.test \
-  -addext 'subjectAltName=DNS:evk.example.test,DNS:*.preview.example.test' \
+  -addext 'subjectAltName=DNS:evk.example.test,DNS:*.preview.example.test,IP:127.0.0.1' \
   -keyout "$fixture/tls/privkey.pem" -out "$fixture/tls/fullchain.pem" 2>/dev/null
 # Test-only credentials; production instructions use an interactive prompt.
 printf '%s\n' evk-smoke-only | docker run --rm -i --entrypoint htpasswd "$image" -niB test > "$fixture/htpasswd"
@@ -40,7 +40,7 @@ docker run --rm --entrypoint node \
 for suffix in home repos work; do docker volume create "$name-$suffix" >/dev/null; done
 start() {
   docker run -d --name "$name" \
-    -e EVK_DOMAIN=evk.example.test -e EVK_PREVIEW_DOMAIN=preview.example.test \
+    -e EVK_HOST="${1:-evk.example.test}" \
     --mount "type=bind,src=$fixture,dst=/run/evk-secrets,readonly" \
     -v "$name-home:/home/appuser" -v "$name-repos:/repos" -v "$name-work:/var/tmp" \
     "$image" >/dev/null
@@ -60,5 +60,27 @@ docker exec "$name" sh -ec '
 '
 docker stop -t 150 "$name" >/dev/null
 docker rm "$name" >/dev/null
-start
+start 127.0.0.1
 docker exec "$name" sh -ec 'test -f /home/appuser/smoke-persistence && test -f /repos/smoke-persistence && test -f /var/tmp/smoke-persistence'
+# Verify IP SANs with normal TLS verification, then replace the pair just as an
+# issuer would. The running supervisor must reload nginx without recreating EVK.
+docker exec "$name" curl -fsS --cacert /run/evk-secrets/tls/fullchain.pem \
+  --user test:evk-smoke-only https://127.0.0.1:8443/api/info >/dev/null
+started=$(docker inspect -f '{{.State.StartedAt}}' "$name")
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -set_serial 42 \
+  -subj /CN=ip-renewal -addext 'subjectAltName=IP:127.0.0.1' \
+  -keyout "$fixture/tls/new-key.pem" -out "$fixture/tls/new-cert.pem" 2>/dev/null
+chmod 644 "$fixture/tls/new-key.pem"
+mv "$fixture/tls/new-key.pem" "$fixture/tls/privkey.pem"
+mv "$fixture/tls/new-cert.pem" "$fixture/tls/fullchain.pem"
+renewed=false
+for _ in $(seq 1 30); do
+  if docker exec "$name" curl -fsS --cacert /run/evk-secrets/tls/fullchain.pem \
+    --user test:evk-smoke-only https://127.0.0.1:8443/api/info >/dev/null 2>&1; then
+    renewed=true
+    break
+  fi
+  sleep 2
+done
+test "$renewed" = true
+test "$(docker inspect -f '{{.State.StartedAt}}' "$name")" = "$started"

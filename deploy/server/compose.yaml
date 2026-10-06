@@ -6,7 +6,7 @@ services:
     ports:
       - "443:8443"
     environment:
-      EVK_DOMAIN: ${EVK_DOMAIN:?Set the HTTPS hostname}
+      EVK_HOST: ${EVK_HOST:-${EVK_DOMAIN:?Set EVK_HOST to your public IP or DNS hostname}}
       EVK_PREVIEW_DOMAIN: ${EVK_PREVIEW_DOMAIN:-}
     volumes:
       - home:/home/appuser

@@ -1,6 +1,6 @@
 ---
 title: "EVK single-user server"
-description: "Run the EVK application and coding agents on a Linux server with HTTPS, Basic authentication and persistent Docker volumes."
+description: "Run EVK on a public IP with automatic HTTPS, Basic authentication and persistent Docker volumes. No domain required."
 ---
 
 Run EVK and its agents on an always-on server, then use EVK in your laptop's browser. Closing the browser or putting the laptop to sleep does not stop a server-side run. Stopping the container, rebooting the server or losing power does stop its processes; persistent volumes preserve data, not executing processes.
@@ -19,7 +19,7 @@ This distribution runs the **local EVK application** remotely. It is separate fr
 ## What the image contains
 
 - Prebuilt EVK frontend, Rust server, sibling `agent-process-host` executable and `vibe-kanban-mcp` CLI.
-- nginx with HTTPS and Basic authentication; only host port **443** is published.
+- nginx with HTTPS and Basic authentication on host port **443**. The optional certificate companion uses port **80** only for certificate validation.
 - Codex CLI, OpenWiki, Node.js, pnpm, Git, Git LFS, GitHub CLI and Python.
 - The repository's pinned Rust toolchain, rustfmt, Clippy, cargo-watch, C/C++ compiler, CMake and native build dependencies for developing EVK itself.
 - A non-root runtime user, `appuser` (**UID/GID 10001**).
@@ -30,28 +30,52 @@ The initial published platform is **Linux amd64** (x86-64 EC2, not Graviton/ARM)
 
 ## Prepare the host
 
-You need Docker Engine, Docker Compose v2, disk space for images, repositories and build caches, and a DNS name. Allow inbound TCP 443 in both the cloud firewall and host firewall. Do not expose ports 3000, 3001, 8443 or project development ports directly. This configuration does not provide HTTP on port 80.
+You need Docker Engine, Docker Compose v2, a stable **public IPv4 or IPv6 address**, and disk space for images, repositories and build caches. You do not need to buy a domain or configure DNS. Private/LAN addresses cannot receive public Let's Encrypt certificates.
 
-Copy `deploy/server/compose.yaml`, `.env.example` and `.gitignore` from the **same source tag as the image** into a dedicated directory on the host. You do not need to clone or compile the application to run it.
+Allow inbound TCP **80 and 443** in the cloud and host firewalls. Port 80 must remain reachable by Let's Encrypt for future validation; it serves challenge responses only, never the application. Do not expose ports 3000, 3001, 8443 or project development ports directly.
 
-Copy `.env.example` to `.env`, then edit it:
+Copy `compose.yaml`, `compose.acme.yaml`, `acme.py`, `.env.example` and `.gitignore` from `deploy/server` at the **same source tag as the image** into a dedicated directory on the host. You do not need to clone or compile EVK.
+
+Copy `.env.example` to `.env`. Set your published image reference and replace the documentation IP below with your server's public address:
 
 ```dotenv .env
-# Replace this example with an image that has actually been published.
-EVK_IMAGE=ghcr.io/nagisasaka/easy-vibe-kanban:1.2.0
-EVK_DOMAIN=evk.example.com
-EVK_PREVIEW_DOMAIN=preview.example.com
+# Replace VERSION with an actually published version, or use an immutable digest.
+EVK_IMAGE=ghcr.io/nagisasaka/easy-vibe-kanban:VERSION
+EVK_HOST=203.0.113.10
+COMPOSE_FILE=compose.yaml:compose.acme.yaml
+EVK_ACME_AGREE_TOS=yes
+EVK_ACME_EMAIL=
+EVK_PREVIEW_DOMAIN=
 ```
 
-The version above is illustrative, not a claim that this image exists. You can instead pin `EVK_IMAGE` to the immutable `ghcr.io/owner/repository@sha256:...` digest from the publication output. Keep the Compose project name (`evk-server`) stable: changing it selects different named volumes.
+Read the [Let's Encrypt subscriber agreement](https://letsencrypt.org/repository/) before setting `EVK_ACME_AGREE_TOS=yes`. The contact email is optional. Keep the Compose project name (`evk-server`) stable: changing it selects different named volumes. For IPv6, set `EVK_HOST` without brackets and use brackets in the browser URL, for example `https://[2001:db8::10]`.
 
-Point `evk.example.com` and `*.preview.example.com` at the server. The preview wildcard must be separate from the EVK application's origin. Set `EVK_PREVIEW_DOMAIN=` if you do not need project previews; only the application hostname and certificate are then required.
+## Create your sign-in credentials
 
-## Provide TLS and the password file
+Run these commands in your deployment directory. They pull the published image and prompt for a password without starting the application or issuing certificates:
 
-Obtain a trusted TLS certificate with SANs covering `evk.example.com` and, if enabled, `*.preview.example.com`. Use your existing certificate issuer; wildcard certificates typically use automated DNS-01 validation. This container does **not** issue or renew certificates, and does not need your DNS provider's credentials.
+```bash
+mkdir -p secrets/tls
+docker compose pull
+docker compose run --rm --no-deps --user "$(id -u):$(id -g)" \
+  --entrypoint htpasswd -v "$PWD/secrets:/password-setup" \
+  evk -Bc /password-setup/htpasswd owner
+sudo chown -R 10001:10001 secrets
+sudo chmod 750 secrets secrets/tls
+sudo chmod 640 secrets/htpasswd
+```
 
-The mount must contain these actual files, not symlinks pointing outside it:
+`-B` selects bcrypt. Use `-c` only when creating the file: it replaces an existing password file. For rotation, use the same interactive command **without `-c`**, and run it as UID/GID 10001 after the ownership change. Do not put passwords in `.env`, image layers, shell command arguments, Git or build logs.
+
+The certificate companion obtains a trusted certificate before Compose starts EVK. IP certificates last approximately six days; the companion checks hourly and lets Certbot decide when renewal is due. Failed attempts are retried after 15 minutes. The ACME account and renewal configuration stay in a separate `acme` volume, inaccessible to agents.
+
+The companion exports matching certificate/key pairs through an atomic directory link inside `secrets/tls`. EVK reads this directory as read-only, validates each changed pair and reloads nginx within 30 seconds. The backend and its agents keep running. Certificate files use UID/GID 10001 and mode 640. EVK refuses to start with an expired certificate, a certificate for another address, a mismatched key or a missing/non-bcrypt password file.
+
+## Use a domain or your own certificate issuer
+
+For an optional domain, set `EVK_HOST=evk.example.com` and point its DNS at the server. The automatic companion supports a single app hostname as well as an IP address. `EVK_DOMAIN` remains supported as a legacy alias when `EVK_HOST` is unset.
+
+If you already manage TLS or need wildcard project previews, set `COMPOSE_FILE=compose.yaml` to omit the certificate companion. Provide these files yourself; symlinks must resolve within the mounted `secrets` directory:
 
 ```text
 secrets/
@@ -61,24 +85,7 @@ secrets/
     └── privkey.pem
 ```
 
-After placing the certificate and key in `secrets/tls`, create the password file using the image's bundled tool. The following commands run in your deployment directory, not inside a project repository:
-
-```bash
-mkdir -p secrets/tls
-docker compose pull
-# The normal secrets mount is read-only. This temporary mount writes only the
-# password file and runs as your host user. Enter a strong password when asked.
-docker compose run --rm --no-deps --user "$(id -u):$(id -g)" \
-  --entrypoint htpasswd -v "$PWD/secrets:/password-setup" \
-  evk -Bc /password-setup/htpasswd owner
-sudo chown -R 10001:10001 secrets
-sudo chmod 750 secrets secrets/tls
-sudo chmod 640 secrets/htpasswd secrets/tls/fullchain.pem secrets/tls/privkey.pem
-```
-
-`-B` selects bcrypt. Use `-c` only when creating the file: it replaces an existing password file. For rotation, use the same interactive command **without `-c`**, and run it as UID/GID 10001 after the ownership change. Do not put passwords in `.env`, image layers, shell command arguments, Git or build logs.
-
-EVK refuses to start if the certificate is expired/not yet valid, does not cover the configured hostnames, has a mismatched private key, or the password file is missing or is not bcrypt. These checks do not replace browser verification of the certificate's trust chain.
+Set certificate ownership to UID/GID 10001, directory modes to 750 and file modes to 640. The certificate must cover the app IP/DNS name and, when enabled, `*.EVK_PREVIEW_DOMAIN`. Wildcard certificates usually require DNS-01 validation. The automatic companion intentionally rejects a non-empty `EVK_PREVIEW_DOMAIN`; it cannot obtain wildcard certificates using its IP/HTTP validation flow. In this externally managed mode only port 443 is published.
 
 ## Start and sign in
 
@@ -89,7 +96,7 @@ docker compose ps
 docker compose logs --tail=100 evk
 ```
 
-Open `https://evk.example.com`. Your browser first asks for the Basic-auth user and password. Without credentials, `/`, `/api/info` and WebSocket connections return 401. Health checks probe the internal backend and the unauthenticated HTTPS challenge. A failed service causes the supervisor to stop its sibling; `restart: unless-stopped` restarts the container. An `unhealthy` status alone does not cause Docker to restart it.
+Open `https://YOUR_PUBLIC_IP` (or your optional hostname). Your browser first asks for the Basic-auth user and password. Without credentials, `/`, `/api/info` and WebSocket connections return 401. Health checks probe the internal backend and the unauthenticated HTTPS challenge. A failed service causes the supervisor to stop its sibling; `restart: unless-stopped` restarts the container. An `unhealthy` status alone does not cause Docker to restart it.
 
 Authenticate Codex once, from a terminal on the host:
 
@@ -116,6 +123,8 @@ Agent approval and sandbox settings remain under EVK/Codex control. Container ho
 
 ## Project previews
 
+The domain-free setup runs the application and agents, but does not provide wildcard browser previews. You can use SSH port forwarding to reach project development servers, or opt into the separate preview domain with externally managed TLS. Project HTML must remain on a separate origin from EVK.
+
 With previews enabled, a development server on port 5173 is reached as `https://5173.preview.example.com`, not your laptop's `localhost`. EVK exposes this domain through its system-info API and uses it in the preview pane. HTTP redirects, Next.js redirect headers, streaming and WebSocket/HMR requests use the proxy.
 
 - Start development servers inside the EVK container; loopback listeners are sufficient.
@@ -141,18 +150,26 @@ Do not use `docker compose down -v`, `docker volume prune`, or host temporary-fi
 
 ## Renew certificates and rotate credentials
 
-Arrange automatic renewal **on the host** using your certificate issuer. Its deployment hook must copy the renewed full chain and private key into `secrets/tls`, preserve UID/GID 10001 and mode 640, then validate and reload nginx:
+With `compose.acme.yaml`, renewal and nginx reload are automatic. Keep the certificate service running and port 80 reachable. Inspect `docker compose logs certificates` for validation failures; both the certificate service and EVK become unhealthy when their certificate has less than six hours remaining. Docker health status is not an alerting service: monitor it and the externally served certificate with your normal monitoring tools.
+
+To test the validation path against Let's Encrypt staging without replacing the live certificate, stop the hourly checker temporarily to avoid competing Certbot processes, then run:
 
 ```bash
-docker compose exec -T evk nginx -e stderr -t -c /tmp/evk-server/nginx.conf
-docker compose exec -T evk nginx -e stderr -s reload -c /tmp/evk-server/nginx.conf
+docker compose stop certificates
+docker compose run --rm --no-deps --service-ports --entrypoint certbot \
+  certificates renew --cert-name evk --dry-run
+docker compose start certificates
 ```
 
-Use both commands only after a successful renewal/copy, and reload only if validation succeeds. Mounting the whole `secrets` directory allows host-side file replacement to be visible. Check the externally served certificate after renewal and monitor its expiry. Updating `htpasswd` takes effect on subsequent authentication checks without restarting agents. Basic authentication has no application logout/MFA; rotate the password to revoke access, and close active connections/restart during an appropriate maintenance window when immediate revocation is required.
+Restart the certificate service even if the dry run fails. Do not use `--force-renewal` for routine checks: it needlessly consumes issuance limits. Keep the `acme` volume across upgrades and reboots. If the public IP changes, update `EVK_HOST` and recreate the services; existing browser bookmarks and certificates do not follow a changed IP.
+
+With externally managed TLS, your issuer's deployment hook must replace the matching full chain and private key inside `secrets/tls` with UID/GID 10001 and mode 640. EVK detects the change, validates it and reloads nginx automatically. It logs and retries invalid or incomplete replacements while the previous nginx workers continue serving.
+
+Updating `htpasswd` takes effect on subsequent authentication checks without restarting agents. Basic authentication has no application logout/MFA; rotate the password to revoke access, and close active connections/restart during an appropriate maintenance window when immediate revocation is required.
 
 ## Back up, update and roll back
 
-Pause or finish agents before maintenance. Stop EVK before copying its SQLite database so that the database, journals, Git worktrees and their metadata form one consistent backup. Back up **all three volumes together**, plus the deployment `.env` and secrets, using your encrypted backup system.
+Pause or finish agents before maintenance. Stop EVK before copying its SQLite database so that the database, journals, Git worktrees and their metadata form one consistent backup. Back up **all three volumes together**, plus the deployment `.env`, secrets and `acme` volume, using your encrypted backup system.
 
 For a manual backup from the deployment directory:
 
@@ -219,7 +236,7 @@ The first build after this change populates the cache and can still take a long 
 
 ## Validation boundaries
 
-The kit includes Docker-free Node tests for settings, certificates, supervision, Compose/workflow structure and shell syntax; native nginx integration tests exercise TLS, Basic authentication, WebSockets, SSE and preview isolation. Rust and TypeScript tests cover public preview URLs and redirects.
+The kit includes Docker-free Node/Python tests for settings, IP certificate validation, atomic certificate export, reload retries, supervision, Compose/workflow structure and shell syntax; native nginx integration tests exercise TLS, Basic authentication, WebSockets, SSE and preview isolation. Rust and TypeScript tests cover public preview URLs and redirects.
 
 ```bash
 pnpm run server:check
@@ -227,13 +244,11 @@ pnpm --filter @vibe/web-core exec vitest run src/shared/lib/previewProxyUrl.test
 cargo test -p preview-proxy
 ```
 
-If nginx is not installed, the native test reports a skip. Use `EVK_TEST_NGINX=/path/to/nginx EVK_REQUIRE_NGINX_TEST=1 pnpm run server:check` to require it. The PR configuration workflow installs nginx and requires this test. The release workflow additionally tests the built image's tools, real EVK health/authentication and persistence across container recreation before pushing it.
+If nginx is not installed, the native test reports a skip. Use `EVK_TEST_NGINX=/path/to/nginx EVK_REQUIRE_NGINX_TEST=1 pnpm run server:check` to require it. The PR configuration workflow installs nginx and requires this test. The release workflow additionally tests the built image's tools, real EVK health/authentication, IP HTTPS, certificate reload without recreating EVK, and persistence across container recreation before pushing it.
 
 <Note>
-  Docker builds, Compose lifecycle commands, real DNS/certificate issuance, EC2
-  connectivity and live agent authentication/execution were not run in the
-  implementation environment. The deployment commands above are operational
-  instructions with static validation, not a report of a successful server
-  deployment. Run the workflow rehearsal and the host checks before relying on
-  this for unattended work.
+  CI uses disposable test certificates and does not contact a production ACME
+  issuer. Verify real issuance, the renewal dry run and externally trusted HTTPS
+  on your own public IP. Agent login and live execution require your own account
+  and are separate from the container tests.
 </Note>

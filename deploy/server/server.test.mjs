@@ -8,6 +8,8 @@ import { test } from "node:test";
 import { parse } from "yaml";
 import {
   backendEnvironment,
+  authority,
+  certificateReloader,
   renderNginx,
   serverSettings,
   supervise,
@@ -107,6 +109,116 @@ test("backend stays on loopback with only the app origin allowed", () => {
   assert.equal(env.PREVIEW_PROXY_PORT, "3001");
   assert.equal(env.VK_ALLOWED_ORIGINS, "https://evk.example.test");
   assert.equal(env.VK_PREVIEW_DOMAIN, "preview.example.test");
+});
+
+test("IP hosts use IP SANs and correctly formatted origins", async (t) => {
+  for (const host of ["192.0.2.10", "2001:db8::10"]) {
+    const config = serverSettings({ EVK_HOST: host });
+    assert.equal(config.app, host);
+    assert.equal(
+      backendEnvironment({}, config).VK_ALLOWED_ORIGINS,
+      `https://${authority(host)}`,
+    );
+    const dir = await mkdtemp(join(tmpdir(), "evk-ip-test-"));
+    t.after(() => rm(dir, { recursive: true, force: true }));
+    const certPath = join(dir, "cert.pem"),
+      keyPath = join(dir, "key.pem");
+    execFileSync(
+      "openssl",
+      [
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-days",
+        "1",
+        "-subj",
+        "/CN=ip-test",
+        "-addext",
+        `subjectAltName=IP:${host}`,
+        "-keyout",
+        keyPath,
+        "-out",
+        certPath,
+      ],
+      { stdio: "ignore" },
+    );
+    const certificate = await readFile(certPath),
+      key = await readFile(keyPath);
+    validateSecrets(certificate, key, hash, config);
+    assert.throws(
+      () => validateSecrets(certificate, key, hash, { app: "192.0.2.11" }),
+      /does not cover/,
+    );
+  }
+  assert.throws(
+    () => serverSettings({ EVK_HOST: "192.0.2.1", EVK_DOMAIN: "other.test" }),
+    /conflicting/,
+  );
+  assert.throws(() => serverSettings({ EVK_HOST: "192.0.2.1:443" }));
+  assert.throws(() => serverSettings({ EVK_HOST: "[2001:db8::1]" }));
+});
+
+test("renewals validate before reload, retry failures and avoid duplicate reloads", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "evk-renew-test-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  async function certificate(serial) {
+    execFileSync(
+      "openssl",
+      [
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-days",
+        "1",
+        "-subj",
+        "/CN=evk.example.test",
+        "-addext",
+        "subjectAltName=DNS:evk.example.test",
+        "-set_serial",
+        serial,
+        "-keyout",
+        join(dir, "key"),
+        "-out",
+        join(dir, "cert"),
+      ],
+      { stdio: "ignore" },
+    );
+    return {
+      certificate: await readFile(join(dir, "cert")),
+      key: await readFile(join(dir, "key")),
+      passwords: hash,
+    };
+  }
+  const initial = await certificate("1"),
+    renewed = await certificate("2");
+  let next = initial,
+    reloads = 0,
+    fail = false;
+  const check = certificateReloader({
+    initial,
+    settings: { app: settings.app },
+    read: async () => next,
+    activate: async () => {
+      if (fail) throw new Error("nginx check failed");
+      reloads++;
+    },
+  });
+  await check();
+  assert.equal(reloads, 0);
+  next = { ...renewed, key: initial.key };
+  await assert.rejects(check(), /mismatch/);
+  assert.equal(reloads, 0);
+  next = renewed;
+  fail = true;
+  await assert.rejects(check(), /nginx check failed/);
+  fail = false;
+  await Promise.all([check(), check()]);
+  await check();
+  assert.equal(reloads, 1);
 });
 
 test("certificate and password preflight fails closed", async (t) => {

@@ -78,6 +78,14 @@ jobs:
         env:
           EVK_SMOKE_IMAGE: ${{ steps.image.outputs.reference }}
         run: bash deploy/server/smoke-image.sh "$EVK_SMOKE_IMAGE"
+      - name: Check repository formatting with the bundled toolchain
+        env:
+          EVK_FORMAT_IMAGE: ${{ steps.image.outputs.reference }}
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --entrypoint bash --mount "type=bind,src=$PWD,dst=/workspace" \
+            --workdir /workspace "$EVK_FORMAT_IMAGE" -lc 'pnpm run format'
+          git diff --exit-code
       - name: Publish the tested image
         if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
