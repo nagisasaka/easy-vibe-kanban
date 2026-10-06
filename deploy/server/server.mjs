@@ -1,7 +1,6 @@
-import { spawn, execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { X509Certificate, createPrivateKey, createHash } from "node:crypto";
 import { isIP } from "node:net";
-import { promisify } from "node:util";
 import { constants } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -245,22 +244,28 @@ async function main() {
     "utf8",
   );
   await writeFile(config, renderNginx(template, settings), { mode: 0o600 });
-  const check = spawn("nginx", ["-e", "stderr", "-t", "-c", config], {
-    stdio: "inherit",
-  });
-  const code = await new Promise((resolve, reject) => {
-    check.once("error", reject);
-    check.once("exit", resolve);
-  });
-  if (code !== 0) throw new Error("nginx configuration validation failed");
-  const run = promisify(execFile);
+  // nginx opens /dev/stdout while validating its access log. Node's captured
+  // child stdio uses sockets that cannot be reopened this way on Linux.
+  // Inherit the container's log descriptors for both startup and renewal.
+  const runNginx = (args) =>
+    new Promise((resolve, reject) => {
+      const child = spawn("nginx", ["-e", "stderr", ...args, "-c", config], {
+        stdio: "inherit",
+      });
+      child.once("error", reject);
+      child.once("exit", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`nginx ${args.join(" ")} failed (${code})`));
+      });
+    });
+  await runNginx(["-t"]);
   const reload = certificateReloader({
     read: readSecrets,
     settings,
     initial,
     activate: async () => {
-      await run("nginx", ["-e", "stderr", "-t", "-c", config]);
-      await run("nginx", ["-e", "stderr", "-s", "reload", "-c", config]);
+      await runNginx(["-t"]);
+      await runNginx(["-s", "reload"]);
     },
   });
   const timer = setInterval(() => {
