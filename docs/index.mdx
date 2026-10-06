@@ -1,21 +1,31 @@
 ---
-title: "Vibe Kanban"
-description: "Plan and review the work of AI agents faster, ship more"
+title: "Lucky Vibe Kanban"
+description: "Plan work, run coding agents and review changes in your own development environment"
 sidebarTitle: "Home"
 ---
 
-In a world where software engineers spend most of their time planning and reviewing coding agents, the most impactful way to ship more is to get faster at planning and review.
+Lucky Vibe Kanban (LVK) is a self-hosted workspace for coding agents, Git worktrees,
+visual workflows and repository memory. It builds on Easy Vibe Kanban and Vibe Kanban.
 
-Vibe Kanban is built for this. Use kanban issues to plan work, either privately or with your team. When you’re ready to begin, create workspaces where coding agents can execute.
+LVK is distributed as Docker images through GHCR. You can run it on your own server
+with HTTPS and Basic authentication using a public IP address; a purchased domain
+is not required. Coding-agent accounts and model usage are configured separately.
 
-We're not a coding agent, but work seamlessly with four V1 runtimes: Claude Code, Codex, Gemini CLI, and Oh My Pi.
+<CardGroup cols={2}>
+  <Card
+    title="Set up your server"
+    icon="server"
+    href="/self-hosting/server-container"
+  >
+    Install the Docker distribution and configure HTTPS, authentication and
+    persistent storage.
+  </Card>
+  <Card title="Get started" icon="rocket" href="/getting-started">
+    Bring in a repository and choose a coding agent.
+  </Card>
+</CardGroup>
 
-```bash
-npx easy-vibe-kanban
-```
-
-One command. Describe the work, review the diff, ship it.
-
-<Frame>
-  <img src="/images/onboarding-workspaces-logs.png" alt="Vibe Kanban workspace showing the logs panel with command output from running processes" />
-</Frame>
+<Info>
+  The upstream multi-user cloud backend is separate from this single-user server
+  setup. Cloud-specific documentation describes that upstream system.
+</Info>

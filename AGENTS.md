@@ -7,7 +7,7 @@
 - `packages/web-core/`: Shared React + TypeScript frontend library used by local + remote web (`packages/web-core/src`).
 - `shared/`: Generated TypeScript types (`shared/types.ts`, `shared/remote-types.ts`) and agent tool schemas (`shared/schemas/`). Do not edit generated files directly.
 - `assets/`, `dev_assets_seed/`, `dev_assets/`: Packaged and local dev assets.
-- `npx-cli/`: Files published to the npm CLI package.
+- `npx-cli/`: Legacy CLI source retained from upstream; not published by LVK.
 - `scripts/`: Dev helpers (ports, DB preparation).
 - `docs/`: Documentation files.
 
@@ -35,7 +35,7 @@ Do not manually edit shared/remote-types.ts, instead edit crates/remote/src/bin/
 - Generate TS types from Rust: `pnpm run generate-types` (or `generate-types:check` in CI)
 - Prepare SQLx (offline): `pnpm run prepare-db`
 - Prepare SQLx (remote package, postgres): `pnpm run remote:prepare-db`
-- NPX release validation: follow `PROJECT.md`. Commit and push the branch, run the GitHub Actions npm publish workflow (`publish-easy-npx.yml`), then verify/install from the official npm registry. Do not use local build/pack artifacts as the validation or release path unless the user explicitly asks for local-only debugging.
+- Release validation: use the GitHub Actions server image workflow, then verify and run the versioned image from GHCR. LVK does not publish npm packages.
 - Format code: `pnpm run format` (runs `cargo fmt` for all backend Rust workspaces + web-core/web Prettier)
 - Lint: `pnpm run lint` (runs web/ui ESLint, `cargo clippy` for the root Rust workspace, and the unused-i18n-key check)
 
@@ -48,11 +48,11 @@ Do not manually edit shared/remote-types.ts, instead edit crates/remote/src/bin/
 - Report the scope actually validated. Unavailable remote backend checks are outside the required gates for local-only work, not a reason to keep that task unfinished. If changes affect the remote backend or its shared contracts, explicitly report that remote compilation/tests remain unverified; never count skipped checks as passed.
 
 ## Project Build Policy
-- This section embeds the current local `PROJECT.md` policy. `PROJECT.md` itself is local-only and does not need to be committed or pushed.
-- For validation builds, use GitHub Actions to build and publish to npm. Do not attempt to build release packages on this machine.
-- After the action completes, verify the published `lucky-vibe-kanban` version with the official npm registry (`https://registry.npmjs.org/`) and install/run from npm for user-facing checks.
-- `git-build.md` may document historical artifact-based flows, but `PROJECT.md` overrides it for current build/release decisions.
-- Server container distribution: `.github/workflows/publish-server.yml` builds and validates the root Dockerfile's `server` target in GitHub Actions, then publishes version-tagged images to GHCR. A manual dispatch builds/tests without publishing. This is separate from npm release validation; do not run local Docker release builds unless explicitly requested. Docker-free validation is `pnpm run server:check`, plus the relevant Rust/frontend gates. Report container/host tests as unverified when Docker or host access is unavailable.
+- LVK is distributed only as Docker images. Do not publish npm packages or require npm authentication for validation.
+- `.github/workflows/publish-server.yml` builds and validates the root Dockerfile's `server` target in GitHub Actions, then publishes version-tagged images to GHCR. A manual dispatch builds/tests without publishing.
+- Do not run local Docker release builds unless explicitly requested. Source development/debug builds are separate from release builds and are supported locally or in the server development container.
+- Verify the published image and use its immutable digest for deployment. Docker-free validation is `pnpm run server:check`, plus relevant Rust/frontend gates. Report container/host tests as unverified when Docker or host access is unavailable.
+- Historical npm instructions in legacy documentation or a local-only `PROJECT.md` are superseded by this Docker-only distribution policy.
 
 ## Before Completing a Task
 - Run `pnpm run format` to format all Rust workspaces and web code.

@@ -21,25 +21,11 @@ agent sessions can continue while your laptop is disconnected.
 Agent accounts and provider subscriptions are configured separately. LVK does not
 provide included model usage or a public, unrestricted agent service.
 
-## Run locally
+## Distribution
 
-> The renamed npm package is awaiting its first publication. Until it appears on
-> [npm](https://www.npmjs.com/package/lucky-vibe-kanban), use the server image or
-> source-development setup below. The command below applies after publication.
-
-Install Node.js 20 or newer, install and authenticate the coding agent you want to
-use, then run:
-
-```bash
-npx lucky-vibe-kanban
-```
-
-The npm distribution targets **Linux x64 and Windows x64**. For other platforms,
-use a supported source-development environment; this release workflow does not
-publish macOS or ARM binaries.
-
-The local app listens on loopback by default. Use the server distribution below
-for internet-facing access.
+LVK is distributed **only as Docker images** through GHCR, initially for Linux
+amd64. This fork does not publish an npm package. For local development, run from
+source using the instructions below.
 
 ## Run on your own server
 
@@ -93,10 +79,9 @@ The separate `crates/remote` Rust workspace has an upstream private dependency.
 It is not required for local LVK development. See [AGENTS.md](AGENTS.md) for the
 supported validation scope. Do not edit generated files in `shared/` directly.
 
-Release builds and publication run in GitHub Actions. The npm workflow is
-[`publish-easy-npx.yml`](.github/workflows/publish-easy-npx.yml); its historical
-filename remains stable. Server images are built, tested and published by
-[`publish-server.yml`](.github/workflows/publish-server.yml). Routine source
+Release builds and publication run in GitHub Actions through
+[`publish-server.yml`](.github/workflows/publish-server.yml). The workflow tests
+the server image before publishing a versioned image to GHCR. Routine source
 checks and hot reload do not require a release build.
 
 ## Workspaces and repository memory
@@ -112,11 +97,11 @@ for source reservations, validation, publication and recovery.
 
 ## Naming and compatibility
 
-The product is **Lucky Vibe Kanban**, abbreviated **LVK**, and the public package
+The product is **Lucky Vibe Kanban**, abbreviated **LVK**, and the repository
 is `lucky-vibe-kanban`. Historical storage names (`vibe-kanban`, `.evk-shared`),
 `EVK_*`/`VK_*` configuration keys and native binary names remain compatible.
 Renaming these identifiers requires a separate data migration. Existing
-`easy-vibe-kanban` installations do not automatically switch npm packages.
+`easy-vibe-kanban` npm installations do not automatically migrate to Docker.
 
 ## Acknowledgements and licence
 

@@ -277,7 +277,7 @@ Replace the example base with your published version/digest. Preserve the non-ro
 
 ## Publish from your fork
 
-The `Build and publish LVK server image` workflow builds the root Dockerfile's `server` target. It uses `GITHUB_TOKEN` with `packages: write`, and publishes to `ghcr.io/<owner>/<repository>` in lowercase. It does not alter the existing npm release workflow.
+The `Build and publish LVK server image` workflow builds the root Dockerfile's `server` target. It uses `GITHUB_TOKEN` with `packages: write`, and publishes to `ghcr.io/<owner>/<repository>` in lowercase. Docker images are the only LVK release distribution; no npm publication or npm credential is required.
 
 1. Merge tested changes into `main`; merging alone does not publish an image.
 2. For an image-build rehearsal, manually dispatch the workflow on your branch. It builds and smoke-tests, and refreshes the build cache, but does **not** publish an application image.

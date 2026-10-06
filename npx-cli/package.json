@@ -1,6 +1,6 @@
 {
   "name": "lucky-vibe-kanban",
-  "private": false,
+  "private": true,
   "version": "0.1.44-lvk.1",
   "main": "index.js",
   "bin": {

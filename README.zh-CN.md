@@ -8,18 +8,10 @@ LVK 基于 Easy Vibe Kanban 和 Vibe Kanban，支持 Git 工作树、多会话�
 
 [English](README.md) · [服务器部署指南](docs/self-hosting/server-container.mdx)
 
-## 本机运行
+## 发布方式
 
-> 新名称的 npm 包尚待首次发布。发布前请使用下方的服务器镜像或源码开发方式；
-> 以下命令在 npm 发布后可用。
-
-安装 Node.js 20 或更新版本，并安装、登录需要使用的编码代理，然后运行：
-
-```bash
-npx lucky-vibe-kanban
-```
-
-当前 npm 发布流程提供 Linux x64 和 Windows x64 二进制文件。
+LVK **仅发布 Docker 镜像**，通过 GHCR 分发，当前平台为 Linux amd64。
+此分支不发布 npm 包。本机开发请使用下方的源码开发方式。
 
 ## 服务器运行
 
@@ -46,7 +38,7 @@ pnpm run dev
 ## 兼容性与来源
 
 产品名称已变更为 Lucky Vibe Kanban。历史数据路径、`.evk-shared`、`EVK_*`/`VK_*`
-环境变量和底层二进制名称保留，以维护兼容性。旧 npm 包不会自动切换到新包。
+环境变量和底层二进制名称保留，以维护兼容性。旧 npm 安装不会自动迁移到 Docker。
 
 感谢 [Easy Vibe Kanban](https://github.com/toby1123yjh/easy-vibe-kanban)
 和 [Vibe Kanban](https://github.com/BloopAI/vibe-kanban) 的贡献者。
