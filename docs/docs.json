@@ -124,20 +124,20 @@
     ]
   },
   "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "light": "/logo/lvk-light.svg",
+    "dark": "/logo/lvk-dark.svg"
   },
   "navbar": {
     "links": [
       {
         "label": "GitHub",
-        "href": "https://github.com/BloopAI/vibe-kanban"
+        "href": "https://github.com/nagisasaka/lucky-vibe-kanban"
       }
     ],
     "primary": {
       "type": "button",
       "label": "Get Started",
-      "href": "https://vibekanban.com/docs"
+      "href": "/self-hosting/server-container"
     }
   },
   "contextual": {
@@ -170,8 +170,7 @@
   ],
   "footer": {
     "socials": {
-      "github": "https://github.com/BloopAI/vibe-kanban",
-      "x": "https://x.com/vibekanban"
+      "github": "https://github.com/nagisasaka/lucky-vibe-kanban"
     }
   }
 }
