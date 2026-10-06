@@ -74,6 +74,15 @@ healthcheck は backend `/health` の200と、認証なし HTTPS の401を内部
 
 ## 更新・回復と検証限界
 
+Codex のログイン済み表示と container の healthy は、カードからの実行成功を保証しない。
+配置後は使い捨てのカードから通常の Code 実行を開始し、応答まで確認する。
+特に `invalid transport in mcp_servers.openwiki` は認証エラーではなく設定エラーである。
+Codex は無効な MCP サーバーにも transport を要求するため、通常 agent が OpenWiki を
+無効化するときは effective config に存在する場合だけ override する。未登録のサーバーへ
+`enabled = false` だけを追加してはならない。既存の stdio / HTTP transport は保持し、
+保守 agent の明示的な MCP 起動設定とは区別する。
+[設定の生成と回帰テスト](../../crates/executors/src/executors/codex.rs)がこの境界を扱う。
+
 canonical 運用手順は agent を停止・完了させ、EVK を止めて三つの volume と設定・secrets を整合した組としてバックアップする。rollback は古い image だけを新 DB に向けず、対応する全 volume のバックアップを同じ内部パスの別 recovery deployment へ戻して検証する。schema migration と Git worktree metadata を分離して復旧しない。[バックアップと rollback](../../docs/self-hosting/server-container.mdx#L153-L183)
 
 回帰検証は設定・証明書・停止を Node tests、TLS/認証/preview 分離を native nginx fixture、公開 URL を Rust/TypeScript tests で扱う。これらは実サーバー配置成功や公開 registry の存在を証明しない。native nginx が無い場合の skip と必須化は [開発時の検証](development.md#サーバー配布-kit-の検証)に置く。[認証・分離の test](../../deploy/server/nginx.test.mjs#L189-L235)、[停止の test](../../deploy/server/server.test.mjs#L197-L224)、[記録された未検証範囲](../../docs/self-hosting/server-container.mdx#L212-L231)

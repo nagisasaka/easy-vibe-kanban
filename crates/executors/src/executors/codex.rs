@@ -1127,7 +1127,10 @@ impl Codex {
             command_parts,
             env,
             move |client, _| async move {
-                if resource_mediator {
+                let disable_openwiki = params.config.as_ref().is_some_and(|config| {
+                    config.get("mcp_servers.openwiki.enabled") == Some(&Value::Bool(false))
+                });
+                if resource_mediator || disable_openwiki {
                     // Discover the effective inherited configuration before
                     // disabling each MCP/plugin for this thread only. Empty
                     // tables alone would not remove layered configuration.
@@ -1135,9 +1138,12 @@ impl Codex {
                         serde_json::to_value(client.config_read(params.cwd.clone()).await?.config)
                             .map_err(|e| ExecutorError::Io(std::io::Error::other(e)))?;
                     let config = params.config.get_or_insert_with(HashMap::new);
-                    for section in ["mcp_servers", "plugins"] {
-                        if let Some(entries) = effective.get(section).and_then(Value::as_object) {
-                            let disabled = entries
+                    omit_absent_openwiki_disable(config, &effective);
+                    if resource_mediator {
+                        for section in ["mcp_servers", "plugins"] {
+                            if let Some(entries) = effective.get(section).and_then(Value::as_object)
+                            {
+                                let disabled = entries
                                 .keys()
                                 .map(|name| {
                                     (
@@ -1150,7 +1156,8 @@ impl Codex {
                                     )
                                 })
                                 .collect::<serde_json::Map<_, _>>();
-                            config.insert(section.into(), Value::Object(disabled));
+                                config.insert(section.into(), Value::Object(disabled));
+                            }
                         }
                     }
                 }
@@ -1528,8 +1535,68 @@ fn fallback_models() -> Vec<ModelInfo> {
     models
 }
 
+// A disabled MCP entry still needs a transport in Codex. Do not create an
+// incomplete server merely to disable one that was never configured.
+fn omit_absent_openwiki_disable(config: &mut HashMap<String, Value>, effective: &Value) {
+    if config.get("mcp_servers.openwiki.enabled") == Some(&Value::Bool(false))
+        && effective
+            .get("mcp_servers")
+            .and_then(|servers| servers.get("openwiki"))
+            .is_none()
+    {
+        config.remove("mcp_servers.openwiki.enabled");
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn openwiki_disable_does_not_create_a_transportless_server() {
+        for effective in [serde_json::json!({}), serde_json::json!({"mcp_servers":{}})] {
+            let mut config = std::collections::HashMap::from([
+                (
+                    "mcp_servers.openwiki.enabled".into(),
+                    serde_json::json!(false),
+                ),
+                ("model".into(), serde_json::json!("test-model")),
+            ]);
+            super::omit_absent_openwiki_disable(&mut config, &effective);
+            assert!(!config.contains_key("mcp_servers.openwiki.enabled"));
+            assert_eq!(config["model"], "test-model");
+        }
+    }
+
+    #[test]
+    fn openwiki_disable_preserves_inherited_transports_and_maintenance() {
+        for server in [
+            serde_json::json!({"command":"openwiki","args":["mcp"]}),
+            serde_json::json!({"url":"https://example.invalid/mcp"}),
+        ] {
+            let mut config = std::collections::HashMap::from([(
+                "mcp_servers.openwiki.enabled".into(),
+                serde_json::json!(false),
+            )]);
+            let before = config.clone();
+            super::omit_absent_openwiki_disable(
+                &mut config,
+                &serde_json::json!({"mcp_servers":{"openwiki":server}}),
+            );
+            assert_eq!(config, before);
+        }
+        let mut maintenance = std::collections::HashMap::from([
+            (
+                "mcp_servers.openwiki.enabled".into(),
+                serde_json::json!(true),
+            ),
+            (
+                "mcp_servers.openwiki.command".into(),
+                serde_json::json!("openwiki"),
+            ),
+        ]);
+        let before = maintenance.clone();
+        super::omit_absent_openwiki_disable(&mut maintenance, &serde_json::json!({}));
+        assert_eq!(maintenance, before);
+    }
     #[test]
     fn goal_length_counts_unicode_characters_not_utf8_bytes() {
         assert!(super::validate_goal_objective(&"😀".repeat(4000)).is_ok());
