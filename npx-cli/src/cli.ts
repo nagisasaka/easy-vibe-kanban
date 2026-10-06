@@ -206,7 +206,7 @@ function checkForUpdates(): void {
       if (latest && latest !== CLI_VERSION) {
         setTimeout(() => {
           console.log(`\nUpdate available: ${CLI_VERSION} -> ${latest}`);
-          console.log(`Run: npx easy-vibe-kanban@latest`);
+          console.log(`Run: npx lucky-vibe-kanban@latest`);
         }, 2000);
       }
     })
@@ -307,10 +307,10 @@ function runOrExit(task: Promise<void>): void {
 
 async function main(): Promise<void> {
   fs.mkdirSync(versionCacheDir, { recursive: true });
-  const cli = cac("easy-vibe-kanban");
+  const cli = cac("lucky-vibe-kanban");
 
   cli
-    .command("[...args]", "Launch the local vibe-kanban app")
+    .command("[...args]", "Launch Lucky Vibe Kanban")
     .option("--desktop", "Launch the desktop app instead of browser mode")
     .allowUnknownOptions()
     .action((_args: string[], options: RootOptions) => {

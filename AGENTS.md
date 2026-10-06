@@ -41,7 +41,7 @@ Do not manually edit shared/remote-types.ts, instead edit crates/remote/src/bin/
 
 ### Public-fork validation scope
 
-- Normal local EVK development must not require access to upstream private repositories. `crates/remote/Cargo.toml` declares the private `BloopAI/vibe-kanban-private` billing dependency. Direct Cargo checks can attempt to resolve it even when the billing feature is disabled; installing SSH alone does not grant access.
+- Normal local LVK development must not require access to upstream private repositories. `crates/remote/Cargo.toml` declares the private `BloopAI/vibe-kanban-private` billing dependency. Direct Cargo checks can attempt to resolve it even when the billing feature is disabled; installing SSH alone does not grant access.
 - Do not run the separate remote backend's Cargo checks, tests, lint, or type generator as routine completion gates in this environment. Do not repeatedly attempt the private fetch, install SSH, configure credentials, or rewrite Cargo manifests merely to make these gates pass.
 - For remote backend work, run `pnpm run remote:check`, `pnpm run remote:lint`, and `pnpm run remote:test` only in an environment with the required dependency access, or use an explicitly scoped, supported public validation path. The existing self-hosted Docker build removes the private dependency inside its build context; changing the source manifest to imitate it is not a normal local validation step.
 - Keep remote-web frontend type checking and remote Rust formatting: these do not require fetching the private billing crate.
@@ -50,7 +50,7 @@ Do not manually edit shared/remote-types.ts, instead edit crates/remote/src/bin/
 ## Project Build Policy
 - This section embeds the current local `PROJECT.md` policy. `PROJECT.md` itself is local-only and does not need to be committed or pushed.
 - For validation builds, use GitHub Actions to build and publish to npm. Do not attempt to build release packages on this machine.
-- After the action completes, verify the published `easy-vibe-kanban` version with the official npm registry (`https://registry.npmjs.org/`) and install/run from npm for user-facing checks.
+- After the action completes, verify the published `lucky-vibe-kanban` version with the official npm registry (`https://registry.npmjs.org/`) and install/run from npm for user-facing checks.
 - `git-build.md` may document historical artifact-based flows, but `PROJECT.md` overrides it for current build/release decisions.
 - Server container distribution: `.github/workflows/publish-server.yml` builds and validates the root Dockerfile's `server` target in GitHub Actions, then publishes version-tagged images to GHCR. A manual dispatch builds/tests without publishing. This is separate from npm release validation; do not run local Docker release builds unless explicitly requested. Docker-free validation is `pnpm run server:check`, plus the relevant Rust/frontend gates. Report container/host tests as unverified when Docker or host access is unavailable.
 

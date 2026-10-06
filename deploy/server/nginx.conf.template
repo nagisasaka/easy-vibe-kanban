@@ -23,7 +23,7 @@ http {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_session_cache shared:TLS:10m;
     ssl_session_tickets off;
-    auth_basic "EVK private development server";
+    auth_basic "LVK private development server";
     auth_basic_user_file /run/evk-secrets/htpasswd;
 
     proxy_http_version 1.1;

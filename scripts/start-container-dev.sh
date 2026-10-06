@@ -89,7 +89,7 @@ export VK_ALLOWED_ORIGINS="${VK_ALLOWED_ORIGINS:-http://localhost:${FRONTEND_POR
 export VITE_VK_SHARED_API_BASE="${VK_SHARED_API_BASE:-}"
 
 printf '%s\n' \
-    'Starting easy-vibe-kanban for Docker access:' \
+    'Starting lucky-vibe-kanban for Docker access:' \
     "  Frontend:       http://localhost:${FRONTEND_PORT}" \
     "  Backend API:    ${HOST}:${BACKEND_PORT} (proxied through the frontend)" \
     "  Preview proxy:  ${HOST}:${PREVIEW_PROXY_PORT}" \

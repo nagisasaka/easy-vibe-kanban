@@ -218,7 +218,7 @@
   "signIn": "登录",
   "signOut": "退出登录",
   "oauth": {
-    "title": "登录 Vibe Kanban",
+    "title": "登录 Lucky Vibe Kanban",
     "description": "登录以加入组织并与团队共享任务",
     "continueWithGitHub": "使用 GitHub 继续",
     "continueWithGoogle": "使用 Google 继续",
@@ -955,7 +955,7 @@
   "workspacesGuide": {
     "welcome": {
       "title": "欢迎",
-      "content": "欢迎使用 Workspaces，这是 Vibe Kanban 的全新设计界面。我们正在向部分用户推出以获取早期反馈。您可以随时通过导航栏中的反馈图标分享您的想法。"
+      "content": "欢迎使用 Workspaces，这是 Lucky Vibe Kanban 的全新设计界面。我们正在向部分用户推出以获取早期反馈。您可以随时通过导航栏中的反馈图标分享您的想法。"
     },
     "commandBar": {
       "title": "命令栏",
@@ -1199,7 +1199,7 @@
     "projectsGuide": {
       "intro": {
         "title": "欢迎",
-        "content": "欢迎使用 Vibe Kanban。使用此面板中的帮助内容了解基本流程，然后创建第一个问题。你可以随时从导航栏重新打开此帮助对话框或提交反馈。"
+        "content": "欢迎使用 Lucky Vibe Kanban。使用此面板中的帮助内容了解基本流程，然后创建第一个问题。你可以随时从导航栏重新打开此帮助对话框或提交反馈。"
       },
       "welcome": {
         "title": "项目",
@@ -1215,7 +1215,7 @@
       },
       "organizations": {
         "title": "邀请你的团队",
-        "content": "我们已自动创建个人组织和初始项目，方便你开始使用 Vibe Kanban。关闭前请导出云端数据。"
+        "content": "我们已自动创建个人组织和初始项目，方便你开始使用 Lucky Vibe Kanban。关闭前请导出云端数据。"
       }
     }
   },

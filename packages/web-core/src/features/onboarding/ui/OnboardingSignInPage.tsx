@@ -115,9 +115,7 @@ export function OnboardingSignInPage() {
   );
 
   const logoSrc =
-    resolveTheme(theme) === 'dark'
-      ? '/vibe-kanban-logo-dark.svg'
-      : '/vibe-kanban-logo.svg';
+    resolveTheme(theme) === 'dark' ? '/lvk-logo-dark.svg' : '/lvk-logo.svg';
 
   const isLoggedIn = loginStatus?.status === 'loggedin';
 
@@ -280,7 +278,7 @@ export function OnboardingSignInPage() {
             <div className="flex justify-center">
               <img
                 src={logoSrc}
-                alt="Vibe Kanban"
+                alt="Lucky Vibe Kanban"
                 className="h-8 w-auto logo"
               />
             </div>

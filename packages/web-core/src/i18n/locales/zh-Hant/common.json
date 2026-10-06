@@ -218,7 +218,7 @@
   "signIn": "登入",
   "signOut": "登出",
   "oauth": {
-    "title": "登入 Vibe Kanban",
+    "title": "登入 Lucky Vibe Kanban",
     "description": "登入以加入組織並與團隊共享任務",
     "continueWithGitHub": "使用 GitHub 繼續",
     "continueWithGoogle": "使用 Google 繼續",
@@ -865,7 +865,7 @@
   "workspacesGuide": {
     "welcome": {
       "title": "歡迎",
-      "content": "歡迎使用 Workspaces，這是 Vibe Kanban 的全新設計介面。我們正在向部分使用者推出以獲取早期回饋。您可以隨時透過導覽列中的回饋圖示分享您的想法。"
+      "content": "歡迎使用 Workspaces，這是 Lucky Vibe Kanban 的全新設計介面。我們正在向部分使用者推出以獲取早期回饋。您可以隨時透過導覽列中的回饋圖示分享您的想法。"
     },
     "commandBar": {
       "title": "命令列",
@@ -1109,7 +1109,7 @@
     "projectsGuide": {
       "intro": {
         "title": "歡迎",
-        "content": "歡迎使用 Vibe Kanban。使用此面板中的說明內容了解基本流程，然後建立第一個議題。你可以隨時從導覽列重新開啟此說明對話框或提交回饋。"
+        "content": "歡迎使用 Lucky Vibe Kanban。使用此面板中的說明內容了解基本流程，然後建立第一個議題。你可以隨時從導覽列重新開啟此說明對話框或提交回饋。"
       },
       "welcome": {
         "title": "專案",
@@ -1125,7 +1125,7 @@
       },
       "organizations": {
         "title": "邀請你的團隊",
-        "content": "我們已自動建立個人組織和初始專案，方便你開始使用 Vibe Kanban。關閉前請匯出雲端資料。"
+        "content": "我們已自動建立個人組織和初始專案，方便你開始使用 Lucky Vibe Kanban。關閉前請匯出雲端資料。"
       }
     }
   },

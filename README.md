@@ -1,192 +1,122 @@
-<p align="center">
-  <picture>
-    <source srcset="packages/public/vibe-kanban-logo-dark.svg" media="(prefers-color-scheme: dark)">
-    <source srcset="packages/public/vibe-kanban-logo.svg" media="(prefers-color-scheme: light)">
-    <img src="packages/public/vibe-kanban-logo.svg" alt="easy-vibe-kanban logo">
-  </picture>
-</p>
+# Lucky Vibe Kanban (LVK)
 
-<p align="center"><strong>Plan with kanban. Execute with AI agent workflows.</strong></p>
-<p align="center">Orchestrate Claude Code, Codex, Gemini CLI and 10+ coding agents — as single tasks or as multi-agent workflows on a visual canvas.</p>
+**Plan work on a kanban board, run coding agents, and review their changes.**
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/easy-vibe-kanban"><img alt="npm" src="https://img.shields.io/npm/v/easy-vibe-kanban?style=flat-square" /></a>
-  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" /></a>
-</p>
+Lucky Vibe Kanban is a self-hosted development workspace built on the Vibe Kanban
+and Easy Vibe Kanban projects. Run it on your computer, or on your own server so
+agent sessions can continue while your laptop is disconnected.
 
-<p align="center">English | <a href="README.zh-CN.md">中文</a></p>
+[中文](README.zh-CN.md) · [Server setup](docs/self-hosting/server-container.mdx) ·
+[Source](https://github.com/nagisasaka/lucky-vibe-kanban) · [Apache-2.0](LICENSE)
 
-> **easy-vibe-kanban** is an independently maintained hard fork of [Vibe Kanban](https://github.com/BloopAI/vibe-kanban) (sunset by BloopAI). It continues development with a major new capability: **agentic workflows** — running a task as a graph of cooperating agent sessions.
+## What you can do
 
-```bash
-npx easy-vibe-kanban
-```
+- Organise issues and run coding agents such as Codex and Claude Code in Git worktrees.
+- Keep multiple sessions and workspaces, inspect execution history, and review diffs.
+- Compose agent steps into visual workflows, including parallel branches and conditions.
+- Integrate completed local-board work through a dedicated validation workspace.
+- Maintain repository memory with OpenWiki, with reconciliation after source integration.
+- Run the application and agents on an always-on server through HTTPS and Basic authentication.
 
-To keep agents running while your laptop is offline, use the
-[single-user server distribution](docs/self-hosting/server-container.mdx): a
-prebuilt GHCR image with HTTPS, Basic authentication, persistent volumes and an
-extensible development toolchain. Deployment files are in `deploy/server/`.
+Agent accounts and provider subscriptions are configured separately. LVK does not
+provide included model usage or a public, unrestricted agent service.
 
-![](packages/public/vibe-kanban-screenshot-overview.png)
+## Run locally
 
-## Why
-
-Engineers working with coding agents spend most of their time on two things: **planning** work and **reviewing** agent output. easy-vibe-kanban is built to make both fast — and to go one step further: instead of babysitting one agent at a time, you can wire multiple agent sessions into a workflow and let them execute a task end-to-end.
-
-## ✨ Agentic Workflows
-
-The headline feature of this fork. A **Workflow Attempt** is a way to execute a task: instead of a single agent session, you design a flow graph of agent steps on a visual canvas, and the steps run automatically in sequence.
-
-![](packages/public/workflow-canvas.png)
-
-*The built-in "Plan, Parallel Frontend & Backend, Review, Finalize" template on the workflow canvas — Claude Code plans, Gemini and Codex implement in parallel, then review and finalize.*
-
-- **Visual canvas** — design your flow with a node palette, drag-and-drop steps, and live execution states on every node and edge
-- **One agent session per step** — each Agent Step is a stable, real agent session you can open and chat with, exactly like a normal task attempt
-- **Mix and match agents** — use different agents for different stages: e.g. Claude Code to implement, Codex to review, Gemini CLI to write tests
-- **Shared worktree** — all steps in a workflow share one git worktree. Context flows through the actual code, not through brittle prompt-passing between nodes
-- **Automatic execution** — when a step finishes, its outgoing edges trigger the next steps; fan-out and join are supported
-- **Agentic condition routing** — add a router step that lets an agent decide which branch of the graph to take next
-- **Issue-native** — workflows live under an issue as one of its task attempts, alongside regular single-agent attempts. Same review, diff, and PR flow afterwards
-
-A typical flow:
-
-```
-Start → Plan (Claude Code) → Implement (Codex) → Condition Router
-                                                    ├─ pass → Write tests (Gemini) → End
-                                                    └─ fail → Fix issues (Claude Code) ↺
-```
-
-## Core Features
-
-- **Plan with kanban issues** — create, prioritise, and assign issues on a kanban board
-- **Run coding agents in workspaces** — each workspace gives an agent a branch, a terminal, and a dev server
-- **Review diffs and leave inline comments** — send feedback directly to the agent without leaving the UI
-- **Preview your app** — built-in browser with devtools, inspect mode, and device emulation
-- **Switch between coding agents** — Claude Code, Codex, Gemini CLI, and Oh My Pi
-- **Create pull requests and merge** — open PRs with AI-generated descriptions, review on GitHub, and merge
-
-![](packages/public/vibe-kanban-screenshot-workspace.png)
-
-## Installation
-
-Authenticate with your favourite coding agent first, then run:
+Install Node.js 20 or newer, install and authenticate the coding agent you want to
+use, then run:
 
 ```bash
-npx easy-vibe-kanban
+npx lucky-vibe-kanban
 ```
 
-## Development
+The npm distribution targets **Linux x64 and Windows x64**. For other platforms,
+use a supported source-development environment; this release workflow does not
+publish macOS or ARM binaries.
 
-### Card context and shared local files
+The local app listens on loopback by default. Use the server distribution below
+for internet-facing access.
 
-New cards enable the **Shared directories** context preset by default. Expand
-**Card context** to read its instructions; write task-specific requests in the
-description. Existing cards retain their saved, possibly customised text.
-Fresh Sessions inherit that saved policy, including fresh Sessions in an
-existing Workspace. EVK supplies current repository/Workspace identity and
-read-only, paginated parallel-activity/Change Manifest references. It does not
-inject peer conversations or repeatedly copy their history into follow-ups.
+## Run on your own server
 
-OpenWiki/Repository Memory is configured per repository, independently of this
-preset. Ordinary coding Agents may read the Wiki in their checkout but must not
-write canonical `openwiki/`. Their semantic Change Manifests inform reconciliation
-after source integration into the configured Wiki target. An old Workspace does
-not acquire a new Wiki just because another Workspace was merged. Disabling
-Shared directories guidance does not disable Memory finalisation or its safety
-rules, remove files, or revoke operating-system permissions.
+Use the [single-user server guide](docs/self-hosting/server-container.mdx) and the
+files in [`deploy/server`](deploy/server). The published Linux amd64 image contains
+LVK, nginx, Codex CLI, Git, Node.js, pnpm and a Rust development toolchain.
 
-Each repository in an EVK-managed Git workspace gets two Git-ignored links:
+- A stable public IP is sufficient: **no purchased domain is required**.
+- Let's Encrypt certificates are obtained and renewed automatically.
+- HTTPS and Basic authentication protect the application.
+- Docker volumes retain repositories, application data and agent credentials.
+- A server or container restart stops running processes; persistence does not
+  promise automatic resumption of interrupted agent work.
 
-- `.evk-shared/persistent/`: local files you maintain across workspaces.
-- `.evk-shared/cache/`: reproducible outputs and caches you may clear when unused.
+This is for one trusted user. Wildcard project previews require additional setup;
+Android/ADB remote access is not included. The local application deployed this
+way is separate from the upstream multi-user cloud backend.
 
-Both point to `<EVK workspace storage>/shared/<repository-name>-<full UUID>/` (the default
-storage base, even if you override the worktree location). You can put files
-through these links without configuring absolute paths. Workspaces of the same
-registered repository share the contents; workspace deletion removes only the
-links. EVK does not automatically clear either directory. Back up important
-files: this is local storage, not a backup service, and operating-system cleanup
-of temporary storage can still apply.
+## Develop LVK
 
-The prefix uses the repository name recorded at registration, sanitised and
-length-limited for filesystem safety. Changing its display name does not move
-the shared directory. The full UUID distinguishes repositories with the same
-name. Old `.evk/` links and UUID-only storage are not migrated automatically.
-For cards saved with the old paths, turn the Shared directories preset off and
-on to refresh the instructions for subsequent workspace requests. Existing
-agent sessions need to be told about the new paths separately.
-
-There is no tool-specific configuration or concurrency protection for arbitrary
-user files: configure your tools to use these paths and avoid conflicting writes.
-EVK's own immutable Manifest records use a separate host-managed publication
-contract; do not edit or delete another Workspace's records or private memory.
-Disabling the context preset removes the agent's instructions, not the shared
-files or links. EVK refuses to overwrite existing conflicting `.evk-shared` paths.
-Direct-folder workspaces do not receive these links. On Windows, directory
-symlinks require Developer Mode or the corresponding privileges.
-
-### Parallel development and formal Integration
-
-You can ask an Agent to inspect a peer's fixed commit and test a combination in
-a retained, detached trial worktree. This does not update the peer, target branch
-or Card status. If the peer itself needs a change, the Agent reports the required
-change rather than editing that Workspace.
-
-On a **local Board**, choose **Integrate / Auto Merge**, select one repository
-and local target branch, then explicitly choose Cards and one adopted Workspace
-per Card. EVK freezes their source commits, creates one Integration Workspace
-and Session, and runs the proposed validation plan itself on the final commit.
-Only that validated commit is promoted, followed by conditional Card completion
-and the existing OpenWiki reconciliation. Git publication, Done and Wiki status
-are displayed separately. Existing manual merge/PR operations remain available.
-
-Sources must be clean and idle, including Goals, queues and scripts. Cards with
-unintegrated results in another repository are rejected. Cancel is available
-before publication; reopening Done is not Git undo. This is cooperative local
-execution in one EVK service, not an OS sandbox or a multi-service guarantee.
-See the [operation and recovery guide](docs/design/parallel-integration-implementation.md#operation-and-recovery)
-for reservations, retained trials, errors and recovery.
-
-### Prerequisites
-
-- [Rust](https://rustup.rs/) (latest stable)
-- [Node.js](https://nodejs.org/) (>=20)
-- [pnpm](https://pnpm.io/) (>=8)
+Use the Node.js and pnpm versions in `package.json` and the Rust toolchain in
+`rust-toolchain.toml`. Install `cargo-watch`, then:
 
 ```bash
-cargo install cargo-watch sqlx-cli
-pnpm i
-pnpm run dev   # starts backend + web app; a blank DB is seeded from dev_assets_seed
+pnpm install --frozen-lockfile
+pnpm run dev
 ```
 
-Useful commands:
+Vite reloads frontend changes. `cargo watch` rebuilds and restarts the Rust
+backend. Keep the Cargo target directory between runs to reuse build output.
 
-| Command | Description |
-|---------|-------------|
-| `pnpm run check` | Type checks (frontend + all Rust workspaces) |
-| `pnpm run lint` | ESLint + clippy |
-| `pnpm run format` | Prettier + rustfmt |
-| `cargo test --workspace` | Rust tests |
-| `pnpm run generate-types` | Regenerate TS types from Rust (ts-rs) |
+For development on a server, follow the
+[source-development setup](docs/self-hosting/server-container.mdx#develop-lvk-on-the-server).
+It runs a separate development container using an existing published image:
+source edits do **not** require an image rebuild. The development app has its own
+HTTPS port, database, home and work volumes. The stable app continues to manage
+agent work while the development app restarts.
 
-### Key environment variables
+| Command                   | Purpose                                                |
+| ------------------------- | ------------------------------------------------------ |
+| `pnpm run dev`            | Local frontend and backend development                 |
+| `pnpm run dev:container`  | Fixed development ports for container access           |
+| `pnpm run check`          | Web TypeScript checks and the root Rust workspace      |
+| `pnpm run lint`           | Web lint, root Rust Clippy and unused translation keys |
+| `pnpm run format`         | Rust and web formatting                                |
+| `pnpm run server:check`   | Server configuration and ingress tests                 |
+| `cargo test --workspace`  | Root Rust workspace tests                              |
+| `pnpm run generate-types` | Generate shared TypeScript types from Rust             |
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | Auto-assign | Production server port (dev: frontend port, backend uses PORT+1) |
-| `HOST` | `127.0.0.1` | Backend server host |
-| `VK_ALLOWED_ORIGINS` | Not set | Comma-separated origins allowed to call the backend API (required behind a reverse proxy / custom domain) |
-| `DISABLE_WORKTREE_CLEANUP` | Not set | Disable git worktree cleanup (debugging) |
+The separate `crates/remote` Rust workspace has an upstream private dependency.
+It is not required for local LVK development. See [AGENTS.md](AGENTS.md) for the
+supported validation scope. Do not edit generated files in `shared/` directly.
 
-## Architecture
+Release builds and publication run in GitHub Actions. The npm workflow is
+[`publish-easy-npx.yml`](.github/workflows/publish-easy-npx.yml); its historical
+filename remains stable. Server images are built, tested and published by
+[`publish-server.yml`](.github/workflows/publish-server.yml). Routine source
+checks and hot reload do not require a release build.
 
-- **Backend**: Rust workspace — Axum API server, SQLx, a dedicated `workflow` crate (graph, planner, runner, validation), executor adapters for each coding agent, and git/worktree management
-- **Frontend**: React + TypeScript + Vite + Tailwind monorepo (`packages/local-web`, `packages/web-core`)
-- **Shared types**: generated from Rust via ts-rs (`shared/types.ts`) — never edited by hand
+## Workspaces and repository memory
 
-## Acknowledgements & License
+Each registered repository can share local files through `.evk-shared/persistent`
+and `.evk-shared/cache`. These are Git-ignored links shared across its workspaces;
+configure language-specific caches explicitly and back up important local files.
 
-This project is a hard fork of [Vibe Kanban](https://github.com/BloopAI/vibe-kanban) by Bloop AI. Huge thanks to the original team for building and open-sourcing it.
+[OpenWiki](docs/workspaces/openwiki.mdx) is configured per repository. Coding
+agents contribute change manifests; repository memory is reconciled after source
+integration. See the [integration operation guide](docs/design/parallel-integration-implementation.md#operation-and-recovery)
+for source reservations, validation, publication and recovery.
 
-Licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution details.
+## Naming and compatibility
+
+The product is **Lucky Vibe Kanban**, abbreviated **LVK**, and the public package
+is `lucky-vibe-kanban`. Historical storage names (`vibe-kanban`, `.evk-shared`),
+`EVK_*`/`VK_*` configuration keys and native binary names remain compatible.
+Renaming these identifiers requires a separate data migration. Existing
+`easy-vibe-kanban` installations do not automatically switch npm packages.
+
+## Acknowledgements and licence
+
+LVK builds on [Easy Vibe Kanban](https://github.com/toby1123yjh/easy-vibe-kanban)
+and [Vibe Kanban](https://github.com/BloopAI/vibe-kanban). Their contributions and
+history remain part of this project. Licensed under [Apache-2.0](LICENSE); see
+[NOTICE](NOTICE) for attribution.

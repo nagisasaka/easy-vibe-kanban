@@ -1,0 +1,46 @@
+# Optional source development environment. Shares checkouts, not the stable DB.
+services:
+  development:
+    profiles: [development]
+    image: ${EVK_IMAGE:?Set EVK_IMAGE to a published toolchain image}
+    init: true
+    restart: unless-stopped
+    entrypoint: [node, /opt/lvk-development/development.mjs]
+    ports:
+      - "${LVK_DEV_HTTPS_PORT:-8443}:8443"
+    environment:
+      EVK_HOST: ${EVK_HOST:-${EVK_DOMAIN:-}}
+      LVK_DEV_REPO: ${LVK_DEV_REPO:-/repos/lucky-vibe-kanban}
+      LVK_DEV_HTTPS_PORT: ${LVK_DEV_HTTPS_PORT:-8443}
+      CARGO_BUILD_JOBS: ${LVK_DEV_BUILD_JOBS:-2}
+    volumes:
+      - development-home:/home/appuser
+      - repos:/repos
+      - development-work:/var/tmp
+      - type: bind
+        source: ./development
+        target: /opt/lvk-development
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./secrets
+        target: /run/evk-secrets
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, node, /opt/lvk-development/development-healthcheck.mjs]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    stop_grace_period: 150s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+volumes:
+  development-home:
+  development-work:

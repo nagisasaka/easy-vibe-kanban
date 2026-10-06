@@ -33,7 +33,7 @@ test("release builds the server target, tests before publishing, and does not pu
   assert.equal(steps[build].with.push, false);
   assert.equal(steps[build].with.load, true);
   assert.equal(
-    steps[build].with["cache-from"],
+    steps[build].with["cache-from"].trim().split("\n")[0],
     "type=registry,ref=${{ steps.image.outputs.cache }}",
   );
   assert.equal(

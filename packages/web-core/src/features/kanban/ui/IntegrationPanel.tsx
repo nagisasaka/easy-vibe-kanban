@@ -165,7 +165,7 @@ export function IntegrationPanel({
           <DialogHeader>
             <DialogTitle>Formal Integration</DialogTitle>
             <DialogDescription>
-              Select Cards and one adopted Workspace each. EVK creates one
+              Select Cards and one adopted Workspace each. LVK creates one
               integration Workspace, verifies its final commit, then updates the
               local target and conditionally marks the Cards Done. No push or
               automatic PR.

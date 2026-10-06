@@ -1,4 +1,4 @@
-name: Build and publish EVK server image
+name: Build and publish LVK server image
 
 on:
   push:
@@ -36,6 +36,7 @@ jobs:
         run: |
           pnpm run server:check
           docker compose -f deploy/server/compose.yaml -f deploy/server/compose.acme.yaml config --quiet
+          docker compose -f deploy/server/compose.yaml -f deploy/server/compose.acme.yaml -f deploy/server/compose.development.yaml --profile development config --quiet
         env:
           EVK_IMAGE: ghcr.io/example/evk:test
           EVK_HOST: 192.0.2.1
@@ -78,7 +79,10 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.image.outputs.version }}
             org.opencontainers.image.licenses=Apache-2.0
-          cache-from: type=registry,ref=${{ steps.image.outputs.cache }}
+          # Import the pre-rename cache as a migration fallback.
+          cache-from: |
+            type=registry,ref=${{ steps.image.outputs.cache }}
+            type=registry,ref=ghcr.io/nagisasaka/easy-vibe-kanban:buildcache
           cache-to: type=registry,ref=${{ steps.image.outputs.cache }},mode=max
       - name: Check the built image before publishing
         env:

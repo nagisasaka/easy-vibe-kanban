@@ -44,9 +44,7 @@ export function ExportPage({
   const { theme } = useTheme();
 
   const logoSrc =
-    resolveTheme(theme) === 'dark'
-      ? '/vibe-kanban-logo-dark.svg'
-      : '/vibe-kanban-logo.svg';
+    resolveTheme(theme) === 'dark' ? '/lvk-logo-dark.svg' : '/lvk-logo.svg';
 
   return (
     <div className="h-full overflow-auto bg-primary">
@@ -56,7 +54,7 @@ export function ExportPage({
             <div className="flex justify-center">
               <img
                 src={logoSrc}
-                alt="Vibe Kanban"
+                alt="Lucky Vibe Kanban"
                 className="h-8 w-auto logo"
               />
             </div>

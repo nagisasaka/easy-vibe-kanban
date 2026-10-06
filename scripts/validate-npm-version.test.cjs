@@ -3,12 +3,13 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const { validateNpmVersion } = require('./validate-npm-version.cjs');
 
-test('accepts stable, beta, easy including existing release inputs', () => {
+test('accepts stable, beta, easy and lvk including existing release inputs', () => {
   for (const value of [
     '0.0.0',
     '1.2.3',
     '0.1.44-easy.1',
     '0.1.44-easy.64',
+    '0.1.44-lvk.1',
     '1.2.3-beta.0',
     '12.34.56-beta.100',
   ])
@@ -25,6 +26,7 @@ test('rejects malformed, unsafe and noncanonical version inputs', () => {
     '1.02.3',
     '1.2.03',
     '1.2.3-easy.01',
+    '1.2.3-lvk.01',
     '1.2.3-beta.00',
     '1.2.3-easy.-1',
     '1.2.3-rc.1',
