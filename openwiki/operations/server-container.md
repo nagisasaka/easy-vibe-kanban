@@ -103,6 +103,11 @@ Basic認証は `LVK_E2E_CREDENTIALS_FILE` のJSONから読み、TLS検証は無�
 CI結果とdigestを取得し更新を要求できる。要求元agentはそのrunを終了する必要がある。
 [導入と運用手順](../../deploy/developer/README.md)、[非特権client](../../deploy/developer/client.py)
 
+公開CI結果の読取りとGit push認証は別である。サーバーからcommit/tagをpushするには、
+forkだけに制限した書込み認証を別途設定する。repository専用Deploy keyを使う場合、
+秘密鍵は安定版の永続homeに保存し、Gitや配布imageには含めない。公開releaseの解決・
+更新要求だけならGitHub API tokenは不要である。[認証と開発手順](../../deploy/developer/README.md)
+
 ホストは許可repository・source SHA・digest・CI run label・公開workflow成功を照合し、
 使い捨てvolumeで候補imageのブラウザー/バックエンドを検査する。通常の編集はsource reload、
 採用する変更のリリース時だけCI image buildを行う。8443は単一checkoutを参照し、カードの

@@ -20,6 +20,13 @@ does include headless Chromium, Playwright and its system dependencies.
    status from a new run after the update. A pending request does not force any
    active agent, goal, terminal, resource operation or workflow to stop.
 
+Git push authentication is separate from reading public release metadata. Use
+credentials restricted to your fork, such as a write-enabled
+[repository deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys).
+Keep its private key in the stable service's persistent home, never in Git or
+the application image. Configure the checkout's SSH push URL and key before
+attempting a release. The public release client itself needs no GitHub API token.
+
 The development service watches **one** checkout (`LVK_DEV_REPO`). It does not
 automatically follow the card that requested testing. Select the intended
 worktree when starting a preview, or use separate ports. Serialise use of a
