@@ -12,7 +12,10 @@ test("the deployed application renders and reaches its real backend", async ({
   await expect(page).toHaveTitle(/Lucky Vibe Kanban/i);
   await expect(page.locator("#root")).not.toBeEmpty();
   await expect(page.locator("#root")).toContainText(/\S/);
-  await expect(page.getByRole("button").first()).toBeVisible();
+  // A cold Vite module graph over HTTPS can outlast ordinary UI assertions.
+  await expect(page.getByRole("button").first()).toBeVisible({
+    timeout: 90_000,
+  });
   const info = await request.get("/api/info");
   expect(info.status()).toBe(200);
   expect((await info.json()).success).toBe(true);

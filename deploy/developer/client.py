@@ -69,7 +69,7 @@ def main():
             os.fsync(stream.fileno())
         temporary.rename(target)
         print(json.dumps({"job_id": job_id, "status": "queued"}))
-        print("End this agent run after submission. The host waits until all work is idle.")
+        print("End this agent run after submission. Active goals must finish or be explicitly paused; the host waits until all work is idle.")
         return
     job_id = str(uuid.UUID(args.job_id))
     if args.action == "cancel":

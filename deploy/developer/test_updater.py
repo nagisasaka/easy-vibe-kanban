@@ -182,7 +182,7 @@ class FakeUpdater(Updater):
     def set_image(self, image):
         self.events.append("set image")
 
-    def start_and_verify(self):
+    def start_and_verify(self, expected_image):
         self.events.append("verify")
         if self.fail_verify:
             raise RuntimeError("bad migration or browser failure")
@@ -230,6 +230,13 @@ class LifecycleTests(unittest.TestCase):
         self.updater.process(self.job)
         self.assertEqual(self.job["status"], "rolled_back")
         self.assertIn("restore image AND data", self.updater.events)
+
+    def test_compose_cannot_silently_deploy_an_overridden_image(self):
+        with patch.object(self.updater, "inspect", return_value={"Id": "expected"}), patch.object(
+            self.updater, "containers", return_value=[{"info": {"Image": "different"}}]
+        ):
+            with self.assertRaisesRegex(RuntimeError, "unexpected image"):
+                Updater.start_and_verify(self.updater, REQUEST["image"])
 
     def test_interrupted_transaction_blocks_subsequent_updates(self):
         self.job["status"] = "applying"

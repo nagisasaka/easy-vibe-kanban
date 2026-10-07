@@ -305,11 +305,14 @@ for (sid,) in db.execute('SELECT id FROM sessions'):
         temp.chmod(0o600)
         temp.replace(path)
 
-    def start_and_verify(self):
+    def start_and_verify(self, expected_image):
         self.command(self.compose + ["up", "-d", "--no-build", "--pull", "never", "--force-recreate", *self.services], timeout=300)
+        expected_id = self.inspect(expected_image)["Id"]
         deadline = time.monotonic() + self.config.get("health_timeout_seconds", 2700)
         while time.monotonic() < deadline:
             containers = self.containers()
+            if any(c["info"]["Image"] != expected_id for c in containers):
+                raise RuntimeError("Compose started an unexpected image; check host environment overrides")
             if all(c["info"]["State"].get("Health", {}).get("Status") == "healthy" for c in containers):
                 for c in containers:
                     port = 4020 if c["service"] == "development" else 3000
@@ -396,7 +399,7 @@ for (sid,) in db.execute('SELECT id FROM sessions'):
             self.save(job, "applying")
             self.set_image(job["request"]["image"])
             self.save(job, "verifying")
-            self.start_and_verify()
+            self.start_and_verify(job["request"]["image"])
             self.save(job, "succeeded", message="Verified image deployed; browser and backend checks passed")
             self.gate.unlink(missing_ok=True)
         except Busy as error:
