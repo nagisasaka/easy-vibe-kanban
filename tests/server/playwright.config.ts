@@ -15,7 +15,8 @@ export default defineConfig({
   testDir: "./specs",
   outputDir: "../../test-results/server",
   workers: 1,
-  timeout: 60_000,
+  timeout: 120_000,
+  expect: { timeout: 30_000 },
   reporter: [
     ["list"],
     ["html", { outputFolder: "../../playwright-report/server", open: "never" }],

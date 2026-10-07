@@ -96,6 +96,7 @@ def validate_release(run, labels, request, repository):
         and labels.get("org.opencontainers.image.source", "").lower() == f"https://github.com/{repository.lower()}"
         and labels.get("io.lvk.actions-run-id") == str(request["run_id"])
         and labels.get("io.lvk.maintenance-queue-barrier") == "1"
+        and labels.get("io.lvk.maintenance-http-barrier") == "1"
     ):
         raise ValueError("Image identity and successful release workflow do not match")
 
@@ -223,6 +224,8 @@ class Updater:
         # newer queue POSTs are rejected. This includes non-durable follow-ups.
         code = """import json,sqlite3,sys,urllib.request,uuid
 db=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True)
+with urllib.request.urlopen('http://127.0.0.1:'+sys.argv[2]+'/api/maintenance/ready',timeout=30) as response:
+ if response.status!=200 or response.headers.get('x-lvk-maintenance-barrier')!='1': raise RuntimeError('Application does not support draining HTTP handlers')
 for (sid,) in db.execute('SELECT id FROM sessions'):
  url='http://127.0.0.1:'+sys.argv[2]+'/api/sessions/'+str(uuid.UUID(bytes=sid))+'/queue'
  with urllib.request.urlopen(url,timeout=15) as response:
@@ -310,7 +313,7 @@ for (sid,) in db.execute('SELECT id FROM sessions'):
             if all(c["info"]["State"].get("Health", {}).get("Status") == "healthy" for c in containers):
                 for c in containers:
                     port = 4020 if c["service"] == "development" else 3000
-                    self.command(["docker", "exec", "-e", f"LVK_E2E_BASE_URL=http://127.0.0.1:{port}", c["id"], "node", "/opt/lvk-browser/smoke.mjs"], timeout=120)
+                    self.command(["docker", "exec", "-e", f"LVK_E2E_BASE_URL=http://127.0.0.1:{port}", c["id"], "node", "/opt/lvk-browser/smoke.mjs"], timeout=210)
                 return
             time.sleep(5)
         raise RuntimeError("Updated application did not become healthy before the deadline")

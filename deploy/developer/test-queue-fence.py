@@ -33,9 +33,10 @@ try:
         api(route, payload | {"message": "Must not replace the saved queue"})
         raise AssertionError("Queue admitted during maintenance")
     except urllib.error.HTTPError as error:
-        assert error.code == 409, error.code
+        assert error.code == 503, error.code
     status, _ = api(route)
     assert status["message"]["data"]["message"] == payload["message"]
+    gate.unlink()
     api(route, method="DELETE")
     assert api(route)[0]["status"] == "empty"
 finally:

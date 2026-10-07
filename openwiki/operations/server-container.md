@@ -110,8 +110,10 @@ worktreeを自動選択しない。共有previewの排他利用か別portの環�
 
 更新は両アプリのDBと実プロセスがidleになるまで待つ。Goal active、未完了AgentRun/
 attempt、共有資源所有、未完了workflow、未知process、有効な定期実行は更新を妨げる。
-停止で失われるin-memory follow-upも、maintenance中の登録拒否と共通admission mutexを
-使うqueue GETで検査する。旧版にこの能力がなければ、まずSSHから対応版へbootstrapする。
+HTTPのreadiness barrierで既存handlerの終了を待ち、新しい変更リクエスト・WebSocket
+upgradeを503で拒否する。[HTTP barrier](../../crates/server/src/middleware/maintenance.rs)
+その後、停止で失われるin-memory follow-upを共通admission mutex付きのqueue GETで
+検査する。旧版にこの能力がなければ、まずSSHから対応版へbootstrapする。
 debug版DBはcheckoutの`dev_assets`、release版DBは永続homeにあり、両者を検査する。
 idle検査から停止までの競合を閉じるため、両コンテナーをfreezeして再検査し、仕事が
 増えていれば再開して待つ。idleを確認できた場合だけfreezeしたまま終了する。

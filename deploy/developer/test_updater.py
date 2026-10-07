@@ -43,7 +43,8 @@ class ValidationTests(unittest.TestCase):
                "status": "completed", "conclusion": "success", "head_sha": "b" * 40}
         labels = {"org.opencontainers.image.revision": "b" * 40,
                   "org.opencontainers.image.source": "https://github.com/example/lvk",
-                  "io.lvk.actions-run-id": "123", "io.lvk.maintenance-queue-barrier": "1"}
+                  "io.lvk.actions-run-id": "123", "io.lvk.maintenance-queue-barrier": "1",
+                  "io.lvk.maintenance-http-barrier": "1"}
         validate_release(run, labels, REQUEST, "example/lvk")
         for change in ({"conclusion": "failure"}, {"status": "in_progress"},
                        {"path": ".github/workflows/other.yml"}, {"event": "pull_request"},

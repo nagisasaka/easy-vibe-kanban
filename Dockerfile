@@ -186,6 +186,7 @@ COPY deploy/browser/smoke.mjs /opt/lvk-browser/smoke.mjs
 
 FROM server-browser AS server
 LABEL io.lvk.maintenance-queue-barrier="1"
+LABEL io.lvk.maintenance-http-barrier="1"
 COPY --from=builder /usr/local/bin/server /usr/local/bin/server
 COPY --from=builder /usr/local/bin/agent-process-host /usr/local/bin/agent-process-host
 COPY --from=builder /usr/local/bin/vibe-kanban-mcp /usr/local/bin/vibe-kanban-mcp

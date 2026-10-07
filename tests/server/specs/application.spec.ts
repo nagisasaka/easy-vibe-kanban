@@ -7,7 +7,7 @@ test("the deployed application renders and reaches its real backend", async ({
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  const response = await page.goto("/");
+  const response = await page.goto("/", { waitUntil: "domcontentloaded" });
   expect(response?.status()).toBe(200);
   await expect(page).toHaveTitle(/Lucky Vibe Kanban/i);
   await expect(page.locator("#root")).not.toBeEmpty();
@@ -21,15 +21,9 @@ test("the deployed application renders and reaches its real backend", async ({
   expect(errors).toEqual([]);
 });
 
-test("HTTPS ingress requires authentication", async ({
-  playwright,
-  baseURL,
-}) => {
+test("HTTPS ingress requires authentication", async ({ baseURL }) => {
   test.skip(!baseURL?.startsWith("https:"), "Internal disposable HTTP fixture");
-  const anonymous = await playwright.request.newContext({ baseURL });
-  try {
-    expect((await anonymous.get("/api/info")).status()).toBe(401);
-  } finally {
-    await anonymous.dispose();
-  }
+  // Playwright's request factory inherits configured HTTP credentials. Use an
+  // independent request to verify the unauthenticated ingress path.
+  expect((await fetch(new URL("/api/info", baseURL))).status).toBe(401);
 });

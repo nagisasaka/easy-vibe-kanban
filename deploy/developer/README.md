@@ -153,7 +153,10 @@ resource ownership must be resolved. Unknown database states/processes block
 the update instead of being assumed safe. A terminal agent status alone is
 insufficient: provider attempts, process registrations, commands and workflows
 are also checked.
-After closing the maintenance gate, the host also reads every session's
+After closing the maintenance gate, the host waits for in-flight HTTP handlers
+through a readiness barrier before freezing processes.
+New mutating requests and WebSocket upgrades receive 503 while read-only
+internal health/browser probes remain available. It then reads each session's
 in-memory follow-up queue through an admission barrier. Existing queued
 instructions prevent an update, and new queue entries are rejected until the
 gate reopens. The debug application's database is in its checkout's
