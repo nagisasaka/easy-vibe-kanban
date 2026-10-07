@@ -1,0 +1,42 @@
+# Optional: copy into the host deployment directory after install.py.
+# Only requests are writable by agents; no Docker socket or host shell access.
+services:
+  lvk:
+    environment:
+      LVK_E2E_BASE_URL: "${LVK_E2E_BASE_URL:-https://${LVK_HOST:?Set LVK_HOST}:${LVK_DEV_HTTPS_PORT:-8443}}"
+      LVK_E2E_CREDENTIALS_FILE: /run/lvk-e2e/credentials.json
+    volumes:
+      - type: bind
+        source: ${LVK_UPDATER_STATE:-/var/lib/lvk-updater}/requests
+        target: /run/lvk-update/requests
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${LVK_UPDATER_STATE:-/var/lib/lvk-updater}/status
+        target: /run/lvk-update/status
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${LVK_UPDATER_STATE:-/var/lib/lvk-updater}/maintenance
+        target: /run/lvk-maintenance
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ./secrets/e2e.json
+        target: /run/lvk-e2e/credentials.json
+        read_only: true
+        bind: { create_host_path: false }
+  development:
+    environment:
+      LVK_E2E_BASE_URL: "${LVK_E2E_BASE_URL:-https://${LVK_HOST:?Set LVK_HOST}:${LVK_DEV_HTTPS_PORT:-8443}}"
+      LVK_E2E_CREDENTIALS_FILE: /run/lvk-e2e/credentials.json
+    volumes:
+      - type: bind
+        source: ${LVK_UPDATER_STATE:-/var/lib/lvk-updater}/maintenance
+        target: /run/lvk-maintenance
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ./secrets/e2e.json
+        target: /run/lvk-e2e/credentials.json
+        read_only: true
+        bind: { create_host_path: false }

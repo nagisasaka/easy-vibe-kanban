@@ -1,6 +1,9 @@
 use axum::{
-    Extension, Json, Router, extract::State, middleware::from_fn_with_state,
-    response::Json as ResponseJson, routing::get,
+    Extension, Json, Router,
+    extract::State,
+    middleware::from_fn_with_state,
+    response::{IntoResponse, Json as ResponseJson},
+    routing::get,
 };
 use db::models::{scratch::DraftFollowUpData, session::Session};
 use deployment::Deployment;
@@ -38,6 +41,13 @@ async fn queue_message(
     let _admission = services::services::integration_admission::MUTATIONS
         .lock()
         .await;
+    // The optional host maintenance gate also fences in-memory follow-ups.
+    // The host reads queue status under the same lock after closing admission.
+    if std::path::Path::new("/run/lvk-maintenance/active").try_exists()? {
+        return Err(ApiError::Conflict(
+            "Server maintenance is in progress; retry after it finishes".to_string(),
+        ));
+    }
     db::models::integration::guard_workspace(&deployment.db().pool, session.workspace_id).await?;
     let data = DraftFollowUpData {
         message: payload.message,
@@ -90,10 +100,16 @@ async fn cancel_queued_message(
 async fn get_queue_status(
     Extension(session): Extension<Session>,
     State(deployment): State<DeploymentImpl>,
-) -> Result<ResponseJson<ApiResponse<QueueStatus>>, ApiError> {
+) -> Result<impl IntoResponse, ApiError> {
+    let _admission = services::services::integration_admission::MUTATIONS
+        .lock()
+        .await;
     let status = deployment.queued_message_service().get_status(session.id);
 
-    Ok(ResponseJson(ApiResponse::success(status)))
+    Ok((
+        [("x-lvk-maintenance-fence", "1")],
+        ResponseJson(ApiResponse::<QueueStatus>::success(status)),
+    ))
 }
 
 pub(super) fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {

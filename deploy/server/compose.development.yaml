@@ -5,6 +5,7 @@ services:
     image: ${LVK_IMAGE:?Set LVK_IMAGE to a published toolchain image}
     init: true
     restart: unless-stopped
+    shm_size: 256mb
     entrypoint: [node, /opt/lvk-development/development.mjs]
     ports:
       - "${LVK_DEV_HTTPS_PORT:-8443}:8443"

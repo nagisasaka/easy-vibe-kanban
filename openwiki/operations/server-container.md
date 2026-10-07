@@ -25,6 +25,18 @@ sources:
     resource: repo://docs/self-hosting/server-container.mdx
   - id: openwiki-source-e4b6c8db09a6d8887192b13e
     resource: repo://packages/web-core/src/shared/lib/previewProxyUrl.ts
+  - id: openwiki-source-a9fbf89a6c5f546ccbb68e11
+    resource: repo://deploy/browser/package.json
+  - id: openwiki-source-71033560192b23e2aaead6d8
+    resource: repo://deploy/developer/updater.py
+  - id: openwiki-source-af6429108aa5f0af03e4cea9
+    resource: repo://deploy/developer/client.py
+  - id: openwiki-source-cd7d4081ac64d24918e97292
+    resource: repo://deploy/developer/README.md
+  - id: openwiki-source-5eead7e39aee9506055e7dab
+    resource: repo://tests/server/playwright.config.ts
+  - id: openwiki-source-1533c9d33bc09a99bdf46a2a
+    resource: repo://crates/server/src/routes/sessions/queue.rs
 generated: { by: "codex", at: "2026-09-21T08:16:36.701Z" }
 ---
 
@@ -73,6 +85,45 @@ supervisor は server と nginx を process group として起動する。一方
 healthcheck は backend `/health` の200と、認証なし HTTPS の401を内部で確認する。後者の TLS trust 検証は無効であり、外部 DNS・証明書信頼・agent 認証の検査ではない。運用文書は unhealthy のみでは再起動しないことを明示する。サービス終了時の restart policy と health status を分けて診断する。[probe](../../deploy/server/healthcheck.mjs#L19-L35)、[再起動契約](../../docs/self-hosting/server-container.mdx#L83-L92)
 
 ## 更新・回復と検証限界
+
+### サーバー内ブラウザー E2E と開発者向け更新サービス
+
+標準 server image は `/opt/lvk-browsers` に固定版 Playwright の Chromium と
+OS 依存ライブラリーを含む。home volume に隠されない場所に配置し、Compose の
+共有メモリーは256MBとする。`pnpm run server:e2e` は指定した実アプリのURLへ接続して
+画面描画・reload・実API・匿名HTTPS拒否を確認する。接続先は `LVK_E2E_BASE_URL`、
+Basic認証は `LVK_E2E_CREDENTIALS_FILE` のJSONから読み、TLS検証は無効化しない。
+既存 `workflow:e2e` は4175のUI fixtureであり、8443の実アプリE2Eとは区別する。
+[ブラウザー構成](../../deploy/browser/package.json)、[実アプリE2E](../../tests/server/playwright.config.ts)
+
+任意導入の `deploy/developer` は Linux/systemd ホスト向けで、標準imageには含めない。
+ホストへ設置したroot所有のコードがDockerを操作する。agentには要求ディレクトリーへの
+書込みと状態の読取りだけを提供し、Docker socket・rootコード・ホスト用GitHub tokenを
+渡さない。公開forkは `client.py release --repository OWNER/REPO --tag VERSION` で
+CI結果とdigestを取得し更新を要求できる。要求元agentはそのrunを終了する必要がある。
+[導入と運用手順](../../deploy/developer/README.md)、[非特権client](../../deploy/developer/client.py)
+
+ホストは許可repository・source SHA・digest・CI run label・公開workflow成功を照合し、
+使い捨てvolumeで候補imageのブラウザー/バックエンドを検査する。通常の編集はsource reload、
+採用する変更のリリース時だけCI image buildを行う。8443は単一checkoutを参照し、カードの
+worktreeを自動選択しない。共有previewの排他利用か別portの環境を明示的に用意する。
+
+更新は両アプリのDBと実プロセスがidleになるまで待つ。Goal active、未完了AgentRun/
+attempt、共有資源所有、未完了workflow、未知process、有効な定期実行は更新を妨げる。
+停止で失われるin-memory follow-upも、maintenance中の登録拒否と共通admission mutexを
+使うqueue GETで検査する。旧版にこの能力がなければ、まずSSHから対応版へbootstrapする。
+debug版DBはcheckoutの`dev_assets`、release版DBは永続homeにあり、両者を検査する。
+idle検査から停止までの競合を閉じるため、両コンテナーをfreezeして再検査し、仕事が
+増えていれば再開して待つ。idleを確認できた場合だけfreezeしたまま終了する。
+これはgraceful shutdownではなくSQLite WAL回復を使う停止であり、active agentを
+強制終了する手段にはしない。停止後、全永続volumeと設定を保存し、再生成可能な
+development Cargo targetだけを除外する。[状態機械と検査](../../deploy/developer/updater.py)
+
+新imageの起動・ブラウザー検査中は任意のmaintenance mountによってHTTPSを503にする。
+検査失敗時はchecksum検証済みのimage/データの組へ戻す。ホスト処理自体が中断された場合は
+`recovery_required` を永続記録して後続更新を止め、SSHから確認・回復する。再起動は
+実行中processの自動復元を意味しない。更新サービス自身のコード変更は別途ホストで反映する。
+[競合・WAL・失敗時のテスト](../../deploy/developer/test_updater.py)
 
 Codex のログイン済み表示と container の healthy は、カードからの実行成功を保証しない。
 配置後は使い捨てのカードから通常の Code 実行を開始し、応答まで確認する。

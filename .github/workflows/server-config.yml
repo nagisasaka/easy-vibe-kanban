@@ -3,6 +3,9 @@ on:
   pull_request:
     paths:
       - "deploy/server/**"
+      - "deploy/browser/**"
+      - "deploy/developer/**"
+      - "tests/server/**"
       - "Dockerfile"
       - ".dockerignore"
       - ".github/workflows/*server*"
@@ -13,6 +16,9 @@ on:
     branches: [main]
     paths:
       - "deploy/server/**"
+      - "deploy/browser/**"
+      - "deploy/developer/**"
+      - "tests/server/**"
       - "Dockerfile"
       - ".dockerignore"
       - ".github/workflows/*server*"
@@ -37,11 +43,13 @@ jobs:
       - run: pnpm run server:check
         env:
           LVK_REQUIRE_NGINX_TEST: "1"
+      - run: pnpm run developer:check
       - name: Validate Compose syntax without starting containers
         run: |
           docker compose -f deploy/server/compose.yaml config --quiet
           docker compose -f deploy/server/compose.yaml -f deploy/server/compose.acme.yaml config --quiet
           docker compose -f deploy/server/compose.yaml -f deploy/server/compose.acme.yaml -f deploy/server/compose.development.yaml --profile development config --quiet
+          docker compose -f deploy/server/compose.yaml -f deploy/server/compose.development.yaml -f deploy/developer/compose.updater.yaml --profile development config --quiet
           LVK_HOST=lvk.example.test docker compose -f deploy/server/compose.yaml config --quiet
         env:
           LVK_IMAGE: ghcr.io/example/lvk:test

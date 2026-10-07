@@ -107,6 +107,7 @@ vibe-kanban-cloud/
 # Playwright reports
 playwright-report/
 test-results/
+__pycache__/
 .playwright-mcp/
 
 # Mobile testing (per-developer, do not commit)

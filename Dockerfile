@@ -173,7 +173,19 @@ RUN rustup default "$(sed -n 's/^channel = "\(.*\)"/\1/p' /usr/local/share/lvk/r
  && chown -R appuser:appuser /opt/rustup \
  && chmod 1777 /var/tmp
 
-FROM server-tools AS server
+# Browser binaries live outside the mounted home. Project tests use the same
+# pinned Playwright version; other projects may install into their own cache.
+FROM server-tools AS server-browser
+COPY deploy/browser/package.json deploy/browser/package-lock.json /opt/lvk-browser/
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/lvk-browsers
+RUN cd /opt/lvk-browser && npm ci --omit=dev \
+ && node node_modules/playwright/cli.js install --with-deps chromium \
+ && rm -rf /var/lib/apt/lists/* /root/.npm \
+ && chmod -R a+rX /opt/lvk-browsers
+COPY deploy/browser/smoke.mjs /opt/lvk-browser/smoke.mjs
+
+FROM server-browser AS server
+LABEL io.lvk.maintenance-queue-barrier="1"
 COPY --from=builder /usr/local/bin/server /usr/local/bin/server
 COPY --from=builder /usr/local/bin/agent-process-host /usr/local/bin/agent-process-host
 COPY --from=builder /usr/local/bin/vibe-kanban-mcp /usr/local/bin/vibe-kanban-mcp

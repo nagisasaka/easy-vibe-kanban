@@ -59,6 +59,9 @@ backend. Keep the Cargo target directory between runs to reuse build output.
 
 For development on a server, follow the
 [source-development setup](docs/self-hosting/server-container.mdx#develop-lvk-on-the-server).
+The image includes headless Chromium for browser E2E. LVK contributors can also
+install the optional [host update service](deploy/developer/README.md) to publish
+and adopt their fork's images from inside their own LVK environment.
 It runs a separate development container using an existing published image:
 source edits do **not** require an image rebuild. The development app has its own
 HTTPS port, database, home and work volumes. The stable app continues to manage

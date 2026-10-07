@@ -262,6 +262,51 @@ For rollback, stop the new container and restore the matching backup of **all th
 
 ## Extend the development environment
 
+### Run browser E2E inside the server
+
+The standard server image includes headless Chromium, its system libraries and
+a pinned Playwright runtime. You do not need a desktop or a browser on your
+local computer. The browser binaries live at `/opt/lvk-browsers`, outside the
+persistent home volume, and Compose provides 256 MB of shared memory.
+
+From the LVK checkout inside the stable container, run the real application
+checks against your development URL:
+
+```bash
+export LVK_E2E_BASE_URL=https://YOUR_SERVER:8443
+export LVK_E2E_CREDENTIALS_FILE=/path/to/protected-credentials.json
+pnpm run server:e2e
+```
+
+The credential file contains the JSON keys `username` and `password` for HTTPS
+Basic authentication. Keep it outside Git. TLS verification remains enabled.
+The checks render and reload the application, call its real backend and check
+that anonymous HTTPS access fails. They do not create agent runs or modify cards.
+Use the separate development database for feature tests that change data.
+
+`pnpm run workflow:e2e` continues to run the UI fixture suite at port 4175.
+The two suites serve different purposes. Use the repository's pinned Playwright
+version to match the bundled browser. Other projects can set
+`PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright` and run their own
+`pnpm exec playwright install chromium` without root.
+
+### Optional updater for LVK contributors
+
+The repository's `deploy/developer/README.md` describes the optional Linux host
+service for developing LVK using LVK itself. Install it separately on the host;
+it is not part of the standard application image and does not expose Docker to
+application agents. It accepts an explicit update request, validates the fork's
+successful release and image digest, waits for idle applications, backs up their
+persistent data, applies the image and verifies browser/backend operation.
+
+The kit supplies the development E2E URL and credentials through an optional
+Compose overlay. Its HTTPS maintenance gate returns 503 during replacement.
+An active agent must end its run after submitting an update so that the host can
+proceed. Interrupted host transactions remain recorded for recovery via SSH.
+Source editing and the development server's reload loop do not build images.
+
+### Add another SDK
+
 Build a derived image in your own CI when you need another SDK or coding agent. For example:
 
 ```dockerfile Dockerfile.custom

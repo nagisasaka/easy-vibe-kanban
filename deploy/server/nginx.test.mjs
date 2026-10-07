@@ -129,6 +129,7 @@ for (const host of ["lvk.example.test", "127.0.0.1", "2001:db8::1"])
         .replace("/run/lvk-secrets/tls/fullchain.pem", certPath)
         .replace("/run/lvk-secrets/tls/privkey.pem", keyPath)
         .replace("/run/lvk-secrets/htpasswd", join(dir, "htpasswd"))
+        .replace("/run/lvk-maintenance/active", join(dir, "maintenance"))
         .replaceAll("listen 8443", `listen ${port}`)
         .replaceAll("127.0.0.1:3000", `127.0.0.1:${backendPort}`)
         .replaceAll("127.0.0.1:3001", `127.0.0.1:${backendPort}`);
@@ -226,6 +227,24 @@ for (const host of ["lvk.example.test", "127.0.0.1", "2001:db8::1"])
       assert.equal(data.headers.authorization, undefined);
       assert.equal(data.headers["x-vk-relayed"], undefined);
       assert.equal(data.headers["x-forwarded-proto"], "https");
+      await writeFile(join(dir, "maintenance"), "");
+      assert.equal(
+        (
+          await request("/api/info", settings.app, {
+            Authorization: authorization,
+          })
+        ).status,
+        503,
+      );
+      await rm(join(dir, "maintenance"));
+      assert.equal(
+        (
+          await request("/api/info", settings.app, {
+            Authorization: authorization,
+          })
+        ).status,
+        200,
+      );
       for (const path of [
         "/api/preview/5173",
         "/api/preview/5173/index.html",

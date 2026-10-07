@@ -55,6 +55,8 @@ http {
     server {
         listen 8443 ssl;
         server_name @@APP_DOMAIN@@;
+        # Optional host-owned maintenance gate; absent in ordinary deployments.
+        if (-f /run/lvk-maintenance/active) { return 503; }
         add_header X-Content-Type-Options nosniff always;
         add_header X-Frame-Options DENY always;
         add_header Referrer-Policy no-referrer always;

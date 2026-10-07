@@ -40,6 +40,7 @@ docker run --rm --entrypoint node \
 for suffix in home repos work; do docker volume create "$name-$suffix" >/dev/null; done
 start() {
   docker run -d --name "$name" \
+    --shm-size=256m \
     -e LVK_HOST="${1:-lvk.example.test}" \
     --mount "type=bind,src=$fixture,dst=/run/lvk-secrets,readonly" \
     -v "$name-home:/home/appuser" -v "$name-repos:/repos" -v "$name-work:/var/tmp" \
@@ -52,6 +53,9 @@ start() {
   echo 'Image did not become healthy' >&2; return 1
 }
 start
+docker exec -e LVK_E2E_BASE_URL=http://127.0.0.1:3000 "$name" node /opt/lvk-browser/smoke.mjs
+docker cp deploy/developer/test-queue-fence.py "$name:/tmp/test-queue-fence.py"
+docker exec --user root "$name" python3 /tmp/test-queue-fence.py
 docker exec "$name" sh -ec '
   test "$(curl -ks -o /dev/null -w "%{http_code}" --resolve lvk.example.test:8443:127.0.0.1 https://lvk.example.test:8443/api/info)" = 401
   curl -kfsS --user test:lvk-smoke-only --resolve lvk.example.test:8443:127.0.0.1 https://lvk.example.test:8443/api/info >/dev/null

@@ -35,6 +35,7 @@ jobs:
       - name: Validate server configuration
         run: |
           pnpm run server:check
+          pnpm run developer:check
           docker compose -f deploy/server/compose.yaml -f deploy/server/compose.acme.yaml config --quiet
           docker compose -f deploy/server/compose.yaml -f deploy/server/compose.acme.yaml -f deploy/server/compose.development.yaml --profile development config --quiet
         env:
@@ -79,6 +80,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.image.outputs.version }}
             org.opencontainers.image.licenses=Apache-2.0
+            io.lvk.actions-run-id=${{ github.run_id }}
           cache-from: |
             type=registry,ref=${{ steps.image.outputs.cache }}
           cache-to: type=registry,ref=${{ steps.image.outputs.cache }},mode=max

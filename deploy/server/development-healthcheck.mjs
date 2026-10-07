@@ -1,6 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import { isIP } from "node:net";
+import { existsSync } from "node:fs";
 import { authority, serverSettings } from "./server.mjs";
 
 function check(client, options, expected) {
@@ -41,7 +42,7 @@ try {
         headers: { Host: authority(app) },
         rejectUnauthorized: false,
       },
-      401,
+      existsSync("/run/lvk-maintenance/active") ? 503 : 401,
     ),
   ]);
 } catch (error) {

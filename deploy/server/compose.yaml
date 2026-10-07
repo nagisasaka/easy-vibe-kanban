@@ -3,6 +3,7 @@ services:
   lvk:
     image: ${LVK_IMAGE:?Set LVK_IMAGE to a versioned GHCR image}
     restart: unless-stopped
+    shm_size: 256mb
     ports:
       - "443:8443"
     environment:
