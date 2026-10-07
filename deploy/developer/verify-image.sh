@@ -12,11 +12,14 @@ cleanup() {
 trap cleanup EXIT
 chmod 755 "$fixture"
 mkdir "$fixture/tls"
+chmod 755 "$fixture/tls"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=127.0.0.1 \
   -addext 'subjectAltName=IP:127.0.0.1' \
   -keyout "$fixture/tls/privkey.pem" -out "$fixture/tls/fullchain.pem" 2>/dev/null
 printf '%s\n' candidate-only | docker run --rm -i --entrypoint htpasswd "$image" -niB test > "$fixture/htpasswd"
-chmod 644 "$fixture/tls/privkey.pem" "$fixture/htpasswd"
+# The host service deliberately uses UMask=0077. These disposable fixture
+# credentials must still be readable by the image's unprivileged app user.
+chmod 644 "$fixture/tls/fullchain.pem" "$fixture/tls/privkey.pem" "$fixture/htpasswd"
 for suffix in home repos work; do docker volume create "$name-$suffix" >/dev/null; done
 docker run -d --name "$name" --shm-size=256m -e LVK_HOST=127.0.0.1 \
   --mount "type=bind,src=$fixture,dst=/run/lvk-secrets,readonly" \
