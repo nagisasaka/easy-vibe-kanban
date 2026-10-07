@@ -14,7 +14,7 @@ def public_release(repository, tag):
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("Expected GitHub owner/repository")
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?", tag):
-        raise ValueError("Expected a version tag such as v0.1.44-lvk.1-server.6")
+        raise ValueError("Expected a version tag such as v0.1.44-lvk.1-server.8")
     query = urllib.parse.urlencode({"event": "push", "branch": tag, "per_page": 10})
     request = urllib.request.Request(
         f"https://api.github.com/repos/{repository}/actions/workflows/publish-server.yml/runs?{query}",

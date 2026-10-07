@@ -117,7 +117,7 @@ GHCR digest without needing a GitHub token in the agent container:
 ```bash
 python3 deploy/developer/client.py release \
   --repository YOUR_ACCOUNT/lucky-vibe-kanban \
-  --tag v0.1.44-lvk.1-server.6
+  --tag v0.1.44-lvk.1-server.8
 ```
 
 From the checkout inside stable LVK, substitute the three values from the
