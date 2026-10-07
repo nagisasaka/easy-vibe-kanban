@@ -41,7 +41,9 @@ fn with_gate(app: Router, path: PathBuf) -> Router {
         let barrier = barrier.clone();
         let gate = gate.clone();
         async move {
-            if request.method() == Method::GET && request.uri().path() == READY {
+            if matches!(*request.method(), Method::GET | Method::HEAD)
+                && request.uri().path() == READY
+            {
                 return next.run(request).await;
             }
             let mutating = !matches!(
@@ -97,6 +99,18 @@ mod tests {
         let url = format!("http://{}", listener.local_addr().unwrap());
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let client = reqwest::Client::new();
+        // Axum routes HEAD through the GET handler too; neither may acquire a
+        // read lock before the handler's exclusive readiness lock.
+        assert_eq!(
+            client
+                .head(format!("{url}{READY}"))
+                .timeout(std::time::Duration::from_secs(2))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            409
+        );
         assert_eq!(
             client
                 .get(format!("{url}{READY}"))

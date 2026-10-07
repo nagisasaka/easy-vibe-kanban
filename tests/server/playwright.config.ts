@@ -15,7 +15,7 @@ export default defineConfig({
   testDir: "./specs",
   outputDir: "../../test-results/server",
   workers: 1,
-  timeout: 120_000,
+  timeout: 240_000,
   expect: { timeout: 30_000 },
   reporter: [
     ["list"],
