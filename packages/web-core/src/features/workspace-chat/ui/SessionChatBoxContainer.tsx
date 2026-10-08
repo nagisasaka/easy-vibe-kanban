@@ -1,3 +1,10 @@
+import { useTranslation } from 'react-i18next';
+import { AsyncAgentQuestions } from '@/features/agent-runtime/ui/AsyncAgentQuestions';
+import {
+  collectAsyncAgentQuestions,
+  deliverAsyncQuestionAnswer,
+  type AsyncAgentQuestion,
+} from '@/features/agent-runtime/model/asyncAgentQuestions';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useDropzone } from 'react-dropzone';
@@ -207,6 +214,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
 }
 
 function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
+  const { t } = useTranslation('common');
   const {
     mode,
     sessions,
@@ -279,13 +287,24 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
   const { entries } = useEntries();
   const tokenUsageInfo = useTokenUsage();
   const { timeline: canonicalTimeline } = useCanonicalAgentSession();
+  const asyncQuestions = useMemo(
+    () =>
+      collectAsyncAgentQuestions(
+        canonicalTimeline?.runs.flatMap((run) => run.timeline?.events ?? []) ??
+          []
+      ),
+    [canonicalTimeline]
+  );
   const activeAgentRun = canonicalTimeline?.activeRun ?? null;
   const latestAgentRun = canonicalTimeline?.latestRun ?? null;
   const activeAgentRunState = activeAgentRun
     ? (activeAgentRun.timeline?.state ?? activeAgentRun.summary.state)
     : null;
   const activeGoal = activeAgentRunState?.goal ?? null;
-  const activeAgentRunEvents = activeAgentRun?.timeline?.events ?? [];
+  const activeAgentRunEvents = useMemo(
+    () => activeAgentRun?.timeline?.events ?? [],
+    [activeAgentRun]
+  );
   const canonicalAgentActionPolicy = useMemo(
     () =>
       deriveCanonicalAgentRunActionPolicy(
@@ -681,6 +700,21 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
     onSelectSession,
     executorConfig,
   });
+
+  const handleAsyncAnswer = useCallback(
+    async (question: AsyncAgentQuestion, answer: string) => {
+      if (!sessionId || !isSessionConfigReady || !executorConfig) {
+        throw new Error(t('common:asyncQuestions.sendFailed'));
+      }
+      const accepted = await deliverAsyncQuestionAnswer(question, answer, {
+        activeRunId: activeAgentRun?.summary.agent_run_id ?? null,
+        steer: canonicalAgentControls.steer,
+        followUp: (content) => send(content),
+      });
+      if (!accepted) throw new Error(t('common:asyncQuestions.sendFailed'));
+    },
+    [sessionId, isSessionConfigReady, executorConfig, activeAgentRun, send, t]
+  );
 
   const currentDraft = useRef<SessionDraftSubmission>({
     scope: '',
@@ -1560,6 +1594,21 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
     <div className="flex w-chat max-w-full flex-col">
       {planGoalApprovalNode}
       {goalProgressNode}
+      {sessionId && (
+        <AsyncAgentQuestions
+          key={JSON.stringify([hostId, sessionId])}
+          scope={JSON.stringify([hostId, sessionId])}
+          questions={asyncQuestions}
+          disabled={
+            !isSessionConfigReady ||
+            !executorConfig ||
+            isSending ||
+            (activeAgentRunState !== null &&
+              activeAgentRunState.status !== 'running')
+          }
+          onAnswer={handleAsyncAnswer}
+        />
+      )}
       <SessionChatBox<BaseCodingAgent>
         status={status}
         isMobile={isMobile}

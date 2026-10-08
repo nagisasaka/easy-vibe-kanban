@@ -44,8 +44,8 @@ function getAggregateLifecycleStatus(entries: AggregatedEntry[]) {
 }
 
 function getEntryDetails(entry: AggregatedEntry) {
-  const content = entry.content?.trim();
-  if (!content) return null;
+  const content = entry.content ?? '';
+  if (!content.trim() && !entry.command?.trim()) return null;
 
   return {
     command: entry.command?.trim() || null,

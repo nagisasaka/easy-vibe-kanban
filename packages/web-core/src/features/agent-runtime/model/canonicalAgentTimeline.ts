@@ -39,6 +39,8 @@ export interface CanonicalAgentTimeline {
   readonly state: RunState | null;
   readonly events: readonly AgentEventEnvelope[];
   readonly transientEvents: readonly AgentEventEnvelope[];
+  // Display-only chunks: never advance the durable replay cursor.
+  readonly toolOutputDeltas: readonly AgentLiveEvent[];
   readonly items: readonly CanonicalAgentTimelineItem[];
   readonly cursor: AgentEventCursor | null;
 }
@@ -47,6 +49,7 @@ export const emptyCanonicalAgentTimeline = (): CanonicalAgentTimeline => ({
   state: null,
   events: [],
   transientEvents: [],
+  toolOutputDeltas: [],
   items: [],
   cursor: null,
 });
@@ -211,6 +214,20 @@ export function mergeCanonicalAgentTimeline(
         : newestRunState(previous.state, state),
     events: mergedEvents,
     transientEvents,
+    toolOutputDeltas: previous.toolOutputDeltas.filter(
+      (live) =>
+        !mergedEvents.some(
+          (event) =>
+            event.run_attempt_id === live.run_attempt_id &&
+            event.payload.type === 'tool_call' &&
+            live.payload.type === 'tool_output_delta' &&
+            event.payload.data.tool_call_id ===
+              live.payload.data.provider_item_id &&
+            !['created', 'running', 'waiting_approval', 'approved'].includes(
+              event.payload.data.status
+            )
+        )
+    ),
     items: mergedItems,
     cursor,
   };
@@ -249,7 +266,29 @@ export function mergeAgentLiveEvent(
     }
   }
   if (live.payload.type === 'thinking_delta') return previous;
-  if (live.payload.type === 'tool_output_delta') return previous;
+  if (live.payload.type === 'tool_output_delta') {
+    const itemId = live.payload.data.provider_item_id;
+    if (
+      previous.toolOutputDeltas.some(
+        (event) => event.event_id === live.event_id
+      ) ||
+      previous.events.some(
+        (event) =>
+          event.run_attempt_id === live.run_attempt_id &&
+          event.payload.type === 'tool_call' &&
+          event.payload.data.tool_call_id === itemId &&
+          !['created', 'running', 'waiting_approval', 'approved'].includes(
+            event.payload.data.status
+          )
+      )
+    ) {
+      return previous;
+    }
+    return {
+      ...previous,
+      toolOutputDeltas: [...previous.toolOutputDeltas, live],
+    };
+  }
   const payload: AgentEventPayload =
     live.payload.type === 'message_delta'
       ? {
@@ -320,9 +359,10 @@ export function mergeAgentLiveEvent(
 export function clearAgentLiveEvents(
   previous: CanonicalAgentTimeline
 ): CanonicalAgentTimeline {
-  return previous.transientEvents.length === 0
+  return previous.transientEvents.length === 0 &&
+    previous.toolOutputDeltas.length === 0
     ? previous
-    : { ...previous, transientEvents: [] };
+    : { ...previous, transientEvents: [], toolOutputDeltas: [] };
 }
 
 function newestCursor(

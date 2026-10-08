@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useMemo, useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import {
@@ -36,7 +36,7 @@ import {
   ScriptFixerDialog,
   type ScriptType,
 } from '@/shared/dialogs/scripts/ScriptFixerDialog';
-import { ChatToolSummary } from '@vibe/ui/components/ChatToolSummary';
+import { ToolSummaryEntry } from './ToolSummaryEntry';
 import { ChatTodoList } from '@vibe/ui/components/ChatTodoList';
 import {
   ChatFileEntry,
@@ -227,7 +227,7 @@ function getToolOutput(
 
   switch (action_type.action) {
     case 'command_run':
-      return action_type.result?.output ?? entryContent;
+      return action_type.result?.output ?? '';
     case 'tool':
       if (action_type.result?.value != null) {
         return typeof action_type.result.value === 'string'
@@ -1091,72 +1091,6 @@ function AssistantMessageEntry({
           maxWidth={undefined}
         />
       )}
-    />
-  );
-}
-
-/**
- * Tool summary entry with collapsible content for multi-line summaries
- */
-function ToolSummaryEntry({
-  summary,
-  expansionKey,
-  status,
-  active,
-  content,
-  toolName,
-  command,
-  actionType,
-  startedAt,
-  endedAt,
-}: {
-  summary: string;
-  expansionKey: string;
-  status: ToolStatus;
-  active: boolean;
-  content: string;
-  toolName: string;
-  command: string | undefined;
-  actionType: string;
-  startedAt: string | null;
-  endedAt: string | null;
-}) {
-  const [expanded, toggle] = usePersistedExpanded(
-    `tool:${expansionKey}`,
-    false
-  );
-  const { viewToolContentInPanel } = useLogsPanelActions();
-  const textRef = useRef<HTMLSpanElement>(null);
-  const [isTruncated, setIsTruncated] = useState(false);
-
-  useLayoutEffect(() => {
-    const el = textRef.current;
-    if (el && !expanded) {
-      setIsTruncated(el.scrollWidth > el.clientWidth);
-    }
-  }, [summary, expanded]);
-
-  // Any tool with output can open the logs panel
-  const hasOutput = content && content.trim().length > 0;
-
-  const handleViewContent = useCallback(() => {
-    viewToolContentInPanel(toolName, content, command);
-  }, [viewToolContentInPanel, toolName, content, command]);
-
-  return (
-    <ChatToolSummary
-      ref={textRef}
-      summary={summary}
-      expanded={expanded}
-      onToggle={toggle}
-      status={status}
-      active={active}
-      onViewContent={hasOutput ? handleViewContent : undefined}
-      toolName={toolName}
-      isTruncated={isTruncated}
-      actionType={actionType}
-      startedAt={startedAt}
-      endedAt={endedAt}
     />
   );
 }

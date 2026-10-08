@@ -12,6 +12,7 @@ import {
   emptyCanonicalAgentTimeline,
   mergeCanonicalAgentTimeline,
   mergeAgentLiveEvent,
+  clearAgentLiveEvents,
 } from './canonicalAgentTimeline';
 
 const SESSION_ID = 'session-1';
@@ -95,6 +96,114 @@ function projectRuns(
 }
 
 describe('projectCanonicalAgentConversation', () => {
+  it('shows a running shell command and ordered live output, then replaces it with the durable result', () => {
+    const runId = 'shell-live';
+    const runState = state(runId, 'running');
+    const tool = (
+      status: AgentRuntimeToolStatus,
+      result: null | { aggregatedOutput: string; exitCode: number }
+    ) => ({
+      type: 'tool_call' as const,
+      data: {
+        tool_call_id: 'shell-1',
+        tool_name: 'Shell',
+        status,
+        arguments: { command: 'printf first; sleep 1; printf second' },
+        result,
+      },
+    });
+    let timeline = mergeCanonicalAgentTimeline(
+      emptyCanonicalAgentTimeline(),
+      [event(runId, 1, tool(AgentRuntimeToolStatus.running, null))],
+      runState
+    );
+    const project = () =>
+      projectCanonicalAgentConversation(
+        buildCanonicalAgentSessionTimeline(
+          SESSION_ID,
+          [
+            {
+              agent_run_id: runId,
+              session_id: SESSION_ID,
+              turn_id: `turn-${runId}`,
+              state: runState,
+              created_at: runState.updated_at,
+              updated_at: runState.updated_at,
+            },
+          ],
+          new Map([[runId, timeline]])
+        )
+      ).entries[0];
+    expect(project()).toMatchObject({
+      content: {
+        entry_type: {
+          action_type: {
+            action: 'command_run',
+            command: 'printf first; sleep 1; printf second',
+            result: { output: null },
+          },
+        },
+      },
+    });
+    const delta = (sequence: number, text: string) => ({
+      schema_version: 1,
+      event_id: `shell-live-${sequence}`,
+      session_id: SESSION_ID,
+      agent_run_id: runId,
+      turn_id: `turn-${runId}`,
+      run_attempt_id: `attempt-${runId}`,
+      run_attempt_number: 1,
+      native_sequence: sequence,
+      timestamp: runState.updated_at,
+      payload: {
+        type: 'tool_output_delta' as const,
+        data: { provider_item_id: 'shell-1', delta: text },
+      },
+    });
+    const cursor = timeline.cursor;
+    timeline = mergeAgentLiveEvent(timeline, delta(3, 'second'));
+    timeline = mergeAgentLiveEvent(timeline, delta(2, 'first'));
+    timeline = mergeAgentLiveEvent(timeline, delta(2, 'first'));
+    expect(timeline.cursor).toEqual(cursor);
+    expect(timeline.toolOutputDeltas).toHaveLength(2);
+    expect(project()).toMatchObject({
+      canonical: { active: true },
+      content: {
+        entry_type: {
+          action_type: {
+            result: { output: 'firstsecond' },
+          },
+        },
+      },
+    });
+    expect(clearAgentLiveEvents(timeline).toolOutputDeltas).toEqual([]);
+    timeline = mergeCanonicalAgentTimeline(timeline, [
+      event(
+        runId,
+        4,
+        tool(AgentRuntimeToolStatus.succeeded, {
+          aggregatedOutput: 'firstsecond\n',
+          exitCode: 0,
+        })
+      ),
+    ]);
+    expect(timeline.toolOutputDeltas).toEqual([]);
+    expect(mergeAgentLiveEvent(timeline, delta(5, 'late'))).toBe(timeline);
+    expect(project()).toMatchObject({
+      canonical: { active: false },
+      content: {
+        entry_type: {
+          action_type: {
+            result: {
+              output: 'firstsecond\n',
+              exit_status: { type: 'exit_code', code: 0 },
+            },
+          },
+        },
+      },
+    });
+  });
+
   it('does not let a generic completion hide a failed child turn; a new turn can recover', () => {
     const child = (sequence: number, kind: string) =>
       event('r', sequence, {

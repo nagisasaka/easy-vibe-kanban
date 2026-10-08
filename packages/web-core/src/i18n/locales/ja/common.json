@@ -1234,5 +1234,15 @@
       "noPrompt": "No prompt has been captured yet.",
       "rawRouterOutput": "Raw router output"
     }
+  },
+  "asyncQuestions": {
+    "title": "エージェントからの質問",
+    "pending": "未回答の質問 {{count}} 件",
+    "pending_other": "未回答の質問 {{count}} 件",
+    "description": "回答を待つ間もエージェントは作業を続けられます。選択肢を選ぶか、自由に回答してください。",
+    "placeholder": "回答を入力",
+    "send": "回答を送信",
+    "sending": "送信中…",
+    "sendFailed": "回答を送信できませんでした。下書きは保持されています。もう一度お試しください。"
   }
 }

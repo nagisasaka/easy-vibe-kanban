@@ -1342,5 +1342,15 @@
     "submitting": "Submitting answers...",
     "answeredCount": "Answered {{count}} question",
     "answeredCount_other": "Answered {{count}} questions"
+  },
+  "asyncQuestions": {
+    "title": "Questions from the agent",
+    "pending": "{{count}} unanswered question",
+    "pending_other": "{{count}} unanswered questions",
+    "description": "The agent can continue working while you answer. Choose an option or write your own response.",
+    "placeholder": "Write your answer",
+    "send": "Send answer",
+    "sending": "Sending…",
+    "sendFailed": "The answer could not be sent. Your draft has been kept; please try again."
   }
 }

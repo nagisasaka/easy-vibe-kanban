@@ -1,5 +1,7 @@
 import type {
   AgentEventEnvelope,
+  ActionType,
+  JsonValue,
   NormalizedEntry,
   PatchType,
   ToolStatus,
@@ -106,6 +108,12 @@ function toolIsActive(status: AgentRuntimeToolStatus, runActive: boolean) {
   );
 }
 
+function jsonObject(value: JsonValue | null | undefined) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value
+    : null;
+}
+
 function toolEntry(
   event: AgentEventEnvelope,
   status: AgentRuntimeToolStatus,
@@ -125,18 +133,40 @@ function toolEntry(
     resultValue == null
       ? null
       : { type: { type: 'json' as const }, value: resultValue };
+  const args = jsonObject(argumentsValue);
+  const shellResult = jsonObject(resultValue);
+  const action: ActionType =
+    toolName === 'Shell' && typeof args?.command === 'string'
+      ? {
+          action: 'command_run',
+          command: args.command,
+          category: 'other',
+          result: {
+            output:
+              typeof resultValue === 'string'
+                ? resultValue
+                : typeof shellResult?.aggregatedOutput === 'string'
+                  ? shellResult.aggregatedOutput
+                  : null,
+            exit_status:
+              typeof shellResult?.exitCode === 'number'
+                ? { type: 'exit_code', code: shellResult.exitCode }
+                : null,
+          },
+        }
+      : {
+          action: 'tool',
+          tool_name: toolName,
+          arguments: argumentsValue ?? null,
+          result,
+        };
   return normalizedPatch(
     event,
     {
       entry_type: {
         type: 'tool_use',
         tool_name: toolName,
-        action_type: {
-          action: 'tool',
-          tool_name: toolName,
-          arguments: argumentsValue ?? null,
-          result,
-        },
+        action_type: action,
         status: toolStatus(status, approvalId),
       },
       content:
@@ -335,7 +365,30 @@ function appendRunEntries(
           runActive,
           undefined,
           payload.data.arguments,
-          payload.data.result
+          payload.data.result ??
+            (() => {
+              const deltas = (run.timeline?.toolOutputDeltas ?? [])
+                .filter(
+                  (live) =>
+                    live.run_attempt_id === event.run_attempt_id &&
+                    live.payload.type === 'tool_output_delta' &&
+                    live.payload.data.provider_item_id === toolId
+                )
+                .sort((a, b) =>
+                  Number(BigInt(a.native_sequence) - BigInt(b.native_sequence))
+                );
+              return deltas.length
+                ? {
+                    aggregatedOutput: deltas
+                      .map((live) =>
+                        live.payload.type === 'tool_output_delta'
+                          ? live.payload.data.delta
+                          : ''
+                      )
+                      .join(''),
+                  }
+                : null;
+            })()
         );
         if (existingIndex === undefined) {
           output.push(next);
