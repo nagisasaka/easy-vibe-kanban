@@ -62,7 +62,18 @@ export type ResourceRecovery = { evidence: string,
  */
 claims: Array<ResourceClaim>, };
 
-export type RepositoryMemoryState = { version: number, enabled: boolean, status: RepositoryWikiStatus, target_branch: string | null, source_commit: string | null, wiki_commit: string | null, last_success: string | null, active_run_id: string | null, bootstrap: OpenWikiBootstrapOwner | null, maintenance_workspace_id: string | null, maintenance_session_id: string | null, error: string | null, output_language: string, active_source_commit: string | null, active_event_ids: Array<string>, active_sync_input_digest: string | null, coding_errors: Array<string>, };
+export type RepositoryMemoryState = { version: number, enabled: boolean, status: RepositoryWikiStatus, target_branch: string | null, source_commit: string | null, wiki_commit: string | null, last_success: string | null, active_run_id: string | null, bootstrap: OpenWikiBootstrapOwner | null, maintenance_workspace_id: string | null, maintenance_session_id: string | null, error: string | null, output_language: string, active_source_commit: string | null, active_event_ids: Array<string>, active_sync_input_digest: string | null, coding_errors: Array<string>,
+/**
+ * Read-side detection on the saved target branch, independent of receipts.
+ */
+wiki_exists: boolean, active_sync_scope: RepositoryWikiSyncScope,
+/**
+ * A scoped adoption did not verify older Wiki content. Automatic updates
+ * do not erase that limitation; a full reconciliation can clear it.
+ */
+unverified_before: string | null, };
+
+export type RepositoryWikiSyncScope = { "type": "pending_changes" } | { "type": "current_source" } | { "type": "since_commit", base_commit: string, };
 
 export type OpenWikiBootstrapOwner = { workflow_run_id: string, server_instance_id: string, phase: OpenWikiBootstrapPhase, child: OpenWikiBootstrapChild | null, review_fingerprint: string | null, };
 
@@ -121,6 +132,13 @@ export type WikiReconciliationReceipt = { event_id: string, reconciled_at: strin
 export type ReconciliationResult = "updated" | "no_op" | "failed";
 
 export type ConfigureRepositoryMemory = { enabled: boolean, target_branch: string, output_language: string, };
+
+export type SyncRepositoryMemory = {
+/**
+ * Review changes after this commit through the frozen integrated head.
+ * Omit to reconcile against the complete current source.
+ */
+from_commit: string | null, };
 
 export type Project = { id: string, name: string, default_agent_working_dir: string | null, remote_project_id: string | null, created_at: Date, updated_at: Date, };
 

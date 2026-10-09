@@ -30,6 +30,7 @@ import type {
   Repo,
   RepositoryMemoryState,
   ConfigureRepositoryMemory,
+  SyncRepositoryMemory,
   WriteConfigProfileRequest as SaveConfigProfileRequest,
   SettingsDiff,
   SettingsPatch,
@@ -80,7 +81,10 @@ export interface MachineClient {
     repoId: string,
     data: ConfigureRepositoryMemory
   ) => Promise<RepositoryMemoryState>;
-  syncRepositoryMemory: (repoId: string) => Promise<RepositoryMemoryState>;
+  syncRepositoryMemory: (
+    repoId: string,
+    data?: SyncRepositoryMemory
+  ) => Promise<RepositoryMemoryState>;
   updateRepo: (repoId: string, data: UpdateRepo) => Promise<Repo>;
   deleteRepo: (repoId: string) => Promise<void>;
   registerRepo: (data: {
@@ -259,13 +263,16 @@ export function createMachineClient(
           { method: 'PUT', body: JSON.stringify(data) }
         )
       ),
-    syncRepositoryMemory: async (repoId) =>
+    syncRepositoryMemory: async (repoId, data) =>
       handleApiResponse<RepositoryMemoryState>(
         await makeMachineRequest(
           runtime,
           target,
           `/api/repos/${repoId}/memory/sync`,
-          { method: 'POST' }
+          {
+            method: 'POST',
+            body: JSON.stringify(data ?? { from_commit: null }),
+          }
         )
       ),
     updateRepo: async (repoId, data) =>

@@ -33,6 +33,7 @@ function render(
   }
   query.setQueryData([...client.queryScopeKey, 'repository-memory', repoId], {
     enabled: true,
+    wiki_exists: status !== 'uninitialized',
     status,
     output_language: 'ja',
     target_branch: 'main',
@@ -58,6 +59,19 @@ function render(
 }
 
 describe('repository memory settings', () => {
+  it('adopts existing Wiki without requiring a local success receipt', () => {
+    const markup = render('a', 'stale', false, false, { last_success: null });
+    expect(markup).toContain('Adopt existing Wiki');
+    expect(markup).toContain('Compare with current main');
+    expect(markup).not.toContain('>Initialize Wiki<');
+  });
+  it('keeps the coverage limit visible after scoped adoption', () => {
+    const markup = render('a', 'current', false, false, {
+      unverified_before: 'abcd1234',
+    });
+    expect(markup).toContain('Only changes after abcd1234');
+    expect(markup).toContain('Earlier Wiki content has not been verified');
+  });
   it('offers initialisation for a new branch despite an earlier branch success', () => {
     const markup = render('a', 'uninitialized', false, false, {
       last_success: '2026-09-13T00:00:00Z',

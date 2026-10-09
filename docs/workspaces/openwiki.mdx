@@ -13,16 +13,36 @@ history are preserved, not migrated or deleted; see [legacy data handling](/work
 
 1. Open your project's **Configure project working location** settings, then
    expand **Local execution configuration** for the repository and machine.
-2. Enable **OpenWiki repository memory**. Choose the integrated **local branch**
-   and an output language such as `en` or `ja`, then save.
+2. **OpenWiki repository memory** is enabled by default when you register a
+   repository, or first use an unconfigured repository for coding. An explicit
+   opt-out is preserved. Choose the integrated **local branch** and an output
+   language such as `en` or `ja`, then save.
    Generation stays disabled whilst these fields contain unsaved changes: the
    run uses the saved branch and language, not the draft shown in the form.
-3. Select **Initialize Wiki**. LVK creates an OpenWiki maintenance workspace and
-   a repository-scoped system Workflow, without creating an Issue. Select
+3. If the saved branch has no tracked `openwiki/` directory, select **Initialize
+   Wiki**. LVK creates an OpenWiki maintenance workspace and a repository-scoped
+   system Workflow, without creating an Issue. Select
    **View Workflow** in these settings or above the maintenance workspace's logs
    to open the existing Workflow **Canvas** and **Dashboard**.
 4. Wait for **Current**. A successful model exit alone is not sufficient: LVK
    checks the native audit for successful OpenWiki finalisation before publishing.
+
+If `openwiki/` already exists on the saved branch, choose **Adopt existing Wiki**
+instead. Its presence is detected from Git, independently of local synchronisation
+history. Choose **Compare with current main** (or your selected branch) to review
+the existing Wiki against the complete current source, or **Changes since a
+commit** to review only the difference after a specified commit SHA through the
+current branch head. The starting commit must belong to that branch's history.
+You do not need a patch or supplementary material. LVK freezes both commits and
+preserves unaffected Wiki content; it does not initialise over the imported Wiki.
+
+Enabling memory starts future change tracking, not a model run. Start the first
+initialisation or adoption explicitly. After successful adoption, integrated
+development changes can trigger automatic updates. A scoped adoption records
+that earlier content remains unverified; automatic updates retain that limit.
+The overall Wiki status stays **Stale** whilst this coverage limit remains.
+Choose a full comparison to clear it after successful reconciliation. Changing
+the target branch requires a new explicit initialisation or adoption for that branch.
 
 Your runtime needs the OpenWiki version pinned in `assets/openwiki-version` and
 Node.js 22 or newer. The Docker runtime includes this dependency. You use your

@@ -811,6 +811,10 @@ impl LocalAgentRunPort {
                 &request.input.content,
             );
         for repo in &repos {
+            if !workspace.is_execution_only() {
+                workspace_manager::shared_resources::ensure_repository_memory(repo)
+                    .map_err(|error| AgentRunPortError::Rejected(error.to_string()))?;
+            }
             if let Some(store) =
                 utils::repository_memory::RepositoryMemoryStore::existing_for_repository(
                     &repo.name, repo.id,

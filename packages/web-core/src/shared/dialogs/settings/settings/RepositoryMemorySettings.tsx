@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Repo } from 'shared/types';
 import type { MachineClient } from '@/shared/lib/machineClient';
-import { WorkspaceWorkflowLink } from '@/features/workflow/ui/WorkspaceWorkflowLink';
+import { WorkspaceWorkflowLink } from '@/shared/components/WorkspaceWorkflowLink';
 import { PrimaryButton } from '@vibe/ui/components/PrimaryButton';
 import {
   SettingsCard,
   SettingsField,
   SettingsInput,
   SettingsCheckbox,
+  SettingsSelect,
 } from './SettingsComponents';
 
 export function RepositoryMemorySettings({
@@ -23,13 +24,15 @@ export function RepositoryMemorySettings({
     queryFn: () => client.getRepositoryMemory(repo.id),
     refetchInterval: 5000,
   });
-  const [enabled, setEnabled] = useState(query.data?.enabled ?? false);
+  const [enabled, setEnabled] = useState(query.data?.enabled ?? true);
   const [branch, setBranch] = useState(
     query.data?.target_branch ?? repo.default_target_branch ?? 'main'
   );
   const [language, setLanguage] = useState(query.data?.output_language ?? 'en');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scope, setScope] = useState<'current' | 'since'>('current');
+  const [fromCommit, setFromCommit] = useState('');
   const state = query.data;
   const savedEnabled = state?.enabled;
   const savedBranch = state?.target_branch;
@@ -55,15 +58,26 @@ export function RepositoryMemorySettings({
       branch !==
         (state.target_branch ?? repo.default_target_branch ?? 'main') ||
       language !== state.output_language);
+  const needsCommit = state?.wiki_exists && scope === 'since';
+  const invalidCommit =
+    needsCommit && !/^[a-fA-F0-9]{4,40}$/.test(fromCommit.trim());
   const cannotStart =
-    busy || active || !state?.enabled || unsaved || query.isError;
+    busy ||
+    active ||
+    !state?.enabled ||
+    unsaved ||
+    query.isError ||
+    invalidCommit;
   const perform = async (sync: boolean) => {
     // Sync uses the server's saved branch, not the draft displayed in this form.
     if (sync && cannotStart) return;
     setBusy(true);
     setError(null);
     try {
-      if (sync) await client.syncRepositoryMemory(repo.id);
+      if (sync)
+        await client.syncRepositoryMemory(repo.id, {
+          from_commit: needsCommit ? fromCommit.trim() : null,
+        });
       else
         await client.configureRepositoryMemory(repo.id, {
           enabled,
@@ -109,6 +123,41 @@ export function RepositoryMemorySettings({
           disabled={busy || active}
         />
       </SettingsField>
+      {state?.wiki_exists && (
+        <>
+          <p className="text-sm text-low">
+            Existing openwiki/ found on {state.target_branch}. Adopt and update
+            its contents without regenerating the Wiki.
+          </p>
+          <SettingsField label="Reconciliation scope">
+            <SettingsSelect
+              value={scope}
+              onChange={setScope}
+              disabled={busy || active}
+              options={[
+                {
+                  value: 'current',
+                  label: `Compare with current ${state.target_branch ?? 'branch'}`,
+                },
+                { value: 'since', label: 'Changes since a commit' },
+              ]}
+            />
+          </SettingsField>
+          {needsCommit && (
+            <SettingsField
+              label="Starting commit"
+              description="Enter a commit SHA on this branch. Review changes after that commit through the current branch head; earlier content remains unverified."
+            >
+              <SettingsInput
+                value={fromCommit}
+                onChange={setFromCommit}
+                placeholder="Commit SHA"
+                disabled={busy || active}
+              />
+            </SettingsField>
+          )}
+        </>
+      )}
       <div className="flex gap-base">
         <PrimaryButton
           value="Save settings"
@@ -117,14 +166,22 @@ export function RepositoryMemorySettings({
         />
         <PrimaryButton
           value={
-            state?.status === 'uninitialized' || !state?.last_success
-              ? 'Initialize Wiki'
-              : 'Sync Wiki'
+            state?.wiki_exists
+              ? state.last_success
+                ? 'Sync Wiki'
+                : 'Adopt existing Wiki'
+              : 'Initialize Wiki'
           }
           disabled={cannotStart}
           onClick={() => void perform(true)}
         />
       </div>
+      {!state?.last_success && (
+        <p className="text-sm text-low">
+          Enabling memory records future development changes. Wiki maintenance
+          starts only when you choose Initialize Wiki or Adopt existing Wiki.
+        </p>
+      )}
       {unsaved && (
         <p className="text-sm text-low" role="status">
           Save settings before starting Wiki generation. The run uses the saved
@@ -137,6 +194,13 @@ export function RepositoryMemorySettings({
           ? new Date(state.last_success).toLocaleString()
           : 'None'}
       </p>
+      {state?.unverified_before && (
+        <p className="break-all text-sm text-low" role="status">
+          Only changes after {state.unverified_before} have been reconciled.
+          Earlier Wiki content has not been verified. Choose Compare with
+          current branch to review it.
+        </p>
+      )}
       {state?.source_commit && (
         <p className="break-all text-sm text-low">
           Integrated source: {state.source_commit}

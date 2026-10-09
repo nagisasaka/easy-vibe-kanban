@@ -20,6 +20,39 @@ pub fn ensure(repo_root: &Path, repo_name: &str, repo_id: Uuid) -> io::Result<()
     )
 }
 
+/// Registration and the first coding run opt new repositories into memory.
+/// This provisions storage only; paid Wiki maintenance still starts explicitly.
+pub fn ensure_repository_memory(repo: &db::models::repo::Repo) -> io::Result<()> {
+    if utils::repository_memory::RepositoryMemoryStore::existing_for_repository(
+        &repo.name, repo.id,
+    )?
+    .is_some()
+    {
+        return Ok(());
+    }
+    // Registration does not own the user's checkout or its shared links.
+    // Workspaces provision their own links when materialised.
+    {
+        let _guard = PROVISION_LOCK
+            .lock()
+            .map_err(|_| io::Error::other("shared resource lock poisoned"))?;
+        ensure_storage(&utils::path::shared_resources_dir(&repo.name, repo.id))?;
+    }
+    utils::repository_memory::RepositoryMemoryStore::for_repository(&repo.name, repo.id)?
+        .initialize_defaults(default_memory_target_branch(repo))
+}
+
+pub fn default_memory_target_branch(repo: &db::models::repo::Repo) -> Option<String> {
+    let git = GitService::new();
+    repo.default_target_branch.clone().or_else(|| {
+        if git.get_branch_oid(&repo.path, "main").is_ok() {
+            Some("main".into())
+        } else {
+            git.get_current_branch(&repo.path).ok()
+        }
+    })
+}
+
 fn real_directory(path: &Path) -> io::Result<()> {
     match fs::create_dir(path) {
         Ok(()) => Ok(()),
@@ -36,6 +69,23 @@ fn real_directory(path: &Path) -> io::Result<()> {
         }
         Err(error) => Err(error),
     }
+}
+
+fn ensure_storage(shared: &Path) -> io::Result<()> {
+    let parent = shared
+        .parent()
+        .ok_or_else(|| io::Error::other("missing shared parent"))?;
+    fs::create_dir_all(
+        parent
+            .parent()
+            .ok_or_else(|| io::Error::other("missing shared base"))?,
+    )?;
+    real_directory(parent)?;
+    real_directory(shared)?;
+    for kind in KINDS {
+        real_directory(&shared.join(kind))?;
+    }
+    Ok(())
 }
 
 fn validate_link(link: &Path, target: &Path) -> io::Result<bool> {
@@ -68,19 +118,7 @@ fn ensure_at(repo_root: &Path, shared: &Path) -> io::Result<()> {
             "Cannot provision LVK shared directories: .lvk-shared is tracked or Git status could not be checked",
         ));
     }
-    let parent = shared
-        .parent()
-        .ok_or_else(|| io::Error::other("missing shared parent"))?;
-    fs::create_dir_all(
-        parent
-            .parent()
-            .ok_or_else(|| io::Error::other("missing shared base"))?,
-    )?;
-    real_directory(parent)?;
-    real_directory(shared)?;
-    for kind in KINDS {
-        real_directory(&shared.join(kind))?;
-    }
+    ensure_storage(shared)?;
     let shared = fs::canonicalize(shared)?;
     let mount = repo_root.join(".lvk-shared");
     real_directory(&mount)?;

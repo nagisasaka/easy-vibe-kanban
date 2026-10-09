@@ -32,7 +32,7 @@ use ts_rs::TS;
 use utils::{
     repository_memory::{
         ReconciliationResult, RepositoryMemoryState, RepositoryMemoryStore, RepositoryWikiStatus,
-        WikiReconciliationReceipt, reject_symlinks,
+        RepositoryWikiSyncScope, WikiReconciliationReceipt, reject_symlinks,
     },
     response::ApiResponse,
 };
@@ -47,8 +47,40 @@ pub struct ConfigureRepositoryMemory {
     pub output_language: String,
 }
 
+#[derive(Debug, Default, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct SyncRepositoryMemory {
+    /// Review changes after this commit through the frozen integrated head.
+    /// Omit to reconcile against the complete current source.
+    pub from_commit: Option<String>,
+}
+
 fn api_error(error: impl std::fmt::Display) -> ApiError {
     ApiError::BadRequest(error.to_string())
+}
+
+fn sync_events(
+    store: &RepositoryMemoryStore,
+    root: &FsPath,
+    branch: &str,
+    scope: &RepositoryWikiSyncScope,
+    unverified_before: Option<&str>,
+) -> anyhow::Result<Vec<utils::repository_memory::ChangeManifest>> {
+    // Automatic updates must respect the user's adoption boundary, rather than
+    // immediately consuming the older events deliberately excluded at adoption.
+    let scope = match (scope, unverified_before) {
+        (RepositoryWikiSyncScope::PendingChanges, Some(base)) => {
+            RepositoryWikiSyncScope::SinceCommit {
+                base_commit: base.into(),
+            }
+        }
+        _ => scope.clone(),
+    };
+    services::services::openwiki::sync_scope::select_events(
+        root,
+        &scope,
+        pending_events(store, branch)?,
+    )
 }
 
 async fn repo(deployment: &DeploymentImpl, id: Uuid) -> Result<Repo, ApiError> {
@@ -62,17 +94,25 @@ pub async fn get_status(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<RepositoryMemoryState>>, ApiError> {
     let repo = repo(&deployment, id).await?;
-    let Some(store) = RepositoryMemoryStore::existing_for_repository(&repo.name, id)? else {
-        return Ok(Json(ApiResponse::success(RepositoryMemoryState::default())));
+    let store = RepositoryMemoryStore::existing_for_repository(&repo.name, id)?;
+    let mut state = match &store {
+        Some(store) => store.state()?,
+        None => RepositoryMemoryState::enabled_defaults(
+            workspace_manager::shared_resources::default_memory_target_branch(&repo),
+        ),
     };
-    let mut state = store.state()?;
-    state.coding_errors = store.coding_errors()?;
+    if let Some(store) = &store {
+        state.coding_errors = store.coding_errors()?;
+    }
     if let Some(branch) = &state.target_branch {
         let head = deployment.git().get_branch_oid(&repo.path, branch)?;
-        let pending = unresolved_integration(&store).map_err(api_error)?
-            || !pending_events(&store, branch)
-                .map_err(api_error)?
-                .is_empty();
+        let pending = match &store {
+            Some(store) => {
+                unresolved_integration(store).map_err(api_error)?
+                    || !pending_events(store, branch).map_err(api_error)?.is_empty()
+            }
+            None => false,
+        };
         let source_matches = state
             .wiki_commit
             .as_deref()
@@ -80,6 +120,7 @@ pub async fn get_status(
             == Some(&head);
         let exists = services::services::openwiki::has_canonical_wiki(&repo.path, &head)
             .map_err(api_error)?;
+        state.wiki_exists = exists;
         state.status = state.derived_status(exists, pending, source_matches);
     }
     Ok(Json(ApiResponse::success(state)))
@@ -106,8 +147,14 @@ pub async fn configure(
             "Repository maintenance is active; stop or finish that AgentRun before changing configuration",
         ));
     }
-    let changed = state.target_branch.as_deref() != Some(&request.target_branch)
-        || state.output_language != request.output_language;
+    let branch_changed = state.target_branch.as_deref() != Some(&request.target_branch);
+    let changed = branch_changed || state.output_language != request.output_language;
+    if branch_changed {
+        state.source_commit = None;
+        state.wiki_commit = None;
+        state.last_success = None;
+        state.unverified_before = None;
+    }
     state.enabled = request.enabled;
     state.target_branch = Some(request.target_branch);
     state.output_language = request.output_language;
@@ -122,14 +169,22 @@ pub async fn configure(
         state.error = None;
     }
     store.save_state(&state)?;
-    Ok(Json(ApiResponse::success(state)))
+    drop(_lock);
+    get_status(State(deployment), Path(id)).await
 }
 
 pub async fn sync(
     State(deployment): State<DeploymentImpl>,
     Path(id): Path<Uuid>,
+    body: axum::body::Bytes,
 ) -> Result<Json<ApiResponse<RepositoryMemoryState>>, ApiError> {
-    start_reconciliation(&deployment, id)
+    // Older clients send an empty POST with application/json already set.
+    let request = if body.is_empty() {
+        SyncRepositoryMemory::default()
+    } else {
+        serde_json::from_slice(&body).map_err(api_error)?
+    };
+    start_reconciliation_request(&deployment, id, Some(request))
         .await
         .map_err(api_error)?;
     get_status(State(deployment), Path(id)).await
@@ -137,7 +192,16 @@ pub async fn sync(
 
 /// Reserve before activation so recovery always knows the exact process owner.
 pub async fn start_reconciliation(deployment: &DeploymentImpl, id: Uuid) -> anyhow::Result<()> {
+    start_reconciliation_request(deployment, id, None).await
+}
+
+async fn start_reconciliation_request(
+    deployment: &DeploymentImpl,
+    id: Uuid,
+    request: Option<SyncRepositoryMemory>,
+) -> anyhow::Result<()> {
     let repo = repo(deployment, id).await?;
+    workspace_manager::shared_resources::ensure_repository_memory(&repo)?;
     let storage = deployment
         .git()
         .storage_identity(&repo.path)?
@@ -163,7 +227,32 @@ pub async fn start_reconciliation(deployment: &DeploymentImpl, id: Uuid) -> anyh
             "Repository maintenance already has an active AgentRun; inspect its workspace or wait for recovery"
         );
     }
-    let result = prepare_run(deployment, &repo, &store, &mut state).await;
+    // Validate user input before reserving a writer or changing error/freshness state.
+    let branch = state
+        .target_branch
+        .as_deref()
+        .context("Choose an integration branch")?;
+    let source = deployment.git().get_branch_oid(&repo.path, branch)?;
+    let initial = !services::services::openwiki::has_canonical_wiki(&repo.path, &source)?;
+    let scope = match request {
+        Some(request) => {
+            if initial && request.from_commit.is_some() {
+                bail!(
+                    "No existing Wiki on the selected branch; use Initialize Wiki without a starting commit"
+                );
+            }
+            services::services::openwiki::sync_scope::resolve(
+                &repo.path,
+                &source,
+                request.from_commit.as_deref(),
+            )?
+        }
+        None => RepositoryWikiSyncScope::PendingChanges,
+    };
+    let result = prepare_run(
+        deployment, &repo, &store, &mut state, &source, initial, scope,
+    )
+    .await;
     if let Err(error) = result {
         state = store.state()?;
         state.status = RepositoryWikiStatus::Error;
@@ -182,6 +271,9 @@ async fn prepare_run(
     repo: &Repo,
     store: &RepositoryMemoryStore,
     state: &mut RepositoryMemoryState,
+    source: &str,
+    initial: bool,
+    scope: RepositoryWikiSyncScope,
 ) -> anyhow::Result<()> {
     let branch = state
         .target_branch
@@ -196,7 +288,7 @@ async fn prepare_run(
     if deployment.git().is_remote_branch(&repo.path, &branch)? {
         bail!("Wiki publication requires a local integrated branch; fetch/integrate source first");
     }
-    let source = deployment.git().get_branch_oid(&repo.path, &branch)?;
+    let source = source.to_owned();
     for integration in store
         .integrations()?
         .into_iter()
@@ -223,7 +315,6 @@ async fn prepare_run(
     OpenWikiAdapter::default()
         .verify_version(&repo.path)
         .await?;
-    let initial = !services::services::openwiki::has_canonical_wiki(&repo.path, &source)?;
     let owner_kind = if initial {
         db::models::workspace_usage::OPENWIKI_BOOTSTRAP
     } else {
@@ -285,7 +376,8 @@ async fn prepare_run(
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
         Err(error) => return Err(error.into()),
     }
-    let events = pending_events(store, &branch)?;
+    let events = sync_events(store, &repo.path, &branch, &scope, state.unverified_before.as_deref())?;
+    state.active_sync_scope = if initial { RepositoryWikiSyncScope::CurrentSource } else { scope };
 
     // First bootstrap is explicit init; subsequent sync preserves existing Wiki.
     if initial {
@@ -305,8 +397,9 @@ async fn prepare_run(
         &source,
         &branch,
         &events,
+        &state.active_sync_scope,
     )?;
-    let prompt = OpenWikiAdapter::maintenance_prompt(&root, false, &state.output_language, &hints);
+    let prompt = OpenWikiAdapter::sync_prompt(&root, &state.output_language, &hints, &state.active_sync_scope);
     let skill_path = OpenWikiAdapter::installed_skill_path(&root, project_scope)?;
     let session = Session::create(
         &deployment.db().pool,
@@ -416,7 +509,15 @@ async fn recover_repository(deployment: &DeploymentImpl, repo: &Repo) -> anyhow:
             && state
                 .target_branch
                 .as_deref()
-                .map(|branch| pending_events(&store, branch))
+                .map(|branch| {
+                    sync_events(
+                        &store,
+                        &repo.path,
+                        branch,
+                        &RepositoryWikiSyncScope::PendingChanges,
+                        state.unverified_before.as_deref(),
+                    )
+                })
                 .transpose()?
                 .is_some_and(|events| !events.is_empty());
         drop(_lock);
@@ -518,6 +619,15 @@ pub(crate) fn record_reconciliation_result(
             }
             state.source_commit = state.active_source_commit.clone();
             state.wiki_commit = wiki_commit;
+            match &state.active_sync_scope {
+                RepositoryWikiSyncScope::CurrentSource => state.unverified_before = None,
+                RepositoryWikiSyncScope::SinceCommit { base_commit } => {
+                    // A previous success can predate the requested range; it
+                    // does not prove that the intervening source was reviewed.
+                    state.unverified_before = Some(base_commit.clone());
+                }
+                _ => {}
+            }
             state.last_success = Some(now);
             state.status = RepositoryWikiStatus::Current;
             state.error = None;
@@ -545,6 +655,7 @@ pub(crate) fn record_reconciliation_result(
     state.active_event_ids.clear();
     state.active_sync_input_digest = None;
     state.active_source_commit = None;
+    state.active_sync_scope = RepositoryWikiSyncScope::default();
     store.save_state(state)?;
     Ok(())
 }
@@ -622,7 +733,14 @@ async fn finish_run(
                 run.workspace_id,
                 FsPath::new(&run.workspace_path),
                 &root,
-                WriterPhase::Sync,
+                if matches!(
+                    state.active_sync_scope,
+                    RepositoryWikiSyncScope::PendingChanges
+                ) {
+                    WriterPhase::Sync
+                } else {
+                    WriterPhase::Reconcile
+                },
             )
             .await
             .and_then(|_| services::services::openwiki::sync_input::validate(store, repo.id, state))
@@ -712,4 +830,43 @@ pub fn spawn_recovery_monitor(deployment: DeploymentImpl) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod adoption_tests {
+    use super::*;
+
+    #[test]
+    fn scoped_coverage_survives_automatic_sync_and_failed_full_review() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = RepositoryMemoryStore::at_persistent(temp.path()).unwrap();
+        let mut state = RepositoryMemoryState {
+            active_source_commit: Some("b".repeat(40)),
+            active_sync_scope: RepositoryWikiSyncScope::SinceCommit {
+                base_commit: "a".repeat(40),
+            },
+            ..RepositoryMemoryState::enabled_defaults(Some("main".into()))
+        };
+        record_reconciliation_result(&store, &mut state, Ok((None, true))).unwrap();
+        assert_eq!(state.unverified_before, Some("a".repeat(40)));
+        state.active_source_commit = Some("c".repeat(40));
+        record_reconciliation_result(&store, &mut state, Ok((None, true))).unwrap();
+        assert_eq!(state.unverified_before, Some("a".repeat(40)));
+        // A later manual range can leave a gap after the previous successful
+        // source. Its own boundary replaces the older coverage claim.
+        state.active_source_commit = Some("e".repeat(40));
+        state.active_sync_scope = RepositoryWikiSyncScope::SinceCommit {
+            base_commit: "d".repeat(40),
+        };
+        record_reconciliation_result(&store, &mut state, Ok((None, true))).unwrap();
+        assert_eq!(state.unverified_before, Some("d".repeat(40)));
+        state.active_sync_scope = RepositoryWikiSyncScope::CurrentSource;
+        record_reconciliation_result(&store, &mut state, Err(anyhow::anyhow!("review failed")))
+            .unwrap();
+        assert_eq!(state.unverified_before, Some("d".repeat(40)));
+        state.active_source_commit = Some("c".repeat(40));
+        state.active_sync_scope = RepositoryWikiSyncScope::CurrentSource;
+        record_reconciliation_result(&store, &mut state, Ok((None, true))).unwrap();
+        assert!(state.unverified_before.is_none());
+    }
 }

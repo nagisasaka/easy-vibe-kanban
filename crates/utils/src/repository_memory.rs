@@ -196,6 +196,17 @@ pub enum RepositoryWikiStatus {
     Error,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RepositoryWikiSyncScope {
+    #[default]
+    PendingChanges,
+    CurrentSource,
+    SinceCommit {
+        base_commit: String,
+    },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct RepositoryMemoryState {
     pub version: u32,
@@ -226,6 +237,15 @@ pub struct RepositoryMemoryState {
     // Read-side diagnostics; these do not change canonical Wiki freshness.
     #[serde(default)]
     pub coding_errors: Vec<String>,
+    /// Read-side detection on the saved target branch, independent of receipts.
+    #[serde(default)]
+    pub wiki_exists: bool,
+    #[serde(default)]
+    pub active_sync_scope: RepositoryWikiSyncScope,
+    /// A scoped adoption did not verify older Wiki content. Automatic updates
+    /// do not erase that limitation; a full reconciliation can clear it.
+    #[serde(default)]
+    pub unverified_before: Option<String>,
 }
 
 fn default_memory_language() -> String {
@@ -252,6 +272,9 @@ impl Default for RepositoryMemoryState {
             active_event_ids: Vec::new(),
             active_sync_input_digest: None,
             coding_errors: Vec::new(),
+            wiki_exists: false,
+            active_sync_scope: RepositoryWikiSyncScope::default(),
+            unverified_before: None,
         }
     }
 }
@@ -285,6 +308,15 @@ pub struct OpenWikiBootstrapChild {
 }
 
 impl RepositoryMemoryState {
+    pub fn enabled_defaults(target_branch: Option<String>) -> Self {
+        Self {
+            enabled: true,
+            status: RepositoryWikiStatus::Uninitialized,
+            target_branch,
+            ..Self::default()
+        }
+    }
+
     pub fn derived_status(
         &self,
         wiki_exists: bool,
@@ -306,6 +338,7 @@ impl RepositoryMemoryState {
             return RepositoryWikiStatus::Uninitialized;
         }
         if self.status == RepositoryWikiStatus::Stale
+            || self.unverified_before.is_some()
             || pending
             || !source_matches
             || self.last_success.is_none()
@@ -921,6 +954,14 @@ impl RepositoryMemoryStore {
         )
     }
 
+    /// Initial defaults never overwrite a previously saved opt-out.
+    pub fn initialize_defaults(&self, target_branch: Option<String>) -> io::Result<()> {
+        let _lock = self.try_lock()?;
+        if !self.root.join("state.json").try_exists()? {
+            self.save_state(&RepositoryMemoryState::enabled_defaults(target_branch))?;
+        }
+        Ok(())
+    }
     pub fn state(&self) -> io::Result<RepositoryMemoryState> {
         let state: RepositoryMemoryState = self
             .read_json(&self.root.join("state.json"))?
@@ -1160,6 +1201,46 @@ mod tests {
         assert_eq!(
             state.derived_status(true, false, true),
             RepositoryWikiStatus::Stale
+        );
+    }
+
+    #[test]
+    fn new_repository_memory_is_enabled_without_starting_maintenance_and_preserves_opt_out() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = RepositoryMemoryStore::at_persistent(temp.path()).unwrap();
+        store.initialize_defaults(Some("main".into())).unwrap();
+        let state = store.state().unwrap();
+        assert!(state.enabled);
+        assert_eq!(state.target_branch.as_deref(), Some("main"));
+        assert!(state.active_run_id.is_none());
+        assert!(state.last_success.is_none());
+        let opted_out = RepositoryMemoryState {
+            target_branch: Some("custom".into()),
+            ..Default::default()
+        };
+        store.save_state(&opted_out).unwrap();
+        store.initialize_defaults(Some("main".into())).unwrap();
+        let state = store.state().unwrap();
+        assert!(!state.enabled);
+        assert_eq!(state.target_branch.as_deref(), Some("custom"));
+    }
+
+    #[test]
+    fn partial_adoption_does_not_advertise_whole_wiki_freshness() {
+        let mut state = RepositoryMemoryState {
+            status: RepositoryWikiStatus::Current,
+            last_success: Some(Utc::now()),
+            unverified_before: Some("a".repeat(40)),
+            ..RepositoryMemoryState::enabled_defaults(Some("main".into()))
+        };
+        assert_eq!(
+            state.derived_status(true, false, true),
+            RepositoryWikiStatus::Stale
+        );
+        state.unverified_before = None;
+        assert_eq!(
+            state.derived_status(true, false, true),
+            RepositoryWikiStatus::Current
         );
     }
 

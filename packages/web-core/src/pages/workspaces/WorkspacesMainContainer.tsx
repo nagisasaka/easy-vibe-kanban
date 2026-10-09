@@ -30,7 +30,7 @@ import {
 } from '@/shared/stores/useWorkspaceDiffStore';
 import { useIsMobile } from '@/shared/hooks/useIsMobile';
 import { useHostId } from '@/shared/providers/HostIdProvider';
-import { WorkspaceWorkflowLink } from '@/features/workflow/ui/WorkspaceWorkflowLink';
+import { WorkspaceWorkflowLink } from '@/shared/components/WorkspaceWorkflowLink';
 import { ExecutionInspectionPanel } from '@/features/workspace-chat/ui/ExecutionInspectionPanel';
 
 /**

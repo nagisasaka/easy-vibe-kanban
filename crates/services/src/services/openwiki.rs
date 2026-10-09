@@ -12,6 +12,7 @@ pub mod completion;
 pub mod inventory;
 pub mod setup;
 pub mod sync_input;
+pub mod sync_scope;
 
 pub const OPENWIKI_VERSION: &str = include_str!("../../../../assets/openwiki-version");
 static INSTALL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -161,8 +162,41 @@ impl OpenWikiAdapter {
         language: &str,
         hints: &str,
     ) -> String {
+        Self::writer_prompt(root, initialise, language, hints, false)
+    }
+
+    pub fn sync_prompt(
+        root: &Path,
+        language: &str,
+        hints: &str,
+        scope: &utils::repository_memory::RepositoryWikiSyncScope,
+    ) -> String {
+        Self::writer_prompt(
+            root,
+            false,
+            language,
+            hints,
+            !matches!(
+                scope,
+                utils::repository_memory::RepositoryWikiSyncScope::PendingChanges
+            ),
+        )
+    }
+
+    fn writer_prompt(
+        root: &Path,
+        initialise: bool,
+        language: &str,
+        hints: &str,
+        force_update: bool,
+    ) -> String {
+        let update_policy = if force_update {
+            ", force=true. This explicit reconciliation must review the requested scope even if OpenWiki's previous source checkpoint matches. Complete the update lifecycle, using an empty plan if no corrections are needed; a begin-noop is not sufficient"
+        } else {
+            ". A begin status=noop is successful"
+        };
         let protocol = format!(
-            "Call openwiki_begin with root={}, mode={}, language={}. Follow the installed Skill's plan / next_page / submit_page / finish protocol. Process pages sequentially in this host; do not create a competing scheduler. A begin status=noop is successful. Otherwise success requires openwiki_finish status=complete with no sourceChanged=true. Never merely declare completion after writing Markdown. Do not edit OpenWiki-managed metadata directly.",
+            "Call openwiki_begin with root={}, mode={}, language={}{update_policy}. Follow the installed Skill's plan / next_page / submit_page / finish protocol. Process pages sequentially in this host; do not create a competing scheduler. Success requires openwiki_finish status=complete with no sourceChanged=true unless the unforced begin-noop policy applies. Never merely declare completion after writing Markdown. Do not edit OpenWiki-managed metadata directly.",
             serde_json::to_string(&root.to_string_lossy()).expect("path"),
             if initialise { "\"init\"" } else { "\"update\"" },
             serde_json::to_string(language).expect("language")
@@ -280,7 +314,8 @@ fn git_text(root: &Path, args: &[&str]) -> anyhow::Result<String> {
 
 /// Check the integrated tree, not files in an arbitrary (possibly dirty) checkout.
 pub fn has_canonical_wiki(root: &Path, commit: &str) -> anyhow::Result<bool> {
-    Ok(!git_text(root, &["ls-tree", commit, "--", "openwiki/index.md"])?.is_empty())
+    // Even an incomplete imported Wiki must be preserved, not bootstrapped over.
+    Ok(git_text(root, &["ls-tree", "-d", commit, "--", "openwiki"])?.starts_with("040000 tree "))
 }
 
 pub struct WikiPublicationRequest<'a> {
@@ -492,6 +527,25 @@ mod tests {
             std::fs::read_to_string(root.join("source.txt")).unwrap(),
             "integrated source"
         );
+    }
+
+    #[test]
+    fn existing_wiki_detection_preserves_partial_imports_and_ignores_dirty_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("repo");
+        let (_, source, _) = publication_fixture(&root);
+        assert!(has_canonical_wiki(&root, &source).unwrap());
+        command(&root, &["rm", "openwiki/index.md"]);
+        command(&root, &["commit", "-m", "partial imported wiki"]);
+        let partial = command(&root, &["rev-parse", "HEAD"]);
+        assert!(has_canonical_wiki(&root, &partial).unwrap());
+        command(&root, &["rm", "-r", "openwiki"]);
+        command(&root, &["commit", "-m", "no wiki"]);
+        let absent = command(&root, &["rev-parse", "HEAD"]);
+        std::fs::create_dir_all(root.join("openwiki")).unwrap();
+        std::fs::write(root.join("openwiki/index.md"), "uncommitted").unwrap();
+        assert!(!has_canonical_wiki(&root, &absent).unwrap());
+        assert!(has_canonical_wiki(&root, &source).unwrap());
     }
 
     #[test]

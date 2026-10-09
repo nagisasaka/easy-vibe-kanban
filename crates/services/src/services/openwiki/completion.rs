@@ -34,6 +34,8 @@ pub enum WriterPhase {
     Generate,
     Refine,
     Sync,
+    /// An explicit source/range review cannot rely on an old source checkpoint.
+    Reconcile,
 }
 
 #[derive(Debug)]
@@ -137,7 +139,7 @@ impl PhaseCompletionProof {
             "Generate has no completed init from this phase"
         );
         ensure!(
-            self.phase != WriterPhase::Sync
+            !matches!(self.phase, WriterPhase::Sync | WriterPhase::Reconcile)
                 || self.completed_updates > 0
                 || self.completed_noops > 0,
             "Sync has no completed update or audited public begin-noop"
@@ -293,7 +295,7 @@ impl PhaseCompletionProof {
         if mode == "update" {
             ensure!(
                 self.phase == WriterPhase::Sync || args["force"] == true,
-                "Bootstrap corrections require update + force=true"
+                "Explicit reconciliation and Bootstrap corrections require update + force=true"
             );
             ensure!(
                 self.phase != WriterPhase::Generate || self.initialised,
@@ -431,6 +433,8 @@ mod tests {
             (WriterPhase::Generate, "update", true),
             (WriterPhase::Refine, "init", true),
             (WriterPhase::Refine, "update", false),
+            (WriterPhase::Reconcile, "init", true),
+            (WriterPhase::Reconcile, "update", false),
         ] {
             let mut proof = PhaseCompletionProof::new(phase);
             let mut input = begin(tmp.path(), mode, Uuid::new_v4());
@@ -452,6 +456,27 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn explicit_reconciliation_requires_a_completed_forced_update() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut proof = PhaseCompletionProof::new(WriterPhase::Reconcile);
+        assert!(proof.validate().is_err());
+        let id = Uuid::new_v4();
+        feed(&mut proof, tmp.path(), begin(tmp.path(), "update", id)).unwrap();
+        assert!(proof.validate().is_err());
+        feed(&mut proof, tmp.path(), finish(id)).unwrap();
+        proof.validate().unwrap();
+        let prompt = super::super::OpenWikiAdapter::sync_prompt(
+            tmp.path(),
+            "ja",
+            "frozen scope",
+            &utils::repository_memory::RepositoryWikiSyncScope::CurrentSource,
+        );
+        assert!(prompt.contains("force=true"));
+        assert!(prompt.contains("empty plan"));
+        assert!(!prompt.contains("A begin status=noop is successful"));
     }
 
     #[test]
