@@ -40,9 +40,11 @@ try:
         db.execute("""INSERT INTO agent_runs (
             id, session_id, workspace_id, request_id, idempotency_key,
             correlation_id, schema_version, payload_version, runtime_profile_id,
-            provider_id, workspace_mode, workspace_path, status, request_envelope
+            provider_id, workspace_mode, workspace_path, status, request_envelope,
+            created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, 1, 1, 'CODEX', 'codex',
-                  'shared_workspace', '/repos', 'running', '{}')""",
+                  'shared_workspace', '/repos', 'running', '{}',
+                  datetime('now'), datetime('now'))""",
             (run_id, uuid.UUID(session["id"]).bytes,
              uuid.UUID(workspace["id"]).bytes, uuid.uuid4().bytes,
              str(uuid.uuid4()), uuid.uuid4().bytes))

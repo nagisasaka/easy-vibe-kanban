@@ -87,7 +87,19 @@ jobs:
       - name: Check the built image before publishing
         env:
           LVK_SMOKE_IMAGE: ${{ steps.image.outputs.reference }}
-        run: bash deploy/server/smoke-image.sh "$LVK_SMOKE_IMAGE"
+        run: |
+          if ! bash deploy/server/smoke-image.sh "$LVK_SMOKE_IMAGE" > /tmp/lvk-image-smoke.log 2>&1; then
+            cat /tmp/lvk-image-smoke.log
+            python3 - <<'PY'
+          from pathlib import Path
+          log = Path('/tmp/lvk-image-smoke.log').read_text(errors='replace')
+          excerpt = '\n'.join(log.splitlines()[-100:])
+          escaped = excerpt.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print(f'::error title=Server image smoke test failed::{escaped}')
+          PY
+            exit 1
+          fi
+          cat /tmp/lvk-image-smoke.log
       - name: Check repository formatting with the bundled toolchain
         env:
           LVK_FORMAT_IMAGE: ${{ steps.image.outputs.reference }}
