@@ -587,5 +587,18 @@
     "errors": {
       "failed": "Failed to link PR. Please try again."
     }
+  },
+  "followUpQueue": {
+    "title": "Follow-up queue ({{count}})",
+    "paused": "Paused",
+    "resume": "Resume queue",
+    "description": "Runs one message at a time. Stops on failure or cancellation. Queued messages are lost on server restart.",
+    "content": "Queued message",
+    "save": "Save",
+    "cancelEdit": "Cancel edit",
+    "edit": "Edit",
+    "remove": "Delete",
+    "moveUp": "Move queued message {{position}} up",
+    "moveDown": "Move queued message {{position}} down"
   }
 }

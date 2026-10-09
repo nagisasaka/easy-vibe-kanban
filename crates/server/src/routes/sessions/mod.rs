@@ -256,6 +256,15 @@ pub async fn follow_up(
     State(deployment): State<DeploymentImpl>,
     Json(payload): Json<CreateFollowUpAttempt>,
 ) -> Result<ResponseJson<ApiResponse<AgentRunPortSnapshot>>, ApiError> {
+    let _queue_lock = deployment
+        .queued_message_service()
+        .lock_session(session.id)
+        .await;
+    if deployment.queued_message_service().has_queued(session.id) {
+        return Err(ApiError::Conflict(
+            "Resume or clear the follow-up queue first.".into(),
+        ));
+    }
     let agent_run = start_coding_agent_execution_for_session(
         &deployment,
         session,

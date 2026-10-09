@@ -141,6 +141,7 @@ const INLINE_BLOCKED_HINT_EXCLUDED_REASONS = new Set([
 interface ActionsProps {
   onSend: () => void;
   onQueue: () => void;
+  onSteer?: () => void;
   onCancelQueue: () => void;
   onStop: () => void;
   onPasteFiles: (files: File[]) => void;
@@ -759,6 +760,14 @@ export function SessionChatBox<TExecutor extends string = string>({
       case "running":
         return (
           <>
+            {actions.onSteer && (
+              <PrimaryButton
+                onClick={actions.onSteer}
+                disabled={!queueFollowUpDecision.allowed}
+                value="Steer"
+                aria-label="Steer"
+              />
+            )}
             <PrimaryButton
               onClick={actions.onQueue}
               disabled={!queueFollowUpDecision.allowed}

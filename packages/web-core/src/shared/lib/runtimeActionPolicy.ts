@@ -170,8 +170,6 @@ export function deriveRuntimeActionPolicy(
     queueFollowUp = block('queue_follow_up', 'no_content');
   } else if (ownedInputBlock) {
     queueFollowUp = block('queue_follow_up', ownedInputBlock);
-  } else if (input.isQueued) {
-    queueFollowUp = block('queue_follow_up', 'queue_already_present');
   } else if (mutationBlock) {
     queueFollowUp = block('queue_follow_up', mutationBlock);
   } else if (isCancelling) {

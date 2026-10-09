@@ -1809,6 +1809,7 @@ fn request_id(request: &ClientRequest) -> RequestId {
         | ClientRequest::ThreadInjectItems { request_id, .. }
         | ClientRequest::ThreadFork { request_id, .. }
         | ClientRequest::TurnStart { request_id, .. }
+        | ClientRequest::TurnSteer { request_id, .. }
         | ClientRequest::GetAccount { request_id, .. }
         | ClientRequest::ReviewStart { request_id, .. }
         | ClientRequest::McpServerStatusList { request_id, .. }
@@ -2731,6 +2732,27 @@ mod version_check_tests {
             params: ModelListParams::default(),
         };
         assert_eq!(super::request_id(&req), RequestId::Integer(7));
+    }
+
+    #[test]
+    fn request_id_handles_turn_steer() {
+        use codex_app_server_protocol::{ClientRequest, RequestId, TurnSteerParams, UserInput};
+
+        let request = ClientRequest::TurnSteer {
+            request_id: RequestId::Integer(42),
+            params: TurnSteerParams {
+                thread_id: "thread-test".into(),
+                expected_turn_id: "turn-test".into(),
+                client_user_message_id: None,
+                input: vec![UserInput::Text {
+                    text: "answer".into(),
+                    text_elements: vec![],
+                }],
+                responsesapi_client_metadata: None,
+                additional_context: None,
+            },
+        };
+        assert_eq!(super::request_id(&request), RequestId::Integer(42));
     }
 
     #[test]

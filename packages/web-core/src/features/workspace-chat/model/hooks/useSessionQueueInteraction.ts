@@ -4,138 +4,87 @@ import { queueApi } from '@/shared/lib/api';
 import type { ExecutorConfig, QueueStatus, SelectedSkill } from 'shared/types';
 import { useHostId } from '@/shared/providers/HostIdProvider';
 
-interface UseSessionQueueInteractionOptions {
-  /** Session ID for queue operations */
-  sessionId: string | undefined;
-}
+type QueueOperation = Parameters<typeof queueApi.edit>[1];
 
-interface UseSessionQueueInteractionResult {
-  /** Whether a message is currently queued */
-  isQueued: boolean;
-  /** The queued message content, if any */
-  queuedMessage: string | null;
-  /** The executor config from the queued message, if any */
-  queuedConfig: ExecutorConfig | null;
-  /** Whether a queue operation is in progress */
-  isQueueLoading: boolean;
-  /** Queue a message for later execution */
-  queueMessage: (
-    message: string,
-    executorConfig: ExecutorConfig,
-    selectedSkills?: SelectedSkill[]
-  ) => Promise<void>;
-  /** Cancel the queued message */
-  cancelQueue: () => Promise<void>;
-  /** Refresh queue status from server */
-  refreshQueueStatus: () => Promise<void>;
-}
-
-const QUEUE_STATUS_KEY = 'queue-status';
-
-/**
- * Hook to manage queue interaction for session messages.
- * Uses TanStack Query for caching and mutation handling.
- */
 export function useSessionQueueInteraction({
   sessionId,
-}: UseSessionQueueInteractionOptions): UseSessionQueueInteractionResult {
+}: {
+  sessionId: string | undefined;
+}) {
   const queryClient = useQueryClient();
   const hostId = useHostId();
-
-  // Query for queue status
-  const { data: queueStatus = { status: 'empty' as const }, refetch } =
+  const { data: status = { status: 'empty' as const }, refetch } =
     useQuery<QueueStatus>({
-      queryKey: [QUEUE_STATUS_KEY, hostId, sessionId],
+      queryKey: ['queue-status', hostId, sessionId],
       queryFn: () => queueApi.getStatus(sessionId!, hostId),
       enabled: !!sessionId,
+      refetchInterval: 2000,
     });
-
-  const isQueued = queueStatus.status === 'queued';
-  const queuedMessageData = isQueued
-    ? (queueStatus as Extract<QueueStatus, { status: 'queued' }>).message
-    : null;
-  const queuedMessage = queuedMessageData?.data.message ?? null;
-  const queuedConfig: ExecutorConfig | null =
-    queuedMessageData?.data.executor_config ?? null;
-
-  // Mutation for queueing a message
-  const queueMutation = useMutation({
-    mutationFn: ({
-      hostId,
+  // Capture scope in mutation variables, including when a user switches sessions.
+  const mutation = useMutation({
+    mutationFn: async ({
       sessionId,
-      message,
-      executorConfig,
-      selectedSkills,
+      hostId,
+      action,
     }: {
-      hostId: string | null;
       sessionId: string;
-      message: string;
-      executorConfig: ExecutorConfig;
-      selectedSkills?: SelectedSkill[];
-    }) =>
-      queueApi.queue(
-        sessionId,
-        {
-          message,
-          executor_config: executorConfig,
-          selected_skills: selectedSkills,
-        },
-        hostId
-      ),
-    onSuccess: (status, { hostId, sessionId }) => {
-      queryClient.setQueryData([QUEUE_STATUS_KEY, hostId, sessionId], status);
+      hostId: string | null;
+      action:
+        | {
+            type: 'append';
+            message: string;
+            executorConfig: ExecutorConfig;
+            selectedSkills?: SelectedSkill[];
+          }
+        | { type: 'resume' }
+        | { type: 'cancel' }
+        | QueueOperation;
+    }) => {
+      if (action.type === 'append')
+        return queueApi.queue(
+          sessionId,
+          {
+            message: action.message,
+            executor_config: action.executorConfig,
+            selected_skills: action.selectedSkills,
+          },
+          hostId
+        );
+      if (action.type === 'resume') return queueApi.resume(sessionId, hostId);
+      if (action.type === 'cancel') return queueApi.cancel(sessionId, hostId);
+      return queueApi.edit(sessionId, action, hostId);
+    },
+    onSuccess: (status, { sessionId, hostId }) =>
+      queryClient.setQueryData(['queue-status', hostId, sessionId], status),
+    onSettled: (_data, _error, { sessionId, hostId }) => {
+      void queryClient.invalidateQueries({
+        queryKey: ['queue-status', hostId, sessionId],
+      });
     },
   });
-
-  // Mutation for cancelling the queue
-  const cancelMutation = useMutation({
-    mutationFn: ({
-      hostId,
-      sessionId,
-    }: {
-      hostId: string | null;
-      sessionId: string;
-    }) => queueApi.cancel(sessionId, hostId),
-    onSuccess: (status, { hostId, sessionId }) => {
-      queryClient.setQueryData([QUEUE_STATUS_KEY, hostId, sessionId], status);
-    },
-  });
-
-  const queueMessage = useCallback(
-    async (
+  const perform = async (
+    action: Parameters<typeof mutation.mutateAsync>[0]['action']
+  ) => {
+    if (!sessionId) return;
+    await mutation.mutateAsync({ sessionId, hostId, action });
+  };
+  const refreshQueueStatus = useCallback(async () => {
+    await refetch();
+  }, [refetch]);
+  return {
+    isQueued: status.status === 'queued',
+    messages: status.status === 'queued' ? status.messages : [],
+    paused: status.status === 'queued' && status.paused,
+    isQueueLoading: mutation.isPending,
+    queueError: mutation.error?.message,
+    queueMessage: (
       message: string,
       executorConfig: ExecutorConfig,
       selectedSkills?: SelectedSkill[]
-    ) => {
-      if (!sessionId) return;
-      await queueMutation.mutateAsync({
-        hostId,
-        sessionId,
-        message,
-        executorConfig,
-        selectedSkills,
-      });
-    },
-    [sessionId, hostId, queueMutation]
-  );
-
-  const cancelQueue = useCallback(async () => {
-    if (!sessionId) return;
-    await cancelMutation.mutateAsync({ hostId, sessionId });
-  }, [sessionId, hostId, cancelMutation]);
-
-  const refreshQueueStatus = useCallback(async () => {
-    if (!sessionId) return;
-    await refetch();
-  }, [sessionId, refetch]);
-
-  return {
-    isQueued,
-    queuedMessage,
-    queuedConfig,
-    isQueueLoading: queueMutation.isPending || cancelMutation.isPending,
-    queueMessage,
-    cancelQueue,
+    ) => perform({ type: 'append', message, executorConfig, selectedSkills }),
+    cancelQueue: () => perform({ type: 'cancel' }),
+    editQueue: (operation: QueueOperation) => perform(operation),
+    resumeQueue: () => perform({ type: 'resume' }),
     refreshQueueStatus,
   };
 }

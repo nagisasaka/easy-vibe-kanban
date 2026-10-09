@@ -3,7 +3,7 @@ use axum::{
     extract::State,
     middleware::from_fn_with_state,
     response::{IntoResponse, Json as ResponseJson},
-    routing::get,
+    routing::{get, post},
 };
 use db::models::{scratch::DraftFollowUpData, session::Session};
 use deployment::Deployment;
@@ -12,6 +12,7 @@ use serde::Deserialize;
 use services::services::queued_message::QueueStatus;
 use ts_rs::TS;
 use utils::response::ApiResponse;
+use uuid::Uuid;
 
 use crate::{DeploymentImpl, error::ApiError, middleware::load_session_middleware};
 
@@ -30,6 +31,13 @@ async fn queue_message(
     State(deployment): State<DeploymentImpl>,
     Json(payload): Json<QueueMessageRequest>,
 ) -> Result<ResponseJson<ApiResponse<QueueStatus>>, ApiError> {
+    if payload.message.trim().is_empty() {
+        return Err(ApiError::BadRequest("Message must not be empty".into()));
+    }
+    let _queue_lock = deployment
+        .queued_message_service()
+        .lock_session(session.id)
+        .await;
     super::validate_queued_follow_up_profile(
         &deployment.db().pool,
         &session,
@@ -55,7 +63,15 @@ async fn queue_message(
         selected_skills: payload.selected_skills,
     };
 
-    let queued = deployment
+    if !super::agent_run::has_active_agent_run_for_session(&deployment.db().pool, session.id)
+        .await?
+        && !deployment.queued_message_service().has_queued(session.id)
+    {
+        return Err(ApiError::Conflict(
+            "The run has finished. Send the message normally.".into(),
+        ));
+    }
+    deployment
         .queued_message_service()
         .queue_message(session.id, data);
 
@@ -69,9 +85,9 @@ async fn queue_message(
         )
         .await;
 
-    Ok(ResponseJson(ApiResponse::success(QueueStatus::Queued {
-        message: queued,
-    })))
+    Ok(ResponseJson(ApiResponse::success(
+        deployment.queued_message_service().get_status(session.id),
+    )))
 }
 
 /// Cancel a queued follow-up message
@@ -79,6 +95,10 @@ async fn cancel_queued_message(
     Extension(session): Extension<Session>,
     State(deployment): State<DeploymentImpl>,
 ) -> Result<ResponseJson<ApiResponse<QueueStatus>>, ApiError> {
+    let _queue_lock = deployment
+        .queued_message_service()
+        .lock_session(session.id)
+        .await;
     deployment
         .queued_message_service()
         .cancel_queued(session.id);
@@ -112,14 +132,90 @@ async fn get_queue_status(
     ))
 }
 
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum QueueEdit {
+    Edit { id: Uuid, message: String },
+    Remove { id: Uuid },
+    Reorder { ids: Vec<Uuid> },
+}
+
+async fn edit_queue(
+    Extension(session): Extension<Session>,
+    State(deployment): State<DeploymentImpl>,
+    Json(payload): Json<QueueEdit>,
+) -> Result<ResponseJson<ApiResponse<QueueStatus>>, ApiError> {
+    let service = deployment.queued_message_service();
+    let _lock = service.lock_session(session.id).await;
+    let changed = match payload {
+        QueueEdit::Edit { id, message } => {
+            if message.trim().is_empty() {
+                return Err(ApiError::BadRequest("Message must not be empty".into()));
+            }
+            service.edit(session.id, id, message)
+        }
+        QueueEdit::Remove { id } => service.remove(session.id, id),
+        QueueEdit::Reorder { ids } => service.reorder(session.id, &ids),
+    };
+    if !changed {
+        return Err(ApiError::Conflict(
+            "Queue changed; refresh and try again.".into(),
+        ));
+    }
+    Ok(ResponseJson(ApiResponse::success(
+        service.get_status(session.id),
+    )))
+}
+
+async fn resume_queue(
+    Extension(session): Extension<Session>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<QueueStatus>>, ApiError> {
+    let id = session.id;
+    let service = deployment.queued_message_service();
+    let _lock = service.lock_session(id).await;
+    if super::agent_run::has_active_agent_run_for_session(&deployment.db().pool, id).await? {
+        return Err(ApiError::Conflict(
+            "Wait until the current run finishes before resuming the queue.".into(),
+        ));
+    }
+    if std::path::Path::new("/run/lvk-maintenance/active").try_exists()? {
+        return Err(ApiError::Conflict(
+            "Server maintenance is in progress".into(),
+        ));
+    }
+    db::models::integration::guard_workspace(&deployment.db().pool, session.workspace_id).await?;
+    service.resume(id);
+    let message = service
+        .take_queued(id)
+        .ok_or_else(|| ApiError::BadRequest("Queue is empty".into()))?;
+    let result = super::start_coding_agent_execution_for_session(
+        &deployment,
+        session,
+        message.data.message.clone(),
+        message.data.selected_skills.clone(),
+        message.data.executor_config.clone(),
+        None,
+        None,
+    )
+    .await;
+    if let Err(error) = result {
+        service.restore_and_pause(message);
+        return Err(error);
+    }
+    Ok(ResponseJson(ApiResponse::success(service.get_status(id))))
+}
+
 pub(super) fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     Router::new()
         .route(
             "/",
             get(get_queue_status)
                 .post(queue_message)
+                .patch(edit_queue)
                 .delete(cancel_queued_message),
         )
+        .route("/resume", post(resume_queue))
         .layer(from_fn_with_state(
             deployment.clone(),
             load_session_middleware,

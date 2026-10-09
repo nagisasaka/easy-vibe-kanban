@@ -1,3 +1,4 @@
+import { FollowUpQueue } from './FollowUpQueue';
 import { useTranslation } from 'react-i18next';
 import { AsyncAgentQuestions } from '@/features/agent-runtime/ui/AsyncAgentQuestions';
 import {
@@ -679,8 +680,11 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
   // Queue interaction
   const {
     isQueued,
-    queuedMessage,
-    queuedConfig,
+    messages: queuedMessages,
+    paused: queuePaused,
+    editQueue,
+    resumeQueue,
+    queueError,
     isQueueLoading,
     queueMessage,
     cancelQueue,
@@ -838,30 +842,53 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
   }, [agentRunCount, isAgentRunActive, workspaceId, refreshQueueStatus]);
 
   // Queue message handler
-  const handleQueueMessage = useCallback(async () => {
-    if (!isSessionConfigReady) return;
-    // Allow queueing if there's a message OR review comments, and we have a config
-    if ((!localMessage.trim() && !reviewMarkdown) || !executorConfig) return;
-    const submission = {
-      ...currentDraft.current,
-      revision: getDraftRevision(),
-    };
+  const handleRunningMessage = useCallback(
+    async (steer: boolean) => {
+      if (!isSessionConfigReady) return;
+      // Allow queueing if there's a message OR review comments, and we have a config
+      if ((!localMessage.trim() && !reviewMarkdown) || !executorConfig) return;
+      const submission = {
+        ...currentDraft.current,
+        revision: getDraftRevision(),
+      };
 
-    const { prompt } = buildAgentPrompt(localMessage, [reviewMarkdown]);
-    cancelDebouncedSave();
-    void saveToScratch(localMessage, executorConfig);
+      const { prompt } = buildAgentPrompt(localMessage, [reviewMarkdown]);
+      cancelDebouncedSave();
+      void saveToScratch(localMessage, executorConfig);
 
-    if (activeGoal?.status === AgentGoalStatus.active && activeAgentRun) {
+      if (steer && activeAgentRun) {
+        try {
+          await steerMutation.mutateAsync({
+            agentRunId: activeAgentRun.summary.agent_run_id,
+            content: prompt,
+          });
+        } catch {
+          return;
+        }
+        if (!isCurrentSubmission(submission)) return;
+        cancelDebouncedSave();
+        setLocalMessage('');
+        setSelectedSkills([]);
+        clearUploadedAttachments();
+        reviewContext?.clearComments();
+        void clearDraft({
+          type: 'DRAFT_FOLLOW_UP',
+          data: { message: localMessage, executor_config: executorConfig },
+        }).catch((error) =>
+          console.error('Failed to acknowledge steered draft', error)
+        );
+        return;
+      }
+
       try {
-        await steerMutation.mutateAsync({
-          agentRunId: activeAgentRun.summary.agent_run_id,
-          content: prompt,
-        });
+        await queueMessage(prompt, executorConfig, selectedSkills);
       } catch {
         return;
       }
+
       if (!isCurrentSubmission(submission)) return;
-      cancelDebouncedSave();
+
+      // Clear local state after queueing (same as handleSend)
       setLocalMessage('');
       setSelectedSkills([]);
       clearUploadedAttachments();
@@ -870,50 +897,32 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
         type: 'DRAFT_FOLLOW_UP',
         data: { message: localMessage, executor_config: executorConfig },
       }).catch((error) =>
-        console.error('Failed to acknowledge steered draft', error)
+        console.error('Failed to acknowledge queued draft', error)
       );
-      return;
-    }
-
-    await queueMessage(prompt, executorConfig, selectedSkills);
-
-    if (!isCurrentSubmission(submission)) return;
-
-    // Clear local state after queueing (same as handleSend)
-    setLocalMessage('');
-    setSelectedSkills([]);
-    clearUploadedAttachments();
-    reviewContext?.clearComments();
-    void clearDraft({
-      type: 'DRAFT_FOLLOW_UP',
-      data: { message: localMessage, executor_config: executorConfig },
-    }).catch((error) =>
-      console.error('Failed to acknowledge queued draft', error)
-    );
-  }, [
-    isSessionConfigReady,
-    isCurrentSubmission,
-    getDraftRevision,
-    clearDraft,
-    selectedSkills,
-    localMessage,
-    reviewMarkdown,
-    executorConfig,
-    queueMessage,
-    cancelDebouncedSave,
-    saveToScratch,
-    setLocalMessage,
-    clearUploadedAttachments,
-    reviewContext,
-    activeGoal?.status,
-    activeAgentRun,
-    steerMutation,
-  ]);
+    },
+    [
+      isSessionConfigReady,
+      isCurrentSubmission,
+      getDraftRevision,
+      clearDraft,
+      selectedSkills,
+      localMessage,
+      reviewMarkdown,
+      executorConfig,
+      queueMessage,
+      cancelDebouncedSave,
+      saveToScratch,
+      setLocalMessage,
+      clearUploadedAttachments,
+      reviewContext,
+      activeAgentRun,
+      steerMutation,
+    ]
+  );
 
   // Editor change handler
   const handleEditorChange = useCallback(
     (value: string) => {
-      if (isQueued) cancelQueue();
       if (executorConfig) {
         handleMessageChange(value, executorConfig);
       } else {
@@ -922,8 +931,6 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
       if (sendError) clearError();
     },
     [
-      isQueued,
-      cancelQueue,
       handleMessageChange,
       executorConfig,
       sendError,
@@ -965,23 +972,6 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
     feedbackContext?.exitFeedbackMode();
   }, [feedbackContext]);
 
-  // Handle cancel queue - restore message to editor
-  const handleCancelQueue = useCallback(async () => {
-    if (queuedMessage) {
-      setLocalMessage(queuedMessage);
-    }
-    if (queuedConfig) {
-      setExecutorOverrides(queuedConfig);
-    }
-    await cancelQueue();
-  }, [
-    queuedMessage,
-    queuedConfig,
-    setLocalMessage,
-    setExecutorOverrides,
-    cancelQueue,
-  ]);
-
   // Message edit retry mutation
   const editRetryMutation = useMessageEditRetry(sessionId ?? '', () => {
     // On success, clear edit mode and reset editor
@@ -992,7 +982,6 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
 
   const areAttachmentInputsDisabled =
     mode === 'placeholder' ||
-    isQueued ||
     isSending ||
     isStopping ||
     !!feedbackContext?.isSubmitting ||
@@ -1312,7 +1301,7 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
         canSubmitInput: canonicalAgentActionPolicy.submit_input.allowed,
         isSending,
         isStopping,
-        isQueueLoading,
+        isQueueLoading: isQueueLoading || steerMutation.isPending,
         isQueued,
         hasPendingApproval: pendingApproval?.kind === 'approval',
         hasPendingQuestion: pendingApproval?.kind === 'input',
@@ -1339,6 +1328,7 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
       isSending,
       isStopping,
       isQueueLoading,
+      steerMutation.isPending,
       isQueued,
       pendingApproval,
       isApprovalTimedOut,
@@ -1353,9 +1343,9 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
     isInFeedbackMode,
     isInEditMode,
     isStopping,
-    isQueueLoading,
+    isQueueLoading: isQueueLoading || steerMutation.isPending,
     isSendingFollowUp: isSending,
-    isQueued,
+    isQueued: false,
     isAgentRunActive: isAgentRunActive || isStandaloneScriptActive,
   });
 
@@ -1364,14 +1354,8 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
   const editorValue = useMemo(() => {
     if (isScratchLoading || !hasInitialValue) return '';
     if (pendingApproval) return localMessage;
-    return queuedMessage ?? localMessage;
-  }, [
-    isScratchLoading,
-    hasInitialValue,
-    pendingApproval,
-    queuedMessage,
-    localMessage,
-  ]);
+    return localMessage;
+  }, [isScratchLoading, hasInitialValue, pendingApproval, localMessage]);
 
   const renderEditor = useCallback(
     ({
@@ -1592,6 +1576,21 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
 
   return (
     <div className="flex w-chat max-w-full flex-col">
+      <FollowUpQueue
+        key={JSON.stringify([hostId, sessionId])}
+        messages={queuedMessages}
+        paused={queuePaused}
+        busy={isQueueLoading}
+        running={isAgentRunActive || isStandaloneScriptActive}
+        error={queueError}
+        onEdit={editQueue}
+        onResume={resumeQueue}
+      />
+      {steerMutation.error && (
+        <p role="alert" className="text-error">
+          {steerMutation.error.message}
+        </p>
+      )}
       {planGoalApprovalNode}
       {goalProgressNode}
       {sessionId && (
@@ -1612,9 +1611,6 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
       <SessionChatBox<BaseCodingAgent>
         status={status}
         isMobile={isMobile}
-        runningActionLabel={
-          activeGoal?.status === AgentGoalStatus.active ? 'Steer' : undefined
-        }
         onViewCode={disableViewCode ? undefined : handleViewCode}
         onOpenWorkspace={
           showOpenWorkspaceButton && workspaceId
@@ -1647,8 +1643,21 @@ function InteractiveSessionChatBox(props: SessionChatBoxContainerProps) {
         }}
         actions={{
           onSend: handleSend,
-          onQueue: handleQueueMessage,
-          onCancelQueue: handleCancelQueue,
+          onQueue: () => {
+            void handleRunningMessage(false);
+          },
+          onSteer:
+            effectiveExecutor === 'CODEX' &&
+            (!activeGoal || activeGoal.status === AgentGoalStatus.active) &&
+            activeAgentRunState?.status === 'running' &&
+            activeAgentRunState.projection_status === 'current'
+              ? () => {
+                  void handleRunningMessage(true);
+                }
+              : undefined,
+          onCancelQueue: () => {
+            void cancelQueue().catch(() => {});
+          },
           onStop: handleStop,
           onPasteFiles: uploadFiles,
         }}

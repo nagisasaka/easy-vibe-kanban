@@ -88,7 +88,7 @@ describe('runtime action policy', () => {
     expect(policy.stop.allowed).toBe(true);
   });
 
-  it('blocks duplicate queue and allows queue cancel', () => {
+  it('allows appending to a queue and cancelling it', () => {
     const policy = deriveRuntimeActionPolicy(
       baseInput({
         hasPriorAgentRun: true,
@@ -98,7 +98,7 @@ describe('runtime action policy', () => {
       })
     );
 
-    expect(policy.queue_follow_up.reason).toBe('queue_already_present');
+    expect(policy.queue_follow_up.allowed).toBe(true);
     expect(policy.cancel_queue.allowed).toBe(true);
   });
 

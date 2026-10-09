@@ -394,29 +394,41 @@ impl LocalContainerService {
                 return;
             }
         }
+        let _queue_lock = self
+            .queued_message_service
+            .lock_session(event.session_id)
+            .await;
+        // A manual resume can win the lock before an old terminal notification.
+        // That notification must not consume another entry or pause the new run.
+        match sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM agent_runs WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+        ).bind(event.session_id).fetch_optional(&self.db.pool).await {
+            Ok(Some(latest)) if latest == event.agent_run_id => {}
+            Ok(_) => return,
+            Err(error) => {
+                self.queued_message_service.pause(event.session_id);
+                tracing::error!(%error, "Cannot verify queued follow-up completion");
+                return;
+            }
+        }
         if event.status == AgentRunStatus::Succeeded
             && let Err(error) = self
                 .complete_repository_memory(event.session_id, event.agent_run_id)
                 .await
         {
+            self.queued_message_service.pause(event.session_id);
             // Preserve source/draft for retry. Do not start a queued turn
             // which could overwrite this run's source before finalisation.
             tracing::error!(agent_run_id = %event.agent_run_id, %error, "Repository memory completion failed; source retained, queued follow-up not consumed");
             return;
         }
+        if event.status != AgentRunStatus::Succeeded {
+            self.queued_message_service.pause(event.session_id);
+            return;
+        }
         let Some(queued_message) = self.queued_message_service.take_queued(event.session_id) else {
             return;
         };
-
-        if event.status != AgentRunStatus::Succeeded {
-            tracing::info!(
-                agent_run_id = %event.agent_run_id,
-                session_id = %event.session_id,
-                status = ?event.status,
-                "discarding queued follow-up after unsuccessful canonical AgentRun"
-            );
-            return;
-        }
 
         // Queue owns its submitted message, not the composer's newer draft.
         // Draft acknowledgement is conditional and occurs in the client.
@@ -431,12 +443,16 @@ impl LocalContainerService {
                 session_id = %event.session_id,
                 "started queued follow-up after canonical AgentRun completion"
             ),
-            Err(error) => tracing::error!(
-                agent_run_id = %event.agent_run_id,
-                session_id = %event.session_id,
-                %error,
-                "failed to start queued follow-up after canonical AgentRun completion"
-            ),
+            Err(error) => {
+                self.queued_message_service
+                    .restore_and_pause(queued_message);
+                tracing::error!(
+                    agent_run_id = %event.agent_run_id,
+                    session_id = %event.session_id,
+                    %error,
+                    "failed to start queued follow-up after canonical AgentRun completion"
+                );
+            }
         }
     }
 
@@ -1265,7 +1281,10 @@ fn build_queued_agent_run_requests(
         workspace,
         capability_snapshot,
         executor_config: queued_data.executor_config.clone(),
-        selected_skills: queued_data.selected_skills.clone(),
+        selected_skills: queued_data
+            .selected_skills
+            .clone()
+            .filter(|skills| !skills.is_empty()),
         reset_to_message_id: None,
         provider_session,
         created_at,
@@ -2099,6 +2118,22 @@ mod tests {
         assert_eq!(attempt.provider_session, None);
         assert_eq!(request.workspace.mode, WorkspaceMode::IsolatedWorktree);
         assert_eq!(request.workspace, attempt.workspace);
+    }
+
+    #[test]
+    fn queued_request_normalizes_empty_selected_skills() {
+        let mut data = queued_follow_up_data();
+        data.selected_skills = Some(Vec::new());
+        let (request, attempt) = build_queued_agent_run_requests(
+            Uuid::new_v4(),
+            &runtime_workspace(WorkspaceKind::DirectFolder),
+            "/tmp/queue-test".into(),
+            &data,
+            None,
+        )
+        .unwrap();
+        attempt.validate_for_run(&request).unwrap();
+        assert_eq!(attempt.selected_skills, None);
     }
 
     #[test]

@@ -1795,6 +1795,33 @@ export const agentsApi = {
 
 // Queue API for session follow-up messages
 export const queueApi = {
+  edit: async (
+    sessionId: string,
+    operation:
+      | { type: 'edit'; id: string; message: string }
+      | { type: 'remove'; id: string }
+      | { type: 'reorder'; ids: string[] },
+    hostId?: string | null
+  ): Promise<QueueStatus> => {
+    const response = await makeHostAwareRequest(
+      `/api/sessions/${sessionId}/queue`,
+      hostId,
+      { method: 'PATCH', body: JSON.stringify(operation) }
+    );
+    return handleApiResponse<QueueStatus>(response);
+  },
+  resume: async (
+    sessionId: string,
+    hostId?: string | null
+  ): Promise<QueueStatus> => {
+    const response = await makeHostAwareRequest(
+      `/api/sessions/${sessionId}/queue/resume`,
+      hostId,
+      { method: 'POST' }
+    );
+    return handleApiResponse<QueueStatus>(response);
+  },
+
   /**
    * Queue a follow-up message to be executed when current execution finishes
    */

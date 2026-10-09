@@ -587,5 +587,18 @@
     "errors": {
       "failed": "PRのリンクに失敗しました。もう一度お試しください。"
     }
+  },
+  "followUpQueue": {
+    "title": "後続予約 ({{count}})",
+    "paused": "停止中",
+    "resume": "予約を再開",
+    "description": "1件ずつ実行します。失敗・キャンセル時は停止します。サーバー再起動で予約は失われます。",
+    "content": "予約内容",
+    "save": "保存",
+    "cancelEdit": "編集を取消",
+    "edit": "編集",
+    "remove": "削除",
+    "moveUp": "予約 {{position}} を上へ",
+    "moveDown": "予約 {{position}} を下へ"
   }
 }
