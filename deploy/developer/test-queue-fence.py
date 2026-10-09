@@ -2,8 +2,10 @@
 """CI-only integration fixture: run as root in a DISPOSABLE LVK container."""
 import json
 from pathlib import Path
+import sqlite3
 import urllib.error
 import urllib.request
+import uuid
 
 
 def api(path, body=None, method=None):
@@ -22,7 +24,28 @@ route = f"/sessions/{session['id']}/queue"
 payload = {"message": "Never execute this fixture", "executor_config": {"executor": "CODEX"}}
 gate = Path("/run/lvk-maintenance/active")
 gate.parent.mkdir(parents=True, exist_ok=True)
+# This fixture runs only in the disposable smoke-test container. Model auth is
+# deliberately absent: seed a run identity to exercise queue admission without
+# starting a provider or allowing the queued prompt to execute.
+database = Path("/home/appuser/.local/share/vibe-kanban/db.v2.sqlite")
+run_id = uuid.uuid4().bytes
 try:
+    try:
+        api(route, payload)
+        raise AssertionError("An idle session accepted a new queue")
+    except urllib.error.HTTPError as error:
+        assert error.code == 409, error.code
+    with sqlite3.connect(database) as db:
+        db.execute("PRAGMA foreign_keys = ON")
+        db.execute("""INSERT INTO agent_runs (
+            id, session_id, workspace_id, request_id, idempotency_key,
+            correlation_id, schema_version, payload_version, runtime_profile_id,
+            provider_id, workspace_mode, workspace_path, status, request_envelope
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, 1, 'CODEX', 'codex',
+                  'shared_workspace', '/repos', 'running', '{}')""",
+            (run_id, uuid.UUID(session["id"]).bytes,
+             uuid.UUID(workspace["id"]).bytes, uuid.uuid4().bytes,
+             str(uuid.uuid4()), uuid.uuid4().bytes))
     queued, _ = api(route, payload)
     assert queued["status"] == "queued"
     gate.touch()
@@ -41,5 +64,9 @@ try:
     assert api(route)[0]["status"] == "empty"
 finally:
     gate.unlink(missing_ok=True)
-    api(route, method="DELETE")
+    try:
+        api(route, method="DELETE")
+    finally:
+        with sqlite3.connect(database) as db:
+            db.execute("DELETE FROM agent_runs WHERE id = ?", (run_id,))
 print("PASS: maintenance fences queue admission and preserves existing follow-ups")
