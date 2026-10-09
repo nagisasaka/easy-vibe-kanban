@@ -191,6 +191,7 @@ COPY --from=builder /usr/local/bin/server /usr/local/bin/server
 COPY --from=builder /usr/local/bin/agent-process-host /usr/local/bin/agent-process-host
 COPY --from=builder /usr/local/bin/vibe-kanban-mcp /usr/local/bin/vibe-kanban-mcp
 COPY deploy/server/server.mjs deploy/server/healthcheck.mjs deploy/server/nginx.conf.template /opt/lvk-server/
+COPY scripts/local-runner/runner.py scripts/local-runner/windows_job.py scripts/local-runner/control.py /usr/local/share/lvk/local-runner/
 USER appuser
 ENV HOME=/home/appuser
 ENV CARGO_HOME=/home/appuser/.cargo

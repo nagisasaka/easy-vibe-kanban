@@ -12,6 +12,7 @@ fn generate_types_content() -> String {
 
     let decls: Vec<String> = vec![
         db::models::repo::Repo::decl(),
+        db::models::execution_bridge::RunnerTarget::decl(),
         db::models::resource_coordination::SharedResource::decl(),
         db::models::resource_coordination::RegisterResource::decl(),
         db::models::resource_coordination::ResourceClaim::decl(),

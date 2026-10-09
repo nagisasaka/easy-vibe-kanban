@@ -130,3 +130,16 @@ to verify model execution. Never run the fixture against your working database.
 
 The ownership ledger and runtime events are database state. OpenWiki records the
 design, invariants and limitations; it must never become a live lock table.
+
+## External execution Runner
+
+The optional `runner` target on a resource operation dispatches its critical
+section to an enrolled external machine. It uses this same resource ledger,
+revision checks and atomic bundles. Interactive Runner operations keep their
+bundle across observation and follow-up commands until explicit finish; local
+script operations continue to require one foreground critical section.
+
+See [Local execution bridge](../development/local-execution-bridge.md) for Windows
+connection, immutable dirty-source snapshots, command receipts, containment and
+operator recovery. A Runner capability is not a resource claim. Remote settlement
+is required before recovery, and a disconnected Runner never implies release.
