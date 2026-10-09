@@ -47,6 +47,8 @@ export const useConversationHistory = ({
   >(null);
   const previousActiveMapRef = useRef<Map<string, boolean>>(new Map());
   const [isLoadingHistoryState, setIsLoadingHistory] = useState(false);
+  const generationRef = useRef(0);
+  const controllersRef = useRef(new Set<{ close: () => void }>());
 
   // Derive whether this is the first turn (no follow-up processes exist)
   const isFirstTurn = useMemo(() => {
@@ -60,6 +62,10 @@ export const useConversationHistory = ({
     mutator(state);
   };
 
+  const canonicalRef = useRef(canonicalSession.conversation);
+  canonicalRef.current = canonicalSession.conversation;
+  const canonicalInitializedRef = useRef(false);
+
   // The hook owns transport, loading, and reconciliation.
   // It emits a source model that later derivation layers can transform further.
 
@@ -69,9 +75,9 @@ export const useConversationHistory = ({
     ): ConversationTimelineSource => ({
       executionProcessState,
       liveExecutionProcesses: executionProcesses.current,
-      canonical: canonicalSession.conversation,
+      canonical: canonicalRef.current,
     }),
-    [canonicalSession.conversation]
+    []
   );
 
   useEffect(() => {
@@ -93,6 +99,7 @@ export const useConversationHistory = ({
     return new Promise<PatchType[]>((resolve) => {
       const controller = streamJsonPatchEntries<PatchType>(url, {
         onFinished: (allEntries) => {
+          controllersRef.current.delete(controller);
           controller.close();
           resolve(allEntries);
         },
@@ -101,10 +108,12 @@ export const useConversationHistory = ({
             `Error loading entries for historic execution process ${executionProcess.id}`,
             err
           );
+          controllersRef.current.delete(controller);
           controller.close();
           resolve([]);
         },
       });
+      controllersRef.current.add(controller);
     });
   };
 
@@ -178,7 +187,7 @@ export const useConversationHistory = ({
       onTimelineUpdatedRef.current?.(
         timelineSource,
         modifiedAddEntryType,
-        loading
+        loading || canonicalRef.current.isLoading
       );
     },
     [buildTimelineSource]
@@ -187,10 +196,12 @@ export const useConversationHistory = ({
   // This emits its own events as they are streamed
   const loadRunningAndEmit = useCallback(
     (executionProcess: ExecutionProcess): Promise<void> => {
+      const generation = generationRef.current;
       return new Promise((resolve, reject) => {
         const url = `/api/execution-processes/${executionProcess.id}/raw-logs/ws`;
         const controller = streamJsonPatchEntries<PatchType>(url, {
           onEntries(entries) {
+            if (generation !== generationRef.current) return;
             const patchesWithKey = entries.map((entry, index) =>
               patchWithKey(entry, executionProcess.id, index)
             );
@@ -203,15 +214,19 @@ export const useConversationHistory = ({
             emitEntries(displayedExecutionProcesses.current, 'running', false);
           },
           onFinished: () => {
+            if (generation !== generationRef.current) return;
+            controllersRef.current.delete(controller);
             emitEntries(displayedExecutionProcesses.current, 'running', false);
             controller.close();
             resolve();
           },
           onError: () => {
+            controllersRef.current.delete(controller);
             controller.close();
             reject();
           },
         });
+        controllersRef.current.add(controller);
       });
     },
     [emitEntries]
@@ -220,7 +235,8 @@ export const useConversationHistory = ({
   // Sometimes it can take a few seconds for the stream to start, wrap the loadRunningAndEmit method
   const loadRunningAndEmitWithBackoff = useCallback(
     async (executionProcess: ExecutionProcess) => {
-      for (let i = 0; i < 20; i++) {
+      const generation = generationRef.current;
+      for (let i = 0; i < 20 && generation === generationRef.current; i++) {
         try {
           await loadRunningAndEmit(executionProcess);
           break;
@@ -235,6 +251,7 @@ export const useConversationHistory = ({
   const loadHistoricEntries = useCallback(
     async (maxEntries?: number): Promise<ExecutionProcessStateStore> => {
       const localDisplayedExecutionProcesses: ExecutionProcessStateStore = {};
+      const generation = generationRef.current;
 
       if (!executionProcesses?.current) return localDisplayedExecutionProcesses;
 
@@ -245,6 +262,7 @@ export const useConversationHistory = ({
 
         const entries =
           await loadEntriesForHistoricExecutionProcess(executionProcess);
+        if (generation !== generationRef.current) return {};
         const entriesWithKey = entries.map((e, idx) =>
           patchWithKey(e, executionProcess.id, idx)
         );
@@ -271,6 +289,7 @@ export const useConversationHistory = ({
     async (batchSize: number): Promise<boolean> => {
       if (!executionProcesses?.current) return false;
 
+      const generation = generationRef.current;
       let anyUpdated = false;
       for (const executionProcess of [
         ...executionProcesses.current,
@@ -284,6 +303,7 @@ export const useConversationHistory = ({
 
         const entries =
           await loadEntriesForHistoricExecutionProcess(executionProcess);
+        if (generation !== generationRef.current) return false;
         const entriesWithKey = entries.map((e, idx) =>
           patchWithKey(e, executionProcess.id, idx)
         );
@@ -362,8 +382,29 @@ export const useConversationHistory = ({
     emittedEmptyInitialRef.current = false;
     streamingProcessIdsRef.current.clear();
     previousActiveMapRef.current.clear();
+    canonicalInitializedRef.current = false;
+    setIsLoadingHistory(false);
     emitEntries(displayedExecutionProcesses.current, 'initial', true);
+    const controllers = controllersRef.current;
+    return () => {
+      generationRef.current += 1;
+      for (const controller of controllers) controller.close();
+      controllers.clear();
+    };
   }, [scopeKey, emitEntries]);
+
+  // Canonical updates must not reset script loading or issue an initial scroll.
+  // Publish the first complete session atomically, then follow only at bottom.
+  useEffect(() => {
+    if (canonicalSession.isLoading) return;
+    const initial = !canonicalInitializedRef.current;
+    canonicalInitializedRef.current = true;
+    emitEntries(
+      displayedExecutionProcesses.current,
+      initial ? 'initial' : 'running',
+      false
+    );
+  }, [canonicalSession.conversation, canonicalSession.isLoading, emitEntries]);
 
   useEffect(() => {
     let cancelled = false;
@@ -431,8 +472,10 @@ export const useConversationHistory = ({
 
       if (!streamingProcessIdsRef.current.has(activeProcess.id)) {
         streamingProcessIdsRef.current.add(activeProcess.id);
+        const generation = generationRef.current;
         loadRunningAndEmitWithBackoff(activeProcess).finally(() => {
-          streamingProcessIdsRef.current.delete(activeProcess.id);
+          if (generation === generationRef.current)
+            streamingProcessIdsRef.current.delete(activeProcess.id);
         });
       }
     }
@@ -470,11 +513,13 @@ export const useConversationHistory = ({
 
     if (processesToReload.length === 0) return;
 
+    const generation = generationRef.current;
     (async () => {
       let anyUpdated = false;
 
       for (const process of processesToReload) {
         const entries = await loadEntriesForHistoricExecutionProcess(process);
+        if (generation !== generationRef.current) return;
         if (entries.length === 0) continue;
 
         const entriesWithKey = entries.map((e, idx) =>

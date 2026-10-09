@@ -221,7 +221,7 @@ export function useConversationVirtualizer({
     return () => {
       virtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
     };
-  }, [shouldSuppressSizeAdjustment, virtualizer]);
+  }, [scrollContainerRef, shouldSuppressSizeAdjustment, virtualizer]);
 
   // -------------------------------------------------------------------------
   // Reactive isAtBottom state
@@ -281,11 +281,41 @@ export function useConversationVirtualizer({
       syncIsAtBottom();
     };
 
+    // Release before ResizeObserver/layout corrections can undo the user's
+    // input. A scroll event can arrive after a streaming render has run.
+    const releaseForInput = () => {
+      bottomLockedRef.current = false;
+      smoothScrollDeadlineRef.current = 0;
+    };
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) releaseForInput();
+    };
+    let touchY: number | null = null;
+    const handleTouchStart = (event: TouchEvent) => {
+      touchY = event.touches[0]?.clientY ?? null;
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      const nextY = event.touches[0]?.clientY ?? null;
+      if (touchY !== null && nextY !== null && nextY > touchY)
+        releaseForInput();
+      touchY = nextY;
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (['ArrowUp', 'PageUp', 'Home'].includes(event.key)) releaseForInput();
+    };
+    el.addEventListener('wheel', handleWheel, { passive: true });
+    el.addEventListener('touchstart', handleTouchStart, { passive: true });
+    el.addEventListener('touchmove', handleTouchMove, { passive: true });
+    el.addEventListener('keydown', handleKeyDown);
     el.addEventListener('scroll', handleScroll, { passive: true });
     handleScroll();
 
     return () => {
       el.removeEventListener('scroll', handleScroll);
+      el.removeEventListener('wheel', handleWheel);
+      el.removeEventListener('touchstart', handleTouchStart);
+      el.removeEventListener('touchmove', handleTouchMove);
+      el.removeEventListener('keydown', handleKeyDown);
     };
   }, [scrollContainerRef, shouldSuppressSizeAdjustment, syncIsAtBottom]);
 
@@ -335,7 +365,7 @@ export function useConversationVirtualizer({
         el.scrollTop = el.scrollHeight - el.clientHeight;
       }
     },
-    [scrollContainerRef, virtualizer]
+    [scrollContainerRef]
   );
 
   const scrollToIndex = useCallback(

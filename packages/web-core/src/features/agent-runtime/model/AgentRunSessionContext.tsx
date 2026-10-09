@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -154,9 +155,20 @@ export function AgentRunSessionProvider({
   );
   const isLoading =
     Boolean(sessionId) && (runsQuery.isLoading || !streamsInitialized);
+  // Do not reveal older runs while the rest of the session is still replaying.
+  // Keep an already displayed session stable when a new run is discovered.
+  const publishedRef = useRef<{
+    sessionId: string | undefined;
+    timeline: CanonicalAgentSessionTimeline | null;
+  }>({ sessionId, timeline: null });
+  if (publishedRef.current.sessionId !== sessionId) {
+    publishedRef.current = { sessionId, timeline: null };
+  }
+  if (!isLoading) publishedRef.current.timeline = timeline;
+  const publishedTimeline = publishedRef.current.timeline;
   const conversation = useMemo(
-    () => projectCanonicalAgentConversation(timeline, isLoading),
-    [isLoading, timeline]
+    () => projectCanonicalAgentConversation(publishedTimeline, isLoading),
+    [isLoading, publishedTimeline]
   );
   const value = useMemo<AgentRunSessionContextValue>(
     () => ({

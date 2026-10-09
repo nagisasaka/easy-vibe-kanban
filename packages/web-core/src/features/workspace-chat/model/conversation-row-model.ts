@@ -470,3 +470,12 @@ export function findPreviousUserMessageIndex(
  *    is correct behavior but the virtualizer must not try to animate
  *    between the old and new states.
  */
+
+/** Keep rendered tail rows mounted while the reader is browsing history. */
+export function preserveVisibleTailStart(
+  previous: number | null,
+  desired: number,
+  atBottom: boolean
+): number {
+  return !atBottom && previous !== null ? Math.min(previous, desired) : desired;
+}

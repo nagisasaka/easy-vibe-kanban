@@ -174,7 +174,11 @@ export function mergeCanonicalAgentTimeline(
 ): CanonicalAgentTimeline {
   const knownIds = new Set(previous.events.map((event) => event.event_id));
   const freshEvents = events
-    .filter((event) => !knownIds.has(event.event_id))
+    .filter((event) => {
+      if (knownIds.has(event.event_id)) return false;
+      knownIds.add(event.event_id);
+      return true;
+    })
     .sort(eventSort);
   if (
     freshEvents.length === 0 &&
