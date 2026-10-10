@@ -469,6 +469,9 @@ async fn git_publication_survives_receipt_failure_without_a_second_merge() {
         .execute(&pool)
         .await
         .unwrap();
+    run.payload.sources[0].branch = "main".into();
+    run.payload.sources[0].commit = base.clone();
+    run.payload.sources[0].selection.expected_commit = base.clone();
     run.payload.base_commit = Some(base.clone());
     run.payload.result_commit = Some(result.clone());
     run.payload.publication_intent = true;
@@ -513,6 +516,12 @@ async fn git_publication_survives_receipt_failure_without_a_second_merge() {
         .execute(&pool)
         .await
         .unwrap();
+    // An unconfirmed publication must still use the frozen source, even when
+    // Git has moved. Only the recovered publication receipt enables completion.
+    assert_eq!(
+        completion_selection(&recovered, &recovered.payload.sources[0]).expected_commit,
+        base
+    );
     recovered.payload.published = true;
     recovered.status = "post_processing".into();
     recovered.save(&pool).await.unwrap();
@@ -524,6 +533,40 @@ async fn git_publication_survives_receipt_failure_without_a_second_merge() {
             .is_err()
     );
     assert_eq!(cmd(&["rev-parse", "result"]), result);
+    let persisted = IntegrationRun::find(&pool, run.id).await.unwrap();
+    let selection = completion_selection(&persisted, &persisted.payload.sources[0]);
+    assert_eq!(selection.expected_commit, result);
+    assert_eq!(persisted.payload.sources[0].selection.expected_commit, base);
+    assert_eq!(persisted.payload.sources[0].commit, base);
+    assert!(git.require_clean_source(root, &base).is_err());
+    git.require_clean_source(root, &selection.expected_commit)
+        .unwrap();
+
+    // Completion remains stricter than ancestry: dirty files and a later,
+    // unrelated descendant are not this run's own publication.
+    std::fs::write(root.join("source.txt"), "later work").unwrap();
+    assert!(
+        git.require_clean_source(root, &selection.expected_commit)
+            .is_err()
+    );
+    cmd(&["add", "source.txt"]);
+    cmd(&[
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "-m",
+        "later work",
+    ]);
+    assert!(
+        git.require_clean_source(root, &selection.expected_commit)
+            .is_err()
+    );
+    assert_eq!(
+        completion_selection(&persisted, &persisted.payload.sources[0]).expected_commit,
+        result
+    );
 }
 
 #[tokio::test]
@@ -637,4 +680,48 @@ async fn direct_folder_parent_uses_member_checkout_and_remains_a_target_writer()
     let (targets, writers) = managed_targets(&pool, &repo, &run).await.unwrap();
     assert!(targets.contains(&peer_root));
     assert_eq!(writers, vec![peer.id]);
+}
+
+#[tokio::test]
+async fn completion_accepts_only_its_confirmed_target_publication() {
+    let (_, mut run, _, _) = fixture().await;
+    let frozen = run.payload.sources[0].selection.clone();
+    let result = "b".repeat(40);
+    run.payload.base_commit = Some(frozen.expected_commit.clone());
+    run.payload.result_commit = Some(result.clone());
+    run.payload.publication_intent = true;
+    run.payload.published = true;
+    for target in ["main", "refs/heads/main"] {
+        run.target_ref = target.into();
+        for branch in ["main", "refs/heads/main"] {
+            run.payload.sources[0].branch = branch.into();
+            let selection = completion_selection(&run, &run.payload.sources[0]);
+            assert_eq!(selection.expected_commit, result);
+            assert_eq!(selection.card_id, frozen.card_id);
+            assert_eq!(selection.workspace_id, frozen.workspace_id);
+        }
+    }
+    for case in 0..7 {
+        let mut other = run.clone();
+        match case {
+            0 => other.payload.published = false,
+            1 => other.payload.publication_intent = false,
+            2 => other.payload.sources[0].branch = "feature".into(),
+            3 => other.payload.base_commit = Some("c".repeat(40)),
+            4 => other.payload.result_commit = None,
+            5 => other.payload.sources[0].commit = "c".repeat(40),
+            6 => other.payload.sources[0].branch = "refs/remotes/origin/main".into(),
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            completion_selection(&other, &other.payload.sources[0]).expected_commit,
+            frozen.expected_commit,
+            "case {case}"
+        );
+    }
+    run.payload.result_commit = run.payload.base_commit.clone();
+    assert_eq!(
+        completion_selection(&run, &run.payload.sources[0]).expected_commit,
+        frozen.expected_commit
+    );
 }

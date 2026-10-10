@@ -9,7 +9,10 @@ use anyhow::{Context, bail, ensure};
 use db::models::{
     execution_process::{ExecutionProcess, ExecutionProcessRunReason, ExecutionProcessStatus},
     execution_process_repo_state::ExecutionProcessRepoState,
-    integration::{IntegrationRun, IntegrationValidation, resource_key},
+    integration::{
+        IntegrationRun, IntegrationSelection, IntegrationSource, IntegrationValidation,
+        resource_key,
+    },
     repo::Repo,
     session::{CreateSession, Session},
     workspace::Workspace,
@@ -1010,6 +1013,27 @@ async fn finish(deployment: &DeploymentImpl, mut run: IntegrationRun) -> anyhow:
     Ok(())
 }
 
+fn completion_selection(run: &IntegrationRun, source: &IntegrationSource) -> IntegrationSelection {
+    let mut selection = source.selection.clone();
+    // The target itself may be an adopted source. Its own verified B -> R
+    // publication is the only expected source movement. Keep the original
+    // selection immutable for receipts, Card expectations and memory events.
+    if run.payload.published
+        && run.payload.publication_intent
+        && source
+            .branch
+            .strip_prefix("refs/heads/")
+            .unwrap_or(&source.branch)
+            == short_target(run)
+        && source.commit == selection.expected_commit
+        && run.payload.base_commit.as_deref() == Some(source.commit.as_str())
+        && let Some(result) = &run.payload.result_commit
+    {
+        selection.expected_commit = result.clone();
+    }
+    selection
+}
+
 async fn complete_cards(
     deployment: &DeploymentImpl,
     mut run: IntegrationRun,
@@ -1045,13 +1069,19 @@ async fn complete_cards(
         selections: vec![],
         executor_config: None,
     };
-    for source in &mut run.payload.sources {
+    let completion_selections: Vec<_> = run
+        .payload
+        .sources
+        .iter()
+        .map(|source| completion_selection(&run, source))
+        .collect();
+    for (source, selection) in run.payload.sources.iter_mut().zip(completion_selections) {
         if source.done_result.is_some() {
             continue;
         }
-        match admission::source_for_completion(deployment, &request, &source.selection).await {
+        match admission::source_for_completion(deployment, &request, &selection).await {
             Ok(current)
-                if current.commit == source.commit
+                if current.commit == selection.expected_commit
                     && current.branch == source.branch
                     && current.related_workspaces == source.related_workspaces => {}
             Ok(_) => {
