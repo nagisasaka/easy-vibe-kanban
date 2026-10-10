@@ -6,6 +6,12 @@
 
 export type Repo = { id: string, path: string, name: string, display_name: string, setup_script: string | null, cleanup_script: string | null, archive_script: string | null, copy_files: string | null, parallel_setup_script: boolean, dev_server_script: string | null, default_target_branch: string | null, default_working_dir: string | null, created_at: Date, updated_at: Date, };
 
+export type RunnerTarget = { runner_id: string, source_id: string,
+/**
+ * Keep the bundle until an explicit finish, permitting observation/steps.
+ */
+interactive: boolean, desktop: boolean, cleanup_script: string, };
+
 export type SharedResource = { id: string, resource_key: string, name: string, description: string, state: string, revision: number, fence: number, health: string, created_at: string, };
 
 export type RegisterResource = { resource_key: string, name: string, description: string, state: string, };
@@ -22,7 +28,7 @@ resulting_state: string | null, };
 
 export type ResourceOperationSpec = { request_id: string, session_id: string, purpose: string, claims: Array<ResourceClaim>,
 /**
- * Entire critical section, including cleanup. Do not detach work.
+ * Full local critical section, or initial command for an interactive Runner.
  */
 script: string,
 /**
@@ -30,9 +36,9 @@ script: string,
  */
 verification_script: string,
 /**
- * Relative to the multi-repository workspace root.
+ * Relative to the workspace root, or captured repository root for a Runner.
  */
-working_dir: string, timeout_seconds: number, };
+working_dir: string, timeout_seconds: number, runner: RunnerTarget | null, };
 
 export type ResourceOperation = { sequence: number, id: string, workspace_id: string, session_id: string, spec: ResourceOperationSpec, status: string, priority: number, process_id: string | null, runtime_id: string | null, cancel_requested: boolean, message: string | null, created_at: string, updated_at: string, };
 

@@ -56,6 +56,7 @@ fn spec(session: Uuid, resources: &[&SharedResource]) -> ResourceOperationSpec {
         verification_script: "test ! -e busy".into(),
         working_dir: ".".into(),
         timeout_seconds: 30,
+        runner: None,
     }
 }
 #[tokio::test]
@@ -467,4 +468,182 @@ async fn canonical_identity_duplicate_claims_and_workspace_cleanup_are_guarded()
         ResourceOperation::find(&pool, op.id).await.unwrap().status,
         "cancelled"
     );
+}
+
+async fn runner_fixture(
+    pool: &SqlitePool,
+    session: Uuid,
+    resource: &SharedResource,
+) -> super::super::execution_bridge::RunnerTarget {
+    let runner = Uuid::new_v4();
+    let source = Uuid::new_v4();
+    let workspace: Uuid = sqlx::query_scalar("SELECT workspace_id FROM sessions WHERE id=?")
+        .bind(session)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO bridge_runners(id,name,token_hash,execution_resource_id,capabilities) VALUES(?,'test','hash',?,'{\"desktop\":true,\"protocol\":1}')").bind(runner).bind(resource.id).execute(pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO bridge_sources(id,workspace_id,digest,manifest) VALUES(?,?,'digest','{}')",
+    )
+    .bind(source)
+    .bind(workspace)
+    .execute(pool)
+    .await
+    .unwrap();
+    super::super::execution_bridge::RunnerTarget {
+        runner_id: runner,
+        source_id: source,
+        interactive: true,
+        desktop: true,
+        cleanup_script: "Stop-Process -Name fixture".into(),
+    }
+}
+
+#[tokio::test]
+async fn bridge_uses_existing_atomic_bundle_and_retains_on_failure() {
+    let (pool, session) = setup().await;
+    let slot = resource(&pool, "runner-slot").await;
+    let desktop = resource(&pool, "desktop").await;
+    let target = runner_fixture(&pool, session, &slot).await;
+    let mut request = spec(session, &[&slot, &desktop]);
+    request.runner = Some(target);
+    let first = ResourceOperation::submit(&pool, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        ResourceOperation::submit(&pool, request.clone())
+            .await
+            .unwrap()
+            .id,
+        first.id
+    );
+    request.request_id = Uuid::new_v4();
+    let second = ResourceOperation::submit(&pool, request).await.unwrap();
+    let runtime = Uuid::new_v4();
+    assert_eq!(
+        ResourceOperation::allocate(&pool, runtime).await.unwrap(),
+        vec![first.id]
+    );
+    ResourceOperation::finish(&pool, first.id, runtime, false, "lost runner")
+        .await
+        .unwrap();
+    assert!(
+        ResourceOperation::allocate(&pool, runtime)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let view = snapshot(&pool).await.unwrap();
+    assert_eq!(view.holders.len(), 2);
+    assert_eq!(
+        ResourceOperation::find(&pool, second.id)
+            .await
+            .unwrap()
+            .status,
+        "queued"
+    );
+    assert!(
+        ResourceOperation::finish(&pool, first.id, Uuid::new_v4(), true, "stale receipt")
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn bridge_validates_source_scope_slot_and_desktop() {
+    let (pool, session) = setup().await;
+    let slot = resource(&pool, "runner-slot").await;
+    let other = resource(&pool, "other").await;
+    let target = runner_fixture(&pool, session, &slot).await;
+    let mut request = spec(session, &[&other]);
+    request.runner = Some(target.clone());
+    assert!(
+        ResourceOperation::submit(&pool, request.clone())
+            .await
+            .is_err()
+    );
+    request.claims = spec(session, &[&slot]).claims;
+    sqlx::query("UPDATE bridge_sources SET workspace_id=?")
+        .bind(Uuid::new_v4())
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        ResourceOperation::submit(&pool, request.clone())
+            .await
+            .is_err()
+    );
+    let workspace: Uuid = sqlx::query_scalar("SELECT workspace_id FROM sessions WHERE id=?")
+        .bind(session)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE bridge_sources SET workspace_id=?")
+        .bind(workspace)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE bridge_runners SET capabilities='{\"protocol\":1}'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        ResourceOperation::submit(&pool, request.clone())
+            .await
+            .is_err()
+    );
+    request.runner.as_mut().unwrap().desktop = false;
+    assert!(ResourceOperation::submit(&pool, request).await.is_ok());
+}
+
+#[tokio::test]
+async fn bridge_command_retries_and_finish_close_admission() {
+    use super::super::execution_bridge::{CommandRequest, enqueue};
+    let (pool, session) = setup().await;
+    let slot = resource(&pool, "runner-slot").await;
+    let mut request = spec(session, &[&slot]);
+    request.runner = Some(runner_fixture(&pool, session, &slot).await);
+    let operation = ResourceOperation::submit(&pool, request).await.unwrap();
+    ResourceOperation::allocate(&pool, Uuid::new_v4())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE resource_operations SET status='running' WHERE id=?")
+        .bind(operation.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let step = CommandRequest {
+        id: Uuid::new_v4(),
+        kind: "step".into(),
+        script: "observe".into(),
+    };
+    let first = enqueue(&pool, operation.id, step.clone()).await.unwrap();
+    assert_eq!(
+        enqueue(&pool, operation.id, step.clone()).await.unwrap().id,
+        first.id
+    );
+    let mut changed = step.clone();
+    changed.script = "changed".into();
+    assert!(enqueue(&pool, operation.id, changed).await.is_err());
+    let finish = CommandRequest {
+        id: Uuid::new_v4(),
+        kind: "finish".into(),
+        script: String::new(),
+    };
+    assert!(enqueue(&pool, operation.id, finish.clone()).await.is_err());
+    sqlx::query("UPDATE bridge_commands SET status='done' WHERE id=?")
+        .bind(step.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    enqueue(&pool, operation.id, finish.clone()).await.unwrap();
+    sqlx::query("UPDATE bridge_commands SET status='done' WHERE id=?")
+        .bind(finish.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut more = step;
+    more.id = Uuid::new_v4();
+    assert!(enqueue(&pool, operation.id, more).await.is_err());
 }

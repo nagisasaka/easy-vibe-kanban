@@ -50,13 +50,15 @@ pub struct ResourceOperationSpec {
     pub session_id: Uuid,
     pub purpose: String,
     pub claims: Vec<ResourceClaim>,
-    /// Entire critical section, including cleanup. Do not detach work.
+    /// Full local critical section, or initial command for an interactive Runner.
     pub script: String,
     /// Independently checks that all resources are idle in the declared state.
     pub verification_script: String,
-    /// Relative to the multi-repository workspace root.
+    /// Relative to the workspace root, or captured repository root for a Runner.
     pub working_dir: String,
     pub timeout_seconds: u32,
+    #[serde(default)]
+    pub runner: Option<super::execution_bridge::RunnerTarget>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, FromRow)]
@@ -322,6 +324,7 @@ impl ResourceOperation {
                     .await?;
             ensure!(exists, "Unknown resource {}", claim.resource_id);
         }
+        super::execution_bridge::validate_target(&mut tx, &spec, workspace_id).await?;
         let id = spec.request_id;
         sqlx::query(
             "INSERT INTO resource_operations(id,workspace_id,session_id,spec) VALUES(?,?,?,?)",

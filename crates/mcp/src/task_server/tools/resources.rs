@@ -20,6 +20,14 @@ struct Claim {
     resulting_state: Option<String>,
 }
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct RunnerTarget {
+    runner_id: Uuid,
+    source_id: Uuid,
+    interactive: bool,
+    desktop: bool,
+    cleanup_script: String,
+}
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct RunResourceOperation {
     /// Stable UUID for retries; use a new ID after deliberately revising a plan.
     request_id: Uuid,
@@ -27,14 +35,16 @@ struct RunResourceOperation {
     session_id: Uuid,
     purpose: String,
     claims: Vec<Claim>,
-    /// Full critical section and cleanup, with no detached/background activity.
+    /// Full local critical section, or initial command for an interactive Runner.
     script: String,
     /// Check all resources are idle and in the declared resulting state.
     verification_script: String,
-    /// Relative to the workspace root (use the repository name for a worktree).
+    /// Workspace-relative locally; snapshot-repository-relative for a Runner.
     working_dir: String,
     /// Total command + verification deadline, 1–3600 seconds.
     timeout_seconds: u32,
+    /// Optional external Runner; snapshot must belong to this workspace.
+    runner: Option<RunnerTarget>,
 }
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct OperationId {
@@ -86,7 +96,7 @@ impl McpServer {
         }
     }
     #[tool(
-        description = "Queue a durable command under an atomic exclusive resource bundle. LVK runs it when all claims are available and revisions still match. Include the complete critical section, cleanup and a real idle/state verification. Do not detach work, hold resources across model turns, bypass owners or blindly update expected revisions. A queued request is not task completion. Retry with the same request_id and identical contents."
+        description = "Queue a durable command under an atomic exclusive resource bundle. LVK runs it when all claims are available and revisions still match. Include the complete critical section, cleanup and a real idle/state verification. For external interactive Runner operations the bundle spans observation and follow-up commands until explicit finish. For local scripts do not detach work. Never bypass owners or blindly update expected revisions. A queued request is not task completion. Retry with the same request_id and identical contents."
     )]
     async fn run_resource_operation(
         &self,
@@ -122,6 +132,15 @@ impl McpServer {
             verification_script: r.verification_script,
             working_dir: r.working_dir,
             timeout_seconds: r.timeout_seconds,
+            runner: r
+                .runner
+                .map(|r| db::models::execution_bridge::RunnerTarget {
+                    runner_id: r.runner_id,
+                    source_id: r.source_id,
+                    interactive: r.interactive,
+                    desktop: r.desktop,
+                    cleanup_script: r.cleanup_script,
+                }),
         };
         match self
             .send_json::<ResourceOperation>(

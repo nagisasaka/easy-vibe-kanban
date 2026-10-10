@@ -192,6 +192,9 @@ async fn tick_mediations(d: &DeploymentImpl) -> anyhow::Result<()> {
 async fn launch_command(d: &DeploymentImpl, id: Uuid, runtime: Uuid) -> anyhow::Result<()> {
     let pool = &d.db().pool;
     let op = ResourceOperation::find(pool, id).await?;
+    if op.spec.runner.is_some() {
+        return crate::routes::execution_bridge::launch(&d.db().pool, &op, runtime).await;
+    }
     let workspace = Workspace::find_by_id(pool, op.workspace_id)
         .await?
         .context("Workspace missing")?;
@@ -239,6 +242,9 @@ async fn reconcile_command(
     op: &ResourceOperation,
     runtime: Uuid,
 ) -> anyhow::Result<()> {
+    if op.spec.runner.is_some() {
+        return crate::routes::execution_bridge::reconcile(&d.db().pool, op, runtime).await;
+    }
     let pool = &d.db().pool;
     let process =
         ExecutionProcess::find_by_id(pool, op.process_id.context("Missing managed process")?)
@@ -285,6 +291,9 @@ pub(super) async fn require_processes_settled(
     d: &DeploymentImpl,
     op: &ResourceOperation,
 ) -> anyhow::Result<()> {
+    if op.spec.runner.is_some() {
+        return crate::routes::execution_bridge::require_settled(&d.db().pool, op).await;
+    }
     let processes = ExecutionProcess::find_by_session_id(&d.db().pool, op.session_id, true).await?;
     for p in processes {
         let action = p.executor_action()?;
