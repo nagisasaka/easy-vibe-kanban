@@ -243,23 +243,13 @@ impl<'a> AgentRuntimeReadService<'a> {
         let fetch_limit = limit + 1;
         let records = match after {
             Some(cursor) => {
-                sqlx::query_as::<_, AgentEventRecord>(
-                    r#"
-                SELECT * FROM agent_events
-                WHERE agent_run_id = ?
-                  AND (run_attempt_number > ?
-                    OR (run_attempt_number = ? AND sequence > ?))
-                ORDER BY run_attempt_number, sequence
-                LIMIT ?
-                "#,
-                )
-                .bind(agent_run_id)
-                .bind(i64::from(cursor.run_attempt_number))
-                .bind(i64::from(cursor.run_attempt_number))
-                .bind(i64::try_from(cursor.sequence).unwrap_or(i64::MAX))
-                .bind(fetch_limit)
-                .fetch_all(self.pool)
-                .await?
+                sqlx::query_as::<_, AgentEventRecord>(HISTORY_AFTER_SQL)
+                    .bind(agent_run_id)
+                    .bind(i64::from(cursor.run_attempt_number))
+                    .bind(i64::try_from(cursor.sequence).unwrap_or(i64::MAX))
+                    .bind(fetch_limit)
+                    .fetch_all(self.pool)
+                    .await?
             }
             None => {
                 sqlx::query_as::<_, AgentEventRecord>(
@@ -422,9 +412,64 @@ fn event_cursor(event: &AgentEventEnvelope) -> AgentEventCursor {
     }
 }
 
+// Row-value comparison lets SQLite seek directly into the existing composite
+// index instead of scanning every earlier event in this run on each poll.
+const HISTORY_AFTER_SQL: &str = r#"
+                SELECT * FROM agent_events
+                WHERE agent_run_id = ?
+                  AND (run_attempt_number, sequence) > (?, ?)
+                ORDER BY run_attempt_number, sequence
+                LIMIT ?
+                "#;
+
 #[cfg(test)]
 mod tests {
-    use super::AgentEventCursor;
+    use super::{AgentEventCursor, HISTORY_AFTER_SQL};
+
+    #[tokio::test]
+    async fn history_cursor_seeks_across_attempts_without_other_runs() {
+        use sqlx::{Row, sqlite::SqlitePoolOptions};
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::raw_sql("CREATE TABLE agent_events (agent_run_id TEXT, run_attempt_number INTEGER, sequence INTEGER);
+            CREATE INDEX idx_agent_events_agent_run_attempt_sequence ON agent_events(agent_run_id, run_attempt_number, sequence);
+            INSERT INTO agent_events VALUES ('run',1,1),('run',1,2),('run',2,1),('run',2,2),('other',2,3);")
+            .execute(&pool).await.unwrap();
+        let rows = sqlx::query(HISTORY_AFTER_SQL)
+            .bind("run")
+            .bind(1)
+            .bind(2)
+            .bind(10)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        let positions: Vec<(i64, i64)> = rows
+            .iter()
+            .map(|row| (row.get("run_attempt_number"), row.get("sequence")))
+            .collect();
+        assert_eq!(positions, vec![(2, 1), (2, 2)]);
+        let plan = sqlx::query(&format!("EXPLAIN QUERY PLAN {HISTORY_AFTER_SQL}"))
+            .bind("run")
+            .bind(1)
+            .bind(2)
+            .bind(10)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        let details = plan
+            .iter()
+            .map(|row| row.get::<String, _>("detail"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            details.contains("(run_attempt_number,sequence)>(?,?)"),
+            "{details}"
+        );
+        assert!(!details.contains("TEMP B-TREE"), "{details}");
+    }
 
     #[test]
     fn cursor_keeps_attempt_boundary() {

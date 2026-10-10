@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 
 import {
   findPreviousUserMessageIndex,
+  preserveVisibleTailStart,
   type ConversationRow,
 } from '../model/conversation-row-model';
 import { deriveConversationEntries } from '../model/deriveConversationEntries';
@@ -185,6 +186,15 @@ export const ConversationList = forwardRef<
   const [hasCleanupScriptRun, setHasCleanupScriptRun] = useState(false);
   const [hasRunningProcess, setHasRunningProcess] = useState(false);
   const lastSettledTailStartIndexRef = useRef<number | null>(null);
+  const visibleTailStartRef = useRef<number | null>(null);
+  const readerAtBottomRef = useRef(true);
+  const handleAtBottomChange = useCallback(
+    (atBottom: boolean) => {
+      readerAtBottomRef.current = atBottom;
+      onAtBottomChange?.(atBottom);
+    },
+    [onAtBottomChange]
+  );
   const { setEntries, reset } = useEntriesActions();
   const setTokenUsageInfo = useSetTokenUsageInfo();
   const scriptOutputCacheRef = useRef<
@@ -268,6 +278,8 @@ export const ConversationList = forwardRef<
     setFilteredEntries([]);
     setDataVersion(0);
     lastSettledTailStartIndexRef.current = null;
+    visibleTailStartRef.current = null;
+    readerAtBottomRef.current = true;
     reset();
   }, [conversationScopeKey, reset]);
 
@@ -465,13 +477,24 @@ export const ConversationList = forwardRef<
     }
   }, [candidateFirstUnvirtualizedRowIndex, hasActiveStreamingTurn]);
 
-  const firstUnvirtualizedRowIndex = hasActiveStreamingTurn
+  const desiredTailStart = hasActiveStreamingTurn
     ? Math.max(
         0,
         streamingFirstUnvirtualizedRowIndex -
           STREAMING_UNVIRTUALIZED_BUFFER_ROWS
       )
     : candidateFirstUnvirtualizedRowIndex;
+
+  // Completing a run used to move its entire rendered turn into the virtual
+  // head at once. While reading history, replacing measured DOM with height
+  // estimates changes the viewport even when no scroll command was issued.
+  // Defer that migration until the reader returns to the bottom.
+  const firstUnvirtualizedRowIndex = preserveVisibleTailStart(
+    visibleTailStartRef.current,
+    desiredTailStart,
+    readerAtBottomRef.current
+  );
+  visibleTailStartRef.current = firstUnvirtualizedRowIndex;
 
   const virtualizedRows = useMemo(
     () => conversationRows.slice(0, firstUnvirtualizedRowIndex),
@@ -487,7 +510,7 @@ export const ConversationList = forwardRef<
     rows: virtualizedRows,
     totalRowCount: conversationRows.length,
     scrollContainerRef: tanstackScrollRef,
-    onAtBottomChange,
+    onAtBottomChange: handleAtBottomChange,
     shouldSuppressSizeAdjustment: shouldSuppressInteractionDrivenSizeAdjustment,
   });
 

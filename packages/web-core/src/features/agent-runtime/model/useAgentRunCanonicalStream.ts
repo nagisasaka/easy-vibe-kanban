@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AgentRunStreamMessage } from 'shared/types';
+import type { AgentEventEnvelope, AgentRunStreamMessage } from 'shared/types';
 import { openLocalApiWebSocket } from '@/shared/lib/localApiTransport';
 import {
   emptyCanonicalAgentTimeline,
@@ -50,9 +50,33 @@ export function useAgentRunCanonicalStream(
     }
 
     let cancelled = false;
+    let ready = false;
+    let frame: number | null = null;
+    let pendingEvents: AgentEventEnvelope[] = [];
+    const flushEvents = () => {
+      if (pendingEvents.length === 0) return;
+      timelineRef.current = mergeCanonicalAgentTimeline(
+        timelineRef.current ?? emptyCanonicalAgentTimeline(),
+        pendingEvents
+      );
+      pendingEvents = [];
+    };
+    const publish = () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+      if (cancelled) return;
+      flushEvents();
+      setTimeline(timelineRef.current);
+    };
+    const schedulePublish = () => {
+      if (ready && frame === null) frame = requestAnimationFrame(publish);
+    };
     timelineRef.current = emptyCanonicalAgentTimeline();
     setTimeline(timelineRef.current);
     setIsInitialized(false);
+    setIsConnected(false);
+    setError(null);
+    retryAttemptRef.current = 0;
 
     const scheduleReconnect = () => {
       if (cancelled || retryTimerRef.current !== null) return;
@@ -74,6 +98,7 @@ export function useAgentRunCanonicalStream(
     };
 
     const connect = async () => {
+      ready = false;
       const cursor = timelineRef.current?.cursor;
       const params = new URLSearchParams();
       if (cursor) {
@@ -92,22 +117,25 @@ export function useAgentRunCanonicalStream(
         }
         socketRef.current = socket;
         socket.onopen = () => {
+          if (cancelled) return;
           retryAttemptRef.current = 0;
           setIsConnected(true);
           setError(null);
         };
         socket.onmessage = (message) => {
+          if (cancelled) return;
           try {
             const parsed = JSON.parse(message.data) as AgentRunStreamMessage;
+            if (parsed.type === 'event') {
+              pendingEvents.push(parsed.data.event);
+              schedulePublish();
+              return;
+            }
+            flushEvents();
             const current =
               timelineRef.current ?? emptyCanonicalAgentTimeline();
             let next = current;
             switch (parsed.type) {
-              case 'event':
-                next = mergeCanonicalAgentTimeline(current, [
-                  parsed.data.event,
-                ]);
-                break;
               case 'live':
                 next = mergeAgentLiveEvent(current, parsed.data.event);
                 break;
@@ -125,8 +153,13 @@ export function useAgentRunCanonicalStream(
                 return;
             }
             timelineRef.current = next;
-            setTimeline(next);
-            if (parsed.type === 'ready') setIsInitialized(true);
+            if (parsed.type === 'ready') {
+              ready = true;
+              publish();
+              setIsInitialized(true);
+            } else {
+              schedulePublish();
+            }
           } catch (parseError) {
             setError(
               parseError instanceof Error
@@ -136,15 +169,21 @@ export function useAgentRunCanonicalStream(
           }
         };
         socket.onerror = () => {
+          if (cancelled) return;
           setError('AgentRun stream connection failed');
         };
         socket.onclose = () => {
+          if (cancelled) return;
+          pendingEvents = [];
+          if (frame !== null) cancelAnimationFrame(frame);
+          frame = null;
           socketRef.current = null;
           discardDisconnectedLiveState();
           setIsConnected(false);
           scheduleReconnect();
         };
       } catch (connectError) {
+        if (cancelled) return;
         setIsConnected(false);
         setError(
           connectError instanceof Error
@@ -158,6 +197,8 @@ export function useAgentRunCanonicalStream(
     void connect();
     return () => {
       cancelled = true;
+      if (frame !== null) cancelAnimationFrame(frame);
+      pendingEvents = [];
       socketRef.current?.close();
       socketRef.current = null;
       if (retryTimerRef.current !== null) {

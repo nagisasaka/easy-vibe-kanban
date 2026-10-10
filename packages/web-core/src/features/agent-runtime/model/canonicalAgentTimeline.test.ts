@@ -62,6 +62,21 @@ const event = (
 });
 
 describe('mergeCanonicalAgentTimeline', () => {
+  it('deduplicates replay events within a single buffered batch', () => {
+    const result = mergeCanonicalAgentTimeline(emptyCanonicalAgentTimeline(), [
+      event(2),
+      event(1),
+      event(2),
+      event(1),
+    ]);
+    expect(result.events.map((entry) => entry.event_id)).toEqual([
+      'event-1',
+      'event-2',
+    ]);
+    expect(result.items).toHaveLength(2);
+    expect(result.cursor?.sequence).toBe(2n);
+  });
+
   it('repairs completed commentary even when it is not the final answer', () => {
     const live: AgentLiveEvent = {
       schema_version: 1,
