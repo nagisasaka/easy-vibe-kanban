@@ -23,6 +23,21 @@ use uuid::Uuid;
 
 use crate::{DeploymentImpl, error::ApiError};
 
+fn repository_checkout(
+    container: &std::path::Path,
+    direct_folder: bool,
+    repository_path: &std::path::Path,
+    repository_name: &str,
+) -> std::path::PathBuf {
+    // A direct folder is an execution directory, potentially a parent of
+    // several repositories. Membership identifies the actual Git checkout.
+    if direct_folder {
+        repository_path.to_path_buf()
+    } else {
+        container.join(repository_name)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, TS)]
 pub struct CreateIntegrationRequest {
     // Stable per explicit UI submission; retries must preserve the selection.

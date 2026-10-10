@@ -525,3 +525,116 @@ async fn git_publication_survives_receipt_failure_without_a_second_merge() {
     );
     assert_eq!(cmd(&["rev-parse", "result"]), result);
 }
+
+#[tokio::test]
+async fn direct_folder_parent_uses_member_checkout_and_remains_a_target_writer() {
+    let (pool, mut run, _, _) = fixture().await;
+    let temp = tempfile::tempdir().unwrap();
+    let parent = temp.path().join("repos");
+    let root = parent.join("nested-repository");
+    std::fs::create_dir_all(&root).unwrap();
+    let cmd = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    };
+    cmd(&["init", "-b", "main"]);
+    cmd(&[
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "base",
+    ]);
+    let head = cmd(&["rev-parse", "HEAD"]);
+    let repo = Repo::find_or_create(&pool, &root, "nested").await.unwrap();
+    run.repository_id = repo.id;
+    run.target_ref = "refs/heads/main".into();
+    let git = git::GitService::new();
+    // Reproduce the original failure: the selected folder is not itself a repo.
+    assert!(git.require_clean_source(&parent, &head).is_err());
+    let mut direct_ids = Vec::new();
+    for directory in [&parent, &root] {
+        let workspace = Workspace::create_direct_folder(
+            &pool,
+            &CreateWorkspace {
+                branch: "main".into(),
+                name: None,
+            },
+            Uuid::new_v4(),
+            directory.to_str().unwrap(),
+        )
+        .await
+        .unwrap();
+        WorkspaceRepo::create_many(
+            &pool,
+            workspace.id,
+            &[CreateWorkspaceRepo {
+                repo_id: repo.id,
+                target_branch: "main".into(),
+            }],
+        )
+        .await
+        .unwrap();
+        let checkout = super::super::repository_checkout(directory, true, &repo.path, &repo.name);
+        git.require_clean_source(&checkout, &head).unwrap();
+        direct_ids.push(workspace.id);
+    }
+    let container = temp.path().join("managed");
+    std::fs::create_dir(&container).unwrap();
+    let peer_root = container.join(&repo.name);
+    cmd(&["worktree", "add", "-b", "peer", peer_root.to_str().unwrap()]);
+    let peer = Workspace::create(
+        &pool,
+        &CreateWorkspace {
+            branch: "peer".into(),
+            name: None,
+        },
+        Uuid::new_v4(),
+    )
+    .await
+    .unwrap();
+    Workspace::update_container_ref(&pool, peer.id, container.to_str().unwrap())
+        .await
+        .unwrap();
+    WorkspaceRepo::create_many(
+        &pool,
+        peer.id,
+        &[CreateWorkspaceRepo {
+            repo_id: repo.id,
+            target_branch: "main".into(),
+        }],
+    )
+    .await
+    .unwrap();
+    let checkout = super::super::repository_checkout(&container, false, &repo.path, &repo.name);
+    assert_eq!(checkout, peer_root);
+    git.require_clean_source(&checkout, &head).unwrap();
+    std::fs::write(peer_root.join("uncommitted.txt"), "pending work").unwrap();
+    assert!(git.require_clean_source(&checkout, &head).is_err());
+    git.require_clean_source(&root, &head).unwrap();
+
+    let (targets, writers) = managed_targets(&pool, &repo, &run).await.unwrap();
+    assert!(targets.iter().all(|path| path == &root));
+    assert_eq!(
+        writers.into_iter().collect::<HashSet<_>>(),
+        direct_ids.into_iter().collect()
+    );
+    // A managed peer only blocks publication when its own checkout holds target.
+    run.target_ref = "refs/heads/peer".into();
+    let (targets, writers) = managed_targets(&pool, &repo, &run).await.unwrap();
+    assert!(targets.contains(&peer_root));
+    assert_eq!(writers, vec![peer.id]);
+}

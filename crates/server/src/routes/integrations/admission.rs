@@ -106,11 +106,12 @@ async fn inspect_source(
                 .git()
                 .get_branch_oid(&member.path, &workspace.branch)?;
             let container=workspace.container_ref.as_ref().context("Source Workspace has no checkout; inspect/recreate it before selecting Integration")?;
-            let root = if workspace.is_direct_folder() {
-                PathBuf::from(container)
-            } else {
-                PathBuf::from(container).join(&member.name)
-            };
+            let root = super::repository_checkout(
+                &PathBuf::from(container),
+                workspace.is_direct_folder(),
+                &member.path,
+                &member.name,
+            );
             deployment.git().require_clean_source(&root, &head)?;
             if member.id != request.repository_id {
                 let target = deployment

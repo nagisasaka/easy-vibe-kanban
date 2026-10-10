@@ -768,11 +768,10 @@ async fn complete_product(
 }
 
 async fn managed_targets(
-    deployment: &DeploymentImpl,
+    pool: &SqlitePool,
     repo: &Repo,
     run: &IntegrationRun,
 ) -> anyhow::Result<(Vec<PathBuf>, Vec<Uuid>)> {
-    let pool = &deployment.db().pool;
     let checkouts: HashSet<_> = git::GitCli::new()
         .list_worktrees(&repo.path)?
         .into_iter()
@@ -782,20 +781,19 @@ async fn managed_targets(
         })
         .map(|w| std::fs::canonicalize(w.path))
         .collect::<Result<_, _>>()?;
-    let paths:Vec<(Uuid,String,String,Option<String>)>=sqlx::query_as("SELECT w.id,w.container_ref,w.workspace_kind,r.name FROM workspaces w LEFT JOIN workspace_repos wr ON wr.workspace_id=w.id LEFT JOIN repos r ON r.id=wr.repo_id WHERE w.container_ref IS NOT NULL AND w.worktree_deleted=0")
+    let paths:Vec<(Uuid,String,String,String,String)>=sqlx::query_as("SELECT w.id,w.container_ref,w.workspace_kind,r.name,r.path FROM workspaces w JOIN workspace_repos wr ON wr.workspace_id=w.id JOIN repos r ON r.id=wr.repo_id WHERE w.container_ref IS NOT NULL AND w.worktree_deleted=0")
         .fetch_all(pool).await?;
     let mut result = vec![repo.path.clone()];
     let mut writers = HashSet::new();
     // Only check writers on worktrees actually holding the target in publish;
     // independent normal development remains allowed.
-    for (id, path, kind, name) in paths {
-        let root = if kind == "direct_folder" {
-            PathBuf::from(path)
-        } else if let Some(name) = name {
-            Path::new(&path).join(name)
-        } else {
-            continue;
-        };
+    for (id, path, kind, name, repository_path) in paths {
+        let root = super::repository_checkout(
+            Path::new(&path),
+            kind == "direct_folder",
+            Path::new(&repository_path),
+            &name,
+        );
         if std::fs::canonicalize(&root).is_ok_and(|p| checkouts.contains(&p)) {
             result.push(root);
             writers.insert(id);
@@ -870,7 +868,7 @@ async fn publish(deployment: &DeploymentImpl, mut run: IntegrationRun) -> anyhow
     let base = run.payload.base_commit.clone().context("Missing B")?;
     let result = run.payload.result_commit.clone().context("Missing R")?;
     deployment.git().require_clean_source(&root, &result)?;
-    let (targets, target_writers) = managed_targets(deployment, &repo, &run).await?;
+    let (targets, target_writers) = managed_targets(&deployment.db().pool, &repo, &run).await?;
     for ws in &target_writers {
         admission::idle(deployment, *ws).await?;
     }
@@ -948,7 +946,7 @@ pub(super) async fn recover_publication(
     let base = run.payload.base_commit.as_deref().context("Missing B")?;
     let result = run.payload.result_commit.as_deref().context("Missing R")?;
     verify_validation(&deployment.db().pool, &run).await?;
-    let (targets, writers) = managed_targets(deployment, &repo, &run).await?;
+    let (targets, writers) = managed_targets(&deployment.db().pool, &repo, &run).await?;
     if !run.payload.published {
         let (_, _, _, root) = context(deployment, &run).await?;
         deployment.git().require_clean_source(&root, result)?;
